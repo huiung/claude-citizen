@@ -114,6 +114,11 @@ export class NetClient {
     this.ws.send(JSON.stringify({ t: 'state', p, q }))
   }
 
+  /** Update the callsign sent on join (call before connect once the player picks one). */
+  setName(name: string): void {
+    this.name = name
+  }
+
   /** Persist progress under our token (no-op if disconnected). */
   saveProgress(progress: PlayerProgress): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return

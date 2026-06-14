@@ -23,6 +23,9 @@ import {
 import { type Pirate, PIRATE_REWARD, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
+import { inject as injectAnalytics } from '@vercel/analytics'
+
+injectAnalytics() // Vercel Web Analytics (no-op off Vercel / in dev)
 
 const INTERP_DELAY_MS = 120
 
@@ -711,6 +714,7 @@ function updateCamera(dt: number): void {
 function launch(): void {
   const callsign = nicknameEl.value.trim() || 'PILOT'
   localStorage.setItem('callsign', callsign)
+  net.setName(callsign) // net was created before the callsign was typed — sync it now
   overlayEl.hidden = true
   overlayEl.style.display = 'none'
   hudEl.hidden = false
