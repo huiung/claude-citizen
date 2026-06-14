@@ -168,6 +168,12 @@
     }
     #overlay button:hover { background: #1b5a30; }
     #overlay .foot { font-size: 11px; opacity: .4; }
+    #mobile-notice { display: none; }
+    .is-mobile #nickname, .is-mobile #launch, .is-mobile .foot, .is-mobile #landing-stats { display: none; }
+    .is-mobile #mobile-notice {
+      display: block; color: #ffd08a; font-size: 14px; max-width: 360px; line-height: 1.7;
+      border: 1px solid rgba(255, 208, 138, .4); border-radius: 6px; padding: 14px 16px;
+    }
     #landing-stats { font-size: 13px; color: #9fffb0; opacity: .9; letter-spacing: 1px; }
     #landing-stats span { color: #ffe08a; font-weight: 600; }
     #landing-links { display: flex; gap: 22px; margin-top: 4px; }
@@ -216,6 +222,7 @@
     <h1>CLAUDE <span>CITIZEN</span></h1>
     <p>An open-source attempt to finish Star Citizen before Star Citizen does.<br/>Built with Claude Fable 5. Not affiliated with CIG/RSI.</p>
     <div id="landing-stats"><span id="stat-online">—</span> online · <span id="stat-registered">—</span> pilots registered</div>
+    <div id="mobile-notice">⌨️ Best experienced on desktop — Claude Citizen flies with a keyboard + mouse. Open <b>claudecitizen.com</b> on a computer to play. (Code &amp; details on GitHub below.)</div>
     <input id="nickname" maxlength="16" placeholder="CALLSIGN" autocomplete="off" />
     <button id="launch">LAUNCH</button>
     <p class="foot">click LAUNCH to grab mouse · 60 seconds from click to flight, that's the rule</p>
@@ -224,6 +231,16 @@
       <a href="/wiki.html">📖 Wiki &amp; Guide</a>
     </div>
   </div>
+  <script>
+    // Flag touch/mobile devices so the landing shows a "use desktop" notice instead of LAUNCH.
+    (function () {
+      var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches
+      var mobileUA = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+      if (mobileUA || (coarse && navigator.maxTouchPoints > 1)) {
+        document.documentElement.classList.add('is-mobile')
+      }
+    })()
+  </script>
   <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
