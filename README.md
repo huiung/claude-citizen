@@ -40,7 +40,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Quantum travel:** charge the drive and jump across the sector to a distant planet in seconds
 - **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor, each trading cargo/speed/toughness
 - Procedural engine + combat + UI audio — synthesized live, no sound files
-- Real-time multiplayer: see other pilots' craft and callsigns
+- Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
 - 128 tests, because "built with AI" shouldn't mean "built badly"
 
 ## Controls

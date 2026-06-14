@@ -50,6 +50,8 @@ const enemiesEl = document.getElementById('enemies')!
 const flashEl = document.getElementById('damage-flash')!
 const quantumEl = document.getElementById('quantum')!
 const safeEl = document.getElementById('safe-zone')!
+const chatInputEl = document.getElementById('chat-input') as HTMLInputElement
+const chatLogEl = document.getElementById('chat-log')!
 
 nicknameEl.value = localStorage.getItem('callsign') ?? ''
 
@@ -473,6 +475,8 @@ let mouseYaw = 0
 let assist = true
 
 addEventListener('keydown', (e) => {
+  if (chatOpen) return // chat input owns the keyboard while open
+  if (e.code === 'Enter' && running && !docked) { openChat(); return }
   if (e.code === 'Space') e.preventDefault()
   if (e.repeat) return
   keys.add(e.code)
@@ -577,6 +581,55 @@ const net = new NetClient(nicknameEl.value || 'PILOT', playerToken, {
     netEl.textContent = connected ? 'SECTOR LINK: ONLINE' : 'SECTOR LINK: OFFLINE (solo)'
     onlineEl.textContent = String(online)
   },
+  onChat(name, text) {
+    addChatLine(name, text)
+  },
+})
+
+// --- Chat
+let chatOpen = false
+const chatLines: HTMLElement[] = []
+
+function addChatLine(name: string, text: string): void {
+  const line = document.createElement('div')
+  line.className = 'chat-line'
+  const who = document.createElement('b')
+  who.textContent = `${name}: `
+  line.append(who, document.createTextNode(text)) // textContent — never innerHTML (no XSS)
+  chatLogEl.appendChild(line)
+  chatLines.push(line)
+  while (chatLines.length > 7) chatLines.shift()?.remove()
+  setTimeout(() => {
+    line.style.opacity = '0'
+    setTimeout(() => line.remove(), 600)
+  }, 9000)
+}
+
+function openChat(): void {
+  if (chatOpen || !running || docked) return
+  chatOpen = true
+  document.exitPointerLock()
+  chatInputEl.hidden = false
+  chatInputEl.value = ''
+  chatInputEl.focus()
+}
+
+function closeChat(): void {
+  chatOpen = false
+  chatInputEl.hidden = true
+  chatInputEl.blur()
+  if (running && !docked) renderer.domElement.requestPointerLock()
+}
+
+chatInputEl.addEventListener('keydown', (e) => {
+  e.stopPropagation()
+  if (e.code === 'Enter') {
+    const text = chatInputEl.value.trim()
+    if (text && !net.sendChat(text)) addChatLine(nicknameEl.value || 'PILOT', text) // offline: echo locally
+    closeChat()
+  } else if (e.code === 'Escape') {
+    closeChat()
+  }
 })
 
 const _qa = new THREE.Quaternion()
@@ -688,6 +741,7 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight)
   labelRenderer.setSize(innerWidth, innerHeight)
 })
+
 
 // --- Main loop
 let running = false

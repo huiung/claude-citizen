@@ -60,6 +60,20 @@
       background: rgba(0, 20, 34, .5); border: 1px solid #6fe8ff; padding: 8px 22px;
       border-radius: 4px; text-shadow: 0 0 10px rgba(111, 232, 255, .7);
     }
+    #chat-log {
+      position: fixed; left: 16px; bottom: 132px; width: 340px; max-width: 60vw; z-index: 7;
+      pointer-events: none; display: flex; flex-direction: column; gap: 3px;
+    }
+    .chat-line {
+      font-size: 12px; color: #cfeede; text-shadow: 0 0 4px #000; transition: opacity .5s;
+      background: rgba(0, 12, 6, .45); padding: 1px 7px; border-radius: 3px; align-self: flex-start;
+    }
+    .chat-line b { color: #9fffb0; }
+    #chat-input {
+      position: fixed; left: 16px; bottom: 100px; width: 340px; max-width: 60vw; z-index: 8;
+      background: rgba(0, 22, 11, .82); border: 1px solid #3fae5f; color: #9fffb0;
+      font-family: inherit; font-size: 13px; padding: 8px 12px; border-radius: 4px; outline: none;
+    }
     #dock-prompt {
       position: fixed; left: 50%; top: 62%; transform: translate(-50%, 0);
       pointer-events: none; font-size: 15px; letter-spacing: 2px;
@@ -169,10 +183,12 @@
   </div>
   <div id="damage-flash"></div>
   <div id="quantum" hidden></div>
+  <div id="chat-log"></div>
+  <input id="chat-input" hidden maxlength="160" autocomplete="off" placeholder="say something…  (Enter to send · Esc to cancel)" />
   <div id="help" hidden>
     MOUSE aim · W/S thrust · A/D strafe · R/F vertical · Q/E roll<br />
     SHIFT boost · X brake · V flight assist · ESC release mouse<br />
-    LEFT-CLICK mine · RIGHT-CLICK fire · SPACE dock · J quantum-jump to nearest planet
+    LEFT-CLICK mine · RIGHT-CLICK fire · SPACE dock · J quantum-jump · ENTER chat
   </div>
   <div id="overlay">
     <h1>STAR CITIZEN <span>CALIBER</span></h1>

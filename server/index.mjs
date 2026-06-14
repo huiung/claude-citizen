@@ -87,6 +87,19 @@ wss.on('connection', (ws) => {
       if (clean) { store[client.token] = clean; flush() }
       return
     }
+
+    if (msg.t === 'chat' && typeof msg.text === 'string') {
+      const now = Date.now()
+      if (now - (client.lastChat ?? 0) < 700) return // rate limit
+      client.lastChat = now
+      const text = msg.text.slice(0, 160).trim()
+      if (text) {
+        const out = { t: 'chat', name: client.name, text }
+        broadcast(ws, out)
+        ws.send(JSON.stringify(out)) // echo to sender so they see their own line
+      }
+      return
+    }
   })
 
   ws.on('close', () => {

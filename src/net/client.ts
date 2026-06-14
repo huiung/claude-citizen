@@ -25,6 +25,8 @@ export interface NetEvents {
   onStatus(connected: boolean, online: number): void
   /** Server returned saved progress for our token (server is the source of truth). */
   onProgress(progress: PlayerProgress): void
+  /** A chat line arrived (including our own, echoed by the server). */
+  onChat(name: string, text: string): void
 }
 
 const SEND_HZ = 10
@@ -89,6 +91,9 @@ export class NetClient {
       case 'progress':
         if (msg.data) this.events.onProgress(msg.data as PlayerProgress)
         break
+      case 'chat':
+        if (typeof msg.text === 'string') this.events.onChat(String(msg.name ?? '?'), msg.text)
+        break
     }
   }
 
@@ -113,6 +118,13 @@ export class NetClient {
   saveProgress(progress: PlayerProgress): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
     this.ws.send(JSON.stringify({ t: 'save', progress }))
+  }
+
+  /** Returns true if a chat line was sent (false when offline). */
+  sendChat(text: string): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    this.ws.send(JSON.stringify({ t: 'chat', text }))
+    return true
   }
 
   getPeers(): ReadonlyMap<string, PeerState> {
