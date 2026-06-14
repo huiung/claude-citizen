@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
 import { createShipState, stepShip, type ControlInput } from './sim/physics'
-import { buildShip } from './render/ship'
+import { buildCraft } from './render/shipyard'
+import { SHIP_STATS, type ShipType } from './sim/shipTypes'
 import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
   buildStarfield, buildStation, COLONY_POS, MINEABLE_SITES, REFINERY_POS,
@@ -13,6 +14,8 @@ import { createAsteroidField, mineStep } from './sim/mining'
 import { createMarket, step as marketStep } from './sim/market'
 import { generateContracts } from './sim/contracts'
 import { boostMultiplier, cargoCapacity, loadUpgrades, saveUpgrades, topSpeed } from './sim/upgrades'
+import { type Celestial, queryCelestials } from './sim/galaxy'
+import { cancelTravel, createQuantum, startTravel, stepQuantum } from './sim/quantum'
 import {
   canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
   isDead, type Projectile, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
@@ -45,6 +48,7 @@ const mineEl = document.getElementById('mine-prompt')!
 const hullBarEl = document.getElementById('hull-bar')!
 const enemiesEl = document.getElementById('enemies')!
 const flashEl = document.getElementById('damage-flash')!
+const quantumEl = document.getElementById('quantum')!
 
 nicknameEl.value = localStorage.getItem('callsign') ?? ''
 
@@ -63,9 +67,10 @@ appEl.appendChild(labelRenderer.domElement)
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x010206)
-const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.1, 50000)
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.5, 120000)
 
-scene.add(buildStarfield(), buildPlanet(), buildAsteroids())
+const starfield = buildStarfield()
+scene.add(starfield, buildPlanet(), buildAsteroids())
 const station = buildStation()
 const colony = buildColony()
 scene.add(station, colony)
@@ -81,9 +86,124 @@ for (const site of MINEABLE_SITES) {
   rockMeshes.set(site.id, { mesh, initial: site.reserves })
 }
 
-// --- Player
+// --- Procedural galaxy: stream celestial bodies in/out around the player.
+const STREAM_RADIUS = 80000
+const spawnedBodies = new Map<string, THREE.Object3D>()
+let lastStream = -Infinity
+
+function celestialRng(seed: number): () => number {
+  let a = (seed >>> 0) || 1
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function buildCelestial(c: Celestial): THREE.Object3D {
+  const rand = celestialRng(c.seed)
+  const group = new THREE.Group()
+  if (c.type === 'planet' || c.type === 'moon') {
+    const isPlanet = c.type === 'planet'
+    const hue = isPlanet ? rand() : 0.08 + rand() * 0.08
+    const sat = isPlanet ? 0.4 + rand() * 0.3 : 0.08
+    const body = new THREE.Mesh(
+      new THREE.IcosahedronGeometry(c.radius, isPlanet ? 3 : 2),
+      new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(hue, sat, 0.5), flatShading: true, roughness: 0.95 }),
+    )
+    group.add(body)
+    if (isPlanet) {
+      const atmo = new THREE.Mesh(
+        new THREE.SphereGeometry(c.radius * 1.05, 24, 16),
+        new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL((hue + 0.5) % 1, 0.6, 0.6), transparent: true, opacity: 0.1, side: THREE.BackSide }),
+      )
+      group.add(atmo)
+    }
+  } else if (c.type === 'asteroid-cluster') {
+    const mat = new THREE.MeshStandardMaterial({ color: 0x6b6258, flatShading: true, roughness: 1 })
+    const n = 6 + Math.floor(rand() * 8)
+    for (let i = 0; i < n; i++) {
+      const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(c.radius * (0.1 + rand() * 0.22), 0), mat)
+      rock.position.set((rand() - 0.5) * c.radius * 2, (rand() - 0.5) * c.radius * 2, (rand() - 0.5) * c.radius * 2)
+      group.add(rock)
+    }
+  } else if (c.type === 'station') {
+    const hull = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, flatShading: true, metalness: 0.6, roughness: 0.4 })
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(c.radius, c.radius * 0.12, 8, 18), hull)
+    group.add(ring)
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(c.radius * 0.22, c.radius * 0.22, c.radius * 0.6, 8), hull)
+    hub.rotation.x = Math.PI / 2
+    group.add(hub)
+  } else {
+    const mat = new THREE.MeshStandardMaterial({ color: 0x3a3530, flatShading: true, roughness: 1, metalness: 0.3 })
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(c.radius * 0.6, c.radius * 0.6, c.radius * 2), mat)
+    hull.rotation.set(rand() * 3, rand() * 3, rand() * 3)
+    group.add(hull)
+  }
+  group.position.copy(c.position)
+  return group
+}
+
+function disposeObject(obj: THREE.Object3D): void {
+  obj.traverse((o) => {
+    const m = o as THREE.Mesh
+    m.geometry?.dispose()
+    const mat = m.material as THREE.Material | THREE.Material[] | undefined
+    if (Array.isArray(mat)) mat.forEach((x) => x.dispose())
+    else mat?.dispose()
+  })
+}
+
+function streamCelestials(now: number): void {
+  if (now - lastStream < 800) return
+  lastStream = now
+  const nearby = queryCelestials(ship.position, STREAM_RADIUS)
+  const liveIds = new Set(nearby.map((c) => c.id))
+  for (const [id, mesh] of spawnedBodies) {
+    if (!liveIds.has(id)) {
+      scene.remove(mesh)
+      disposeObject(mesh)
+      spawnedBodies.delete(id)
+    }
+  }
+  for (const c of nearby) {
+    if (!spawnedBodies.has(c.id)) {
+      const mesh = buildCelestial(c)
+      scene.add(mesh)
+      spawnedBodies.set(c.id, mesh)
+    }
+  }
+}
+
+// --- Player & hangar
+const PLAYER_TINT = 0x4f8a5f
+const SHIP_PRICES: Record<ShipType, number> = { hauler: 0, fighter: 3000, miner: 4000, interceptor: 6000 }
+
+function loadHangar(): { selected: ShipType; owned: ShipType[] } {
+  try {
+    const raw = localStorage.getItem('scc.hangar.v1')
+    if (raw) {
+      const p = JSON.parse(raw)
+      const owned: ShipType[] = Array.isArray(p?.owned) ? p.owned.filter((t: string) => t in SHIP_STATS) : ['hauler']
+      const selected: ShipType = (p?.selected in SHIP_STATS) ? p.selected : 'hauler'
+      if (!owned.includes('hauler')) owned.push('hauler')
+      return { selected: owned.includes(selected) ? selected : 'hauler', owned }
+    }
+  } catch { /* fall through */ }
+  return { selected: 'hauler', owned: ['hauler'] }
+}
+const hangar = loadHangar()
+let selectedShipType: ShipType = hangar.selected
+const ownedShips = new Set<ShipType>(hangar.owned)
+function saveHangar(): void {
+  try {
+    localStorage.setItem('scc.hangar.v1', JSON.stringify({ selected: selectedShipType, owned: [...ownedShips] }))
+  } catch { /* ignore */ }
+}
+
 const ship = createShipState(new THREE.Vector3(0, 0, 0))
-const shipMesh = buildShip(0x4f8a5f)
+let shipMesh = buildCraft(selectedShipType, PLAYER_TINT)
 scene.add(shipMesh)
 
 // --- Mining VFX: cyan laser beam + impact glow + floating +ORE text
@@ -107,7 +227,7 @@ const _beamUp = new THREE.Vector3(0, 1, 0)
 const _beamDir = new THREE.Vector3()
 
 // --- Combat state
-const playerHealth = createHealth(100)
+const playerHealth = createHealth(SHIP_STATS[selectedShipType].hull)
 const playerWeapon = createWeapon(0.16)
 const projectiles: Projectile[] = []
 const projectileMeshes = new Map<Projectile, THREE.Mesh>()
@@ -119,6 +239,22 @@ let pirateSpawnCount = 0
 let nextSpawnAt = Infinity
 const MAX_PIRATES = 3
 const _fwd = new THREE.Vector3()
+
+// --- Quantum travel
+const quantum = createQuantum()
+const _qLook = new THREE.Vector3()
+
+/** Nearest planet/moon/station within stream range — the natural jump destination. */
+function nearestJumpTarget(): Celestial | null {
+  let best: Celestial | null = null
+  let bestD = Infinity
+  for (const c of queryCelestials(ship.position, STREAM_RADIUS)) {
+    if (c.type !== 'planet' && c.type !== 'moon' && c.type !== 'station') continue
+    const d = c.position.distanceToSquared(ship.position)
+    if (d < bestD) { bestD = d; best = c }
+  }
+  return best
+}
 
 const boltGeo = new THREE.SphereGeometry(0.45, 6, 6)
 const playerBoltMat = new THREE.MeshBasicMaterial({ color: 0x8ff0ff })
@@ -152,7 +288,7 @@ function spawnPirateWave(now: number): void {
   const pos = spawnPositionAround(ship.position, 600, pirateSpawnCount++)
   const pirate = spawnPirate(`pir-${pirateSpawnCount}`, pos)
   pirates.push(pirate)
-  const mesh = buildShip(0xc0392b)
+  const mesh = buildCraft('interceptor', 0xc0392b)
   mesh.position.copy(pos)
   scene.add(mesh)
   pirateMeshes.set(pirate.id, mesh)
@@ -220,9 +356,32 @@ let docked = false
 let miningActive = false
 let lastSave = 0
 
+// Effective stats = chosen craft's base + the delta the upgrade tiers add over a stock hauler.
+const baseSpeed = SHIP_STATS.hauler.topSpeed
+const baseBoost = SHIP_STATS.hauler.boostMultiplier
+const baseCargo = SHIP_STATS.hauler.cargo
+function effSpeed(): number { return SHIP_STATS[selectedShipType].topSpeed + (topSpeed(upgrades) - baseSpeed) }
+function effBoost(): number { return SHIP_STATS[selectedShipType].boostMultiplier + (boostMultiplier(upgrades) - baseBoost) }
+function effCargo(): number {
+  return Math.max(1, Math.round(SHIP_STATS[selectedShipType].cargo + (cargoCapacity(upgrades) - baseCargo)))
+}
+
+function setPlayerCraft(type: ShipType): void {
+  scene.remove(shipMesh)
+  disposeObject(shipMesh)
+  shipMesh = buildCraft(type, PLAYER_TINT)
+  shipMesh.position.copy(ship.position)
+  shipMesh.quaternion.copy(ship.quaternion)
+  scene.add(shipMesh)
+  selectedShipType = type
+  playerHealth.max = SHIP_STATS[type].hull
+  playerHealth.hull = playerHealth.max
+  saveHangar()
+}
+
 function updateWalletHUD(): void {
   creditsEl.textContent = String(Math.floor(econ.credits))
-  cargoEl.textContent = `${Math.floor(cargoUsed(econ))}/${cargoCapacity(upgrades)}`
+  cargoEl.textContent = `${Math.floor(cargoUsed(econ))}/${effCargo()}`
 }
 
 function refreshWallet(): void {
@@ -250,7 +409,23 @@ function dock(id: string): void {
   audio.setMining(false, false)
   audio.blip('dock')
   document.exitPointerLock()
-  stationMenu.open({ outpostId: id, econ, market, upgrades, contracts, audio })
+  stationMenu.open({
+    outpostId: id, econ, market, upgrades, contracts, audio,
+    capacity: effCargo,
+    selectedShip: () => selectedShipType,
+    ownedShips,
+    shipPrices: SHIP_PRICES,
+    onBuyShip: (type) => {
+      if (ownedShips.has(type) || econ.credits < SHIP_PRICES[type]) return
+      econ.credits -= SHIP_PRICES[type]
+      ownedShips.add(type)
+      saveHangar()
+      refreshWallet()
+    },
+    onSelectShip: (type) => {
+      if (ownedShips.has(type)) setPlayerCraft(type)
+    },
+  })
 }
 
 function undock(): void {
@@ -274,6 +449,14 @@ addEventListener('keydown', (e) => {
     assistEl.textContent = assist ? 'COUPLED' : 'DECOUPLED'
   }
   if (e.code === 'Space' && running && !docked && dockable) dock(dockable)
+  if (e.code === 'KeyJ' && running && !docked) {
+    if (quantum.phase === 'idle') {
+      const t = nearestJumpTarget()
+      if (t) { startTravel(quantum, t.position); audio.blip('dock') }
+    } else {
+      cancelTravel(quantum)
+    }
+  }
 })
 addEventListener('keyup', (e) => keys.delete(e.code))
 addEventListener('mousemove', (e) => {
@@ -321,7 +504,7 @@ const PALETTE = [0xc75d5d, 0x5d8ac7, 0xc7a85d, 0x9b5dc7, 0x5dc7b8, 0xc75da6]
 
 const net = new NetClient(nicknameEl.value || 'PILOT', {
   onPeerJoin(peer) {
-    const mesh = buildShip(PALETTE[peer.color % PALETTE.length])
+    const mesh = buildCraft('hauler', PALETTE[peer.color % PALETTE.length])
     const label = document.createElement('div')
     label.className = 'nameplate'
     label.textContent = peer.name
@@ -456,152 +639,6 @@ addEventListener('resize', () => {
   labelRenderer.setSize(innerWidth, innerHeight)
 })
 
-let captureCameraLocked = false
-
-declare global {
-  interface Window {
-    __sccCapture?: {
-      damagePlayer: (hull: number) => void
-      launch: () => void
-      reset: () => void
-      setCamera: (pos: [number, number, number], target: [number, number, number]) => void
-      setMining: (active: boolean) => void
-      setPlayerHull: (hull: number) => void
-      setPose: (pos: [number, number, number], target: [number, number, number]) => void
-      setWeapon: (active: boolean) => void
-      spawnPirateAt: (pos: [number, number, number], hull?: number) => void
-      unlockCamera: () => void
-    }
-  }
-}
-
-if (new URLSearchParams(location.search).has('capture')) {
-  const captureTarget = new THREE.Vector3()
-
-  const syncCaptureHUD = () => {
-    hullBarEl.style.width = `${Math.round(hullFraction(playerHealth) * 100)}%`
-    enemiesEl.textContent = String(pirates.length)
-    updateWalletHUD()
-  }
-
-  window.__sccCapture = {
-    damagePlayer(hull) {
-      playerHealth.hull = THREE.MathUtils.clamp(hull, 0, playerHealth.max)
-      damageFlash()
-      syncCaptureHUD()
-    },
-    launch() {
-      if (running) return
-      overlayEl.hidden = true
-      overlayEl.style.display = 'none'
-      hudEl.hidden = false
-      statusEl.hidden = false
-      helpEl.hidden = false
-      crosshairEl.hidden = false
-      walletEl.hidden = false
-      refreshWallet()
-      nextSpawnAt = Infinity
-      running = true
-      syncCaptureHUD()
-    },
-    reset() {
-      econ.credits = 500
-      econ.cargo.ORE = 0
-      econ.cargo.ALLOY = 0
-      upgrades.tiers.cargo = 0
-      upgrades.tiers.speed = 0
-      upgrades.tiers.boost = 0
-      for (const entry of Object.values(market.entries)) entry.impulse = 0
-      for (const contract of contracts) contract.status = 'offered'
-      for (const site of field.asteroids) {
-        const original = MINEABLE_SITES.find((s) => s.id === site.id)
-        site.reserves = original?.reserves ?? site.reserves
-        const rock = rockMeshes.get(site.id)
-        if (rock) {
-          rock.initial = site.reserves
-          rock.mesh.visible = true
-          rock.mesh.scale.setScalar(1)
-        }
-      }
-      for (const floating of oreFloats.splice(0)) scene.remove(floating.obj)
-      for (const mesh of projectileMeshes.values()) scene.remove(mesh)
-      projectileMeshes.clear()
-      projectiles.splice(0)
-      for (const mesh of pirateMeshes.values()) scene.remove(mesh)
-      pirateMeshes.clear()
-      pirates.splice(0)
-      for (const e of explosions.splice(0)) scene.remove(e.mesh)
-      oreAccum = 0
-      lastFloat = 0
-      pirateSpawnCount = 0
-      nextSpawnAt = Infinity
-      playerHealth.hull = playerHealth.max
-      miningActive = false
-      weaponActive = false
-      docked = false
-      dockable = null
-      captureCameraLocked = false
-      stationMenu.close()
-      dockPromptEl.hidden = true
-      mineEl.hidden = true
-      beam.visible = false
-      impact.visible = false
-      ship.position.set(0, 0, 0)
-      ship.velocity.set(0, 0, 0)
-      ship.quaternion.identity()
-      shipMesh.position.copy(ship.position)
-      shipMesh.quaternion.copy(ship.quaternion)
-      refreshWallet()
-      syncCaptureHUD()
-    },
-    setCamera(pos, target) {
-      captureCameraLocked = true
-      camera.position.fromArray(pos)
-      captureTarget.fromArray(target)
-      camera.lookAt(captureTarget)
-    },
-    setMining(active) {
-      miningActive = active
-    },
-    setPlayerHull(hull) {
-      playerHealth.hull = THREE.MathUtils.clamp(hull, 0, playerHealth.max)
-      syncCaptureHUD()
-    },
-    setPose(pos, target) {
-      docked = false
-      stationMenu.close()
-      ship.position.fromArray(pos)
-      ship.velocity.set(0, 0, 0)
-      shipMesh.position.copy(ship.position)
-      captureTarget.fromArray(target)
-      shipMesh.lookAt(captureTarget)
-      ship.quaternion.copy(shipMesh.quaternion)
-      if (!captureCameraLocked) updateCamera(1)
-    },
-    setWeapon(active) {
-      weaponActive = active
-    },
-    spawnPirateAt(pos, hull) {
-      if (pirates.length >= MAX_PIRATES) return
-      const pirate = spawnPirate(`cap-pir-${pirateSpawnCount++}`, new THREE.Vector3(...pos))
-      if (typeof hull === 'number') {
-        pirate.health.max = Math.max(1, hull)
-        pirate.health.hull = pirate.health.max
-      }
-      pirates.push(pirate)
-      const mesh = buildShip(0xc0392b)
-      mesh.position.copy(pirate.position)
-      mesh.lookAt(ship.position)
-      scene.add(mesh)
-      pirateMeshes.set(pirate.id, mesh)
-      syncCaptureHUD()
-    },
-    unlockCamera() {
-      captureCameraLocked = false
-    },
-  }
-}
-
 // --- Main loop
 let running = false
 let last = performance.now()
@@ -613,10 +650,32 @@ function frame(now: number): void {
 
   station.rotation.z += dt * 0.05
   colony.rotation.y += dt * 0.03
+  starfield.position.copy(ship.position) // keep the star backdrop centered on the player
+  if (running) streamCelestials(now)
 
-  if (running && !docked) {
+  if (running && !docked && quantum.phase !== 'idle') {
+    // Quantum jump in progress: the drive flies the ship; normal flight/combat is suspended.
+    const qr = stepQuantum(quantum, ship.position, ship.velocity, dt)
+    shipMesh.position.copy(ship.position)
+    if (ship.velocity.lengthSq() > 1) {
+      _qLook.copy(ship.position).add(ship.velocity)
+      shipMesh.lookAt(_qLook)
+      ship.quaternion.copy(shipMesh.quaternion)
+    }
+    quantumEl.hidden = false
+    quantumEl.textContent = qr.phase === 'spooling'
+      ? 'QUANTUM DRIVE SPOOLING…'
+      : `QUANTUM TRAVEL · ${Math.round(qr.progress * 100)}%`
+    audio.setThrust(qr.phase === 'traveling' ? 1 : 0.2, qr.phase === 'traveling')
+    net.sendState(
+      [ship.position.x, ship.position.y, ship.position.z],
+      [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],
+      now,
+    )
+  } else if (running && !docked) {
+    quantumEl.hidden = true
     const input = readInput()
-    stepShip(ship, input, dt, { maxSpeed: topSpeed(upgrades), boostMultiplier: boostMultiplier(upgrades) })
+    stepShip(ship, input, dt, { maxSpeed: effSpeed(), boostMultiplier: effBoost() })
     shipMesh.position.copy(ship.position)
     shipMesh.quaternion.copy(ship.quaternion)
 
@@ -630,7 +689,7 @@ function frame(now: number): void {
     marketStep(market, dt)
 
     // Mining: transfer ORE from the nearest in-range asteroid while the laser is held.
-    const mineResult = mineStep(field, ship.position, econ, dt, miningActive, cargoCapacity(upgrades))
+    const mineResult = mineStep(field, ship.position, econ, dt, miningActive, effCargo())
     if (mineResult.mined > 0 && mineResult.asteroid) {
       updateWalletHUD()
       const rm = rockMeshes.get(mineResult.asteroid.id)
@@ -719,7 +778,7 @@ function frame(now: number): void {
 
   if (running) {
     updateRemotes()
-    if (!captureCameraLocked) updateCamera(dt)
+    updateCamera(dt)
   } else {
     // Menu background: slow orbit around the station
     const t = now * 0.0001

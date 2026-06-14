@@ -53,6 +53,12 @@
       position: fixed; inset: 0; pointer-events: none; z-index: 5; opacity: 0;
       transition: opacity .13s ease-out; box-shadow: inset 0 0 130px 30px rgba(255, 40, 40, .55);
     }
+    #quantum {
+      position: fixed; left: 50%; top: 17%; transform: translateX(-50%); pointer-events: none;
+      font-size: 16px; letter-spacing: 3px; color: #aee9ff; z-index: 6;
+      background: rgba(0, 20, 34, .5); border: 1px solid #6fe8ff; padding: 8px 22px;
+      border-radius: 4px; text-shadow: 0 0 10px rgba(111, 232, 255, .7);
+    }
     #dock-prompt {
       position: fixed; left: 50%; top: 62%; transform: translate(-50%, 0);
       pointer-events: none; font-size: 15px; letter-spacing: 2px;
@@ -160,10 +166,11 @@
     <div><span id="enemies">0</span> HOSTILE(S)</div>
   </div>
   <div id="damage-flash"></div>
+  <div id="quantum" hidden></div>
   <div id="help" hidden>
     MOUSE aim · W/S thrust · A/D strafe · R/F vertical · Q/E roll<br />
     SHIFT boost · X brake · V flight assist · ESC release mouse<br />
-    LEFT-CLICK mine ore · RIGHT-CLICK fire weapon · SPACE dock (trade / upgrade / contracts)
+    LEFT-CLICK mine · RIGHT-CLICK fire · SPACE dock · J quantum-jump to nearest planet
   </div>
   <div id="overlay">
     <h1>STAR CITIZEN <span>CALIBER</span></h1>

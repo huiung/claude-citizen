@@ -8,10 +8,11 @@ import {
   type UpgradeTrack,
 } from '../sim/upgrades'
 import { abandon, accept, completeContract, type Contract } from '../sim/contracts'
+import { SHIP_STATS, SHIP_TYPES, type ShipType } from '../sim/shipTypes'
 import type { GameAudio } from '../audio/sound'
 
 const COMMODITY_ORDER: CommodityId[] = ['ORE', 'ALLOY']
-type Tab = 'trade' | 'upgrades' | 'contracts'
+type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard'
 
 export interface StationContext {
   outpostId: string
@@ -20,6 +21,15 @@ export interface StationContext {
   upgrades: ShipUpgrades
   contracts: Contract[]
   audio: GameAudio
+  /** Effective cargo capacity of the current craft (base + upgrade delta). */
+  capacity: () => number
+  /** Currently flown craft type. */
+  selectedShip: () => ShipType
+  /** Live set of owned craft (mutated by onBuyShip). */
+  ownedShips: Set<ShipType>
+  shipPrices: Record<ShipType, number>
+  onBuyShip: (type: ShipType) => void
+  onSelectShip: (type: ShipType) => void
 }
 
 /**
@@ -58,6 +68,7 @@ export class StationMenu {
         <div class="station-tabs">
           <button data-tab="trade">TRADE</button>
           <button data-tab="upgrades">UPGRADES</button>
+          <button data-tab="shipyard">SHIPYARD</button>
           <button data-tab="contracts">CONTRACTS</button>
         </div>
         <div id="station-body"></div>
@@ -108,6 +119,7 @@ export class StationMenu {
     switch (this.tab) {
       case 'trade': return 'Buy low here, sell high at the other outpost. Mine ORE from asteroids for free.'
       case 'upgrades': return 'Spend credits to fly faster and haul more.'
+      case 'shipyard': return 'Buy a hull and switch to it. Each trades cargo, speed, and toughness differently.'
       case 'contracts': return 'Accept a haul, deliver to its destination outpost for the reward.'
     }
   }
@@ -125,7 +137,7 @@ export class StationMenu {
   }
 
   private capacity(): number {
-    return cargoCapacity(this.ctx.upgrades)
+    return this.ctx.capacity()
   }
 
   private trade(kind: 'buy' | 'sell', id: CommodityId, qty: number): void {
@@ -197,6 +209,7 @@ export class StationMenu {
     this.bodyEl.innerHTML = ''
     if (this.tab === 'trade') this.renderTrade()
     else if (this.tab === 'upgrades') this.renderUpgrades()
+    else if (this.tab === 'shipyard') this.renderShipyard()
     else this.renderContracts()
   }
 
@@ -264,6 +277,40 @@ export class StationMenu {
         const canComplete = c.toId === here && this.ctx.econ.cargo[c.commodity] >= c.qty
         actions.appendChild(this.btn('Deliver', 'buy', !canComplete, () => this.resolveContract(c, 'complete')))
         actions.appendChild(this.btn('Drop', 'sell', false, () => this.resolveContract(c, 'abandon')))
+      }
+      this.bodyEl.appendChild(row)
+    }
+  }
+
+  private renderShipyard(): void {
+    const current = this.ctx.selectedShip()
+    for (const type of SHIP_TYPES) {
+      const s = SHIP_STATS[type]
+      const owned = this.ctx.ownedShips.has(type)
+      const isCurrent = type === current
+      const stats = `cargo ${s.cargo} · spd ${s.topSpeed} · hull ${s.hull}`
+      const right = isCurrent ? 'IN USE' : owned ? 'OWNED' : `${this.ctx.shipPrices[type]} cr`
+      const row = this.rowEl(s.role, stats, right)
+      const actions = row.querySelector('.s-actions')!
+      if (isCurrent) {
+        const span = document.createElement('span')
+        span.className = 'maxed'
+        span.textContent = 'FLYING'
+        actions.appendChild(span)
+      } else if (owned) {
+        actions.appendChild(this.btn('Fly', 'buy', false, () => {
+          this.ctx.onSelectShip(type)
+          this.onChange()
+          this.render()
+        }))
+      } else {
+        const price = this.ctx.shipPrices[type]
+        actions.appendChild(this.btn('Buy', 'buy', price > this.ctx.econ.credits, () => {
+          this.ctx.onBuyShip(type)
+          this.ctx.audio.blip('trade')
+          this.onChange()
+          this.render()
+        }))
       }
       this.bodyEl.appendChild(row)
     }

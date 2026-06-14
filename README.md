@@ -36,9 +36,12 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Upgrade your craft:** cargo hold, top speed, boost — credits well spent
 - **Delivery contracts:** accept haul missions, deliver to the destination outpost for the reward
 - **Pirates:** hostiles hunt you in the sector — shoot back, watch your hull, collect the bounty
+- **An endless procedural galaxy:** fly any direction and planets, moons, stations, and derelicts keep appearing — some planets are vast
+- **Quantum travel:** charge the drive and jump across the sector to a distant planet in seconds
+- **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor, each trading cargo/speed/toughness
 - Procedural engine + combat + UI audio — synthesized live, no sound files
 - Real-time multiplayer: see other pilots' craft and callsigns
-- 97 tests, because "built with AI" shouldn't mean "built badly"
+- 128 tests, because "built with AI" shouldn't mean "built badly"
 
 ## Controls
 
@@ -54,7 +57,8 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | V | Toggle flight assist (coupled ↔ Newtonian) |
 | Left-click (hold) | Fire mining laser at a nearby asteroid |
 | Right-click (hold) | Fire weapon at hostiles |
-| Space | Dock (when slow + near an outpost) — trade, upgrade, take contracts |
+| Space | Dock (when slow + near an outpost) — trade, upgrade, buy ships, take contracts |
+| J | Quantum jump to the nearest planet |
 
 ## Roadmap
 
@@ -64,8 +68,9 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | 1 | Docking, two-way cargo loop, credits | ✅ shipped |
 | 2 | Mining, dynamic market, craft upgrades, contracts, audio | ✅ shipped |
 | 3 | Pirate threats — combat, hull, bounties | ✅ shipped |
-| 4 | Persistence — your craft is still yours tomorrow | next |
-| 5 | More craft, deeper systems, simple PvP | planned |
+| 4 | Endless procedural galaxy, quantum travel, ship classes | ✅ shipped |
+| 5 | Persistence — your craft is still yours tomorrow | next |
+| 6 | Co-op combat, safe zones, deeper systems | planned |
 | 4 | Procedural planetary landings | planned |
 | … | … | … |
 | 9 | Getting out of bed animation *(took the original 6 years — we'll take a weekend)* | someday |

@@ -77,3 +77,24 @@ Added a threat system so the trade loop has stakes:
 **Human did:** flew the fight, tuned it — mouse felt sluggish (raised sensitivity), asked how
 to shoot (right-click), and added the gated mining hum.
 **Model did:** the combat + pirate systems, integration, VFX, and combat audio.
+
+## Day 2 — 2026-06-14: the world gets vast
+
+"The map feels small and empty" — so it got bigger. Three modules built in parallel by
+subagents, then integrated:
+
+- **Endless procedural galaxy** (`sim/galaxy.ts`) — a deterministic cell grid hashes celestial
+  bodies (planets, moons, stations, derelicts) into infinite space. Fly any direction and new
+  bodies keep appearing; the start area stays hand-curated. Streamed in/out around the player.
+- **Ship classes** (`sim/shipTypes.ts` + `render/shipyard.ts`) — hauler / fighter / miner /
+  interceptor, distinct silhouettes and stats. Buy and switch hulls at a station SHIPYARD tab.
+- **Quantum travel** (`sim/quantum.ts`) — SC-style jump drive: spool, accelerate to thousands of
+  m/s, drop out short of a distant planet. Bound to J.
+
+Pirates now fly the interceptor hull. Also removed a capture/recording harness from main.ts.
+19 new tests; 128 total green.
+
+**Human did:** caught that the world felt like a small diorama and that the player was stuck in
+one green hauler, directed the fix, and is tuning density/balance by flying it.
+**Model did:** the three modules (in parallel), all the integration, the shipyard UI, and the
+celestial streaming/rendering.
