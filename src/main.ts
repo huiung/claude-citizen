@@ -49,6 +49,7 @@ const hullBarEl = document.getElementById('hull-bar')!
 const enemiesEl = document.getElementById('enemies')!
 const flashEl = document.getElementById('damage-flash')!
 const quantumEl = document.getElementById('quantum')!
+const safeEl = document.getElementById('safe-zone')!
 
 nicknameEl.value = localStorage.getItem('callsign') ?? ''
 
@@ -240,6 +241,14 @@ let nextSpawnAt = Infinity
 const MAX_PIRATES = 3
 const _fwd = new THREE.Vector3()
 
+// Safe zones — no pirates near the hand-placed outposts. Trade routes between them are risky;
+// arriving at a station means you can breathe.
+const SAFE_RADIUS = 1600
+const SAFE_ANCHORS = [new THREE.Vector3(0, 0, 0), REFINERY_POS, COLONY_POS]
+function inSafeZone(pos: THREE.Vector3): boolean {
+  return SAFE_ANCHORS.some((a) => pos.distanceToSquared(a) < SAFE_RADIUS * SAFE_RADIUS)
+}
+
 // --- Quantum travel
 const quantum = createQuantum()
 const _qLook = new THREE.Vector3()
@@ -285,6 +294,7 @@ function damageFlash(): void {
 
 function spawnPirateWave(now: number): void {
   if (pirates.length >= MAX_PIRATES) return
+  if (inSafeZone(ship.position)) return
   const pos = spawnPositionAround(ship.position, 600, pirateSpawnCount++)
   const pirate = spawnPirate(`pir-${pirateSpawnCount}`, pos)
   pirates.push(pirate)
@@ -403,6 +413,7 @@ function dock(id: string): void {
   mineEl.hidden = true
   beam.visible = false
   impact.visible = false
+  safeEl.hidden = true
   weaponActive = false
   ship.velocity.set(0, 0, 0)
   audio.setThrust(0, false)
@@ -729,7 +740,21 @@ function frame(now: number): void {
       audio.blip('fire')
     }
 
-    if (now >= nextSpawnAt) {
+    // Safe zone: near an outpost, hostiles break off and leave you alone.
+    const safe = inSafeZone(ship.position)
+    safeEl.hidden = !safe
+    if (safe && pirates.length) {
+      for (const p of pirates) {
+        const mesh = pirateMeshes.get(p.id)
+        if (mesh) { scene.remove(mesh); pirateMeshes.delete(p.id) }
+      }
+      pirates.splice(0)
+      for (let i = projectiles.length - 1; i >= 0; i--) {
+        if (projectiles[i].faction === 'pirate') projectiles.splice(i, 1)
+      }
+    }
+
+    if (!safe && now >= nextSpawnAt) {
       spawnPirateWave(now)
       nextSpawnAt = now + 15000
     }
