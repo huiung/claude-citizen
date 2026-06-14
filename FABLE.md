@@ -19,3 +19,24 @@ the model writes the code. This file is the receipt.
 rejected scope creep, will tune flight feel against real hands.
 
 **Model did:** everything else.
+
+## Day 2 — 2026-06-14
+
+**Shipped:** Phase 1 — docking, a two-way cargo trade loop, and credits. The sandbox is a game now.
+
+- Economy (`src/sim/economy.ts`) — credits, cargo hold, buy/sell with capacity and balance
+  checks. Pure logic, 9 unit tests. ORE and ALLOY priced so both legs of the haul turn a profit
+  (Colony ↔ Refinery), so you never fly home empty.
+- Docking (`src/sim/docking.ts`) — dockable when within 200m and under 18 m/s. Nearest outpost
+  wins. 5 unit tests.
+- Helios Mining Colony (`src/render/world.ts`) — second outpost near the planet, ~7km from the
+  refinery, amber beacons to tell it apart at a glance.
+- Trade panel (`src/ui/tradePanel.ts`) — DOM, no framework. Buy/sell with live affordability,
+  cargo and credit readouts. Credits persist to localStorage.
+
+**Human did:** flew the loop end to end, caught a bug the model missed — the UNDOCK button did
+nothing. Turned out the panel's `hidden` attribute was being overridden by a CSS `display: flex`
+rule, so the overlay never actually hid. One-line fix (`#trade[hidden] { display: none }`), but a
+good reminder: AI writes the code, a human still has to fly it.
+
+**Model did:** everything above, plus the bug fix once the symptom was reported.

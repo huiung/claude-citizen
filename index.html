@@ -32,6 +32,58 @@
       width: 6px; height: 6px; border: 1px solid #9fffb0; border-radius: 50%;
       opacity: .6; pointer-events: none;
     }
+    #wallet {
+      position: fixed; left: 16px; top: 16px; pointer-events: none;
+      font-size: 13px; line-height: 1.7; text-shadow: 0 0 6px rgba(80, 255, 120, .4);
+    }
+    #wallet b { color: #ffe08a; }
+    #dock-prompt {
+      position: fixed; left: 50%; top: 62%; transform: translate(-50%, 0);
+      pointer-events: none; font-size: 15px; letter-spacing: 2px;
+      background: rgba(0, 30, 12, .55); border: 1px solid #3fae5f;
+      padding: 8px 18px; border-radius: 4px; text-shadow: 0 0 8px rgba(80,255,120,.6);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100% { opacity: .65 } 50% { opacity: 1 } }
+    /* Docking trade screen */
+    #trade {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at center, rgba(2,12,6,.82), rgba(0,0,0,.93));
+      z-index: 20;
+    }
+    #trade[hidden] { display: none; }
+    .trade-card {
+      width: 520px; max-width: 92vw; background: rgba(4, 18, 9, .95);
+      border: 1px solid #2f7a45; border-radius: 8px; padding: 22px 24px;
+      box-shadow: 0 0 40px rgba(40, 180, 80, .15);
+    }
+    .trade-head { display: flex; align-items: center; justify-content: space-between; }
+    .trade-head h2 { font-size: 19px; letter-spacing: 2px; font-weight: 600; }
+    #trade-undock {
+      background: #123c20; color: #9fffb0; border: 1px solid #3fae5f;
+      padding: 6px 16px; font-family: inherit; font-size: 12px; letter-spacing: 2px;
+      cursor: pointer; border-radius: 4px;
+    }
+    #trade-undock:hover { background: #1b5a30; }
+    .trade-stats { display: flex; gap: 28px; margin: 14px 0 18px; font-size: 13px; opacity: .85; }
+    .trade-stats b { color: #ffe08a; font-size: 15px; }
+    .trade-row {
+      display: grid; grid-template-columns: 1.4fr .8fr .6fr auto; align-items: center;
+      gap: 8px; padding: 10px 0; border-top: 1px solid rgba(63, 174, 95, .2);
+    }
+    .c-name { font-size: 14px; }
+    .c-price { color: #ffe08a; font-size: 13px; }
+    .c-held { opacity: .7; font-size: 13px; }
+    .c-actions { display: flex; gap: 6px; justify-content: flex-end; }
+    .c-actions button {
+      font-family: inherit; font-size: 11px; padding: 5px 9px; border-radius: 3px; cursor: pointer;
+      border: 1px solid #356; background: #0d2436; color: #bfe;
+    }
+    .c-actions button.buy { border-color: #3fae5f; background: #103019; color: #9fffb0; }
+    .c-actions button:hover:not(:disabled) { filter: brightness(1.4); }
+    .c-actions button:disabled { opacity: .3; cursor: default; }
+    .trade-hint { margin-top: 16px; font-size: 11px; opacity: .5; }
+    .trade-hint.flash { color: #ff9b6b; opacity: 1; }
     #overlay {
       position: fixed; inset: 0; display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 18px;
@@ -58,6 +110,11 @@
 <body>
   <div id="app"></div>
   <div id="crosshair" hidden></div>
+  <div id="wallet" hidden>
+    <div><b id="credits">500</b> cr</div>
+    <div>CARGO <span id="cargo">0/20</span></div>
+  </div>
+  <div id="dock-prompt" hidden>▸ PRESS F TO DOCK</div>
   <div id="hud" hidden>
     <div class="big"><span id="speed">0</span> m/s</div>
     <div>FLIGHT ASSIST: <span id="assist">COUPLED</span></div>
@@ -69,7 +126,8 @@
   </div>
   <div id="help" hidden>
     MOUSE aim · W/S thrust · A/D strafe · R/F vertical<br />
-    Q/E roll · SHIFT boost · X brake · V flight assist · ESC release mouse
+    Q/E roll · SHIFT boost · X brake · V flight assist · ESC release mouse<br />
+    approach an outpost slowly → SPACE to dock &amp; trade
   </div>
   <div id="overlay">
     <h1>STAR CITIZEN <span>CALIBER</span></h1>

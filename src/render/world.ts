@@ -76,6 +76,10 @@ export function buildPlanet(): THREE.Group {
   return group
 }
 
+// Shared world positions — render and sim (docking) read the same source.
+export const REFINERY_POS = new THREE.Vector3(120, 30, -350)
+export const COLONY_POS = new THREE.Vector3(-1900, -800, -7000)
+
 export function buildStation(): THREE.Group {
   const group = new THREE.Group()
   const hull = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, flatShading: true, metalness: 0.6, roughness: 0.4 })
@@ -102,7 +106,47 @@ export function buildStation(): THREE.Group {
     light.position.set(0, 0, side * 16)
     group.add(light)
   }
-  group.position.set(120, 30, -350)
+  group.position.copy(REFINERY_POS)
+  return group
+}
+
+/** Mining colony near the planet — the other end of the trade loop. Distinct silhouette. */
+export function buildColony(): THREE.Group {
+  const group = new THREE.Group()
+  const hull = new THREE.MeshStandardMaterial({ color: 0xb58a3a, flatShading: true, metalness: 0.5, roughness: 0.6 })
+  const dark = new THREE.MeshStandardMaterial({ color: 0x33291a, flatShading: true, metalness: 0.6, roughness: 0.5 })
+
+  // Central drum
+  const drum = new THREE.Mesh(new THREE.CylinderGeometry(34, 34, 70, 8), hull)
+  group.add(drum)
+  // Cap domes
+  for (const y of [-40, 40]) {
+    const cap = new THREE.Mesh(new THREE.ConeGeometry(34, 20, 8), dark)
+    cap.position.y = y
+    cap.rotation.x = y > 0 ? 0 : Math.PI
+    group.add(cap)
+  }
+  // Mining arms jutting outward
+  for (let i = 0; i < 5; i++) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(70, 5, 5), dark)
+    const a = (i / 5) * Math.PI * 2
+    arm.position.set(Math.cos(a) * 45, (i - 2) * 12, Math.sin(a) * 45)
+    arm.rotation.y = -a
+    group.add(arm)
+    const pod = new THREE.Mesh(new THREE.IcosahedronGeometry(9, 0), hull)
+    pod.position.set(Math.cos(a) * 82, (i - 2) * 12, Math.sin(a) * 82)
+    group.add(pod)
+  }
+  // Amber docking beacons (vs the station's green)
+  for (const y of [-44, 44]) {
+    const light = new THREE.Mesh(
+      new THREE.SphereGeometry(1.6, 6, 4),
+      new THREE.MeshBasicMaterial({ color: 0xffb347 }),
+    )
+    light.position.set(0, y, 0)
+    group.add(light)
+  }
+  group.position.copy(COLONY_POS)
   return group
 }
 

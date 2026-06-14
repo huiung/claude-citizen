@@ -30,9 +30,10 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 ## What works today (Day 0)
 
 - 6DOF spaceflight in your browser — coupled (flight assist) and decoupled (full Newton) modes
-- A space station, a planet, an asteroid belt — 100% procedurally generated, zero asset files
+- A refinery station, a mining colony, a planet, an asteroid belt — 100% procedurally generated, zero asset files
+- **A working economy:** dock at an outpost, trade ore and alloy, run the two-way haul loop for profit
 - Real-time multiplayer: see other pilots' ships and callsigns
-- Physics covered by tests, because "built with AI" shouldn't mean "built badly"
+- Physics and economy covered by tests, because "built with AI" shouldn't mean "built badly"
 
 ## Controls
 
@@ -46,14 +47,15 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | Shift | Boost |
 | X | Brake |
 | V | Toggle flight assist (coupled ↔ Newtonian) |
+| Space | Dock (when slow + near an outpost) / trade |
 
 ## Roadmap
 
 | Phase | What | Status |
 |---|---|---|
 | 0 | Flyable browser sandbox + multiplayer presence | ✅ shipped (day one) |
-| 1 | Docking, one cargo-hauling loop, credits | next |
-| 2 | Persistence — your ship is still yours tomorrow | planned |
+| 1 | Docking, two-way cargo loop, credits | ✅ shipped |
+| 2 | Persistence — your ship is still yours tomorrow | next |
 | 3 | More ships, mining, simple PvP | planned |
 | 4 | Procedural planetary landings | planned |
 | … | … | … |

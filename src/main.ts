@@ -2,8 +2,16 @@ import * as THREE from 'three'
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
 import { createShipState, stepShip, type ControlInput } from './sim/physics'
 import { buildShip } from './render/ship'
-import { buildAsteroids, buildLights, buildPlanet, buildStarfield, buildStation } from './render/world'
+import {
+  buildAsteroids, buildColony, buildLights, buildPlanet, buildStarfield, buildStation,
+  COLONY_POS, REFINERY_POS,
+} from './render/world'
 import { NetClient, type PeerState } from './net/client'
+import { dockableTarget, type DockTarget } from './sim/docking'
+import {
+  CARGO_CAPACITY, cargoUsed, loadEconomy, OUTPOSTS, saveEconomy,
+} from './sim/economy'
+import { TradePanel } from './ui/tradePanel'
 
 const INTERP_DELAY_MS = 120
 
@@ -21,6 +29,10 @@ const assistEl = document.getElementById('assist')!
 const boostEl = document.getElementById('boost')!
 const netEl = document.getElementById('net')!
 const onlineEl = document.getElementById('online')!
+const walletEl = document.getElementById('wallet')!
+const creditsEl = document.getElementById('credits')!
+const cargoEl = document.getElementById('cargo')!
+const dockPromptEl = document.getElementById('dock-prompt')!
 
 nicknameEl.value = localStorage.getItem('callsign') ?? ''
 
@@ -43,13 +55,49 @@ const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.1, 50
 
 scene.add(buildStarfield(), buildPlanet(), buildAsteroids())
 const station = buildStation()
-scene.add(station)
+const colony = buildColony()
+scene.add(station, colony)
 buildLights(scene)
 
 // --- Player
 const ship = createShipState(new THREE.Vector3(0, 0, 0))
 const shipMesh = buildShip(0x4f8a5f)
 scene.add(shipMesh)
+
+// --- Economy & docking
+const econ = loadEconomy()
+const dockTargets: DockTarget[] = [
+  { id: 'refinery', position: REFINERY_POS },
+  { id: 'colony', position: COLONY_POS },
+]
+let dockable: string | null = null
+let docked = false
+
+function refreshWallet(): void {
+  creditsEl.textContent = String(econ.credits)
+  cargoEl.textContent = `${cargoUsed(econ)}/${CARGO_CAPACITY}`
+  saveEconomy(econ)
+}
+
+const tradePanel = new TradePanel({
+  onChange: refreshWallet,
+  onUndock: undock,
+})
+document.body.appendChild(tradePanel.root)
+
+function dock(id: string): void {
+  docked = true
+  dockPromptEl.hidden = true
+  ship.velocity.set(0, 0, 0)
+  document.exitPointerLock()
+  tradePanel.open(id === 'colony' ? OUTPOSTS.colony : OUTPOSTS.refinery, econ)
+}
+
+function undock(): void {
+  tradePanel.close()
+  docked = false
+  renderer.domElement.requestPointerLock()
+}
 
 // --- Input
 const keys = new Set<string>()
@@ -58,12 +106,14 @@ let mouseYaw = 0
 let assist = true
 
 addEventListener('keydown', (e) => {
+  if (e.code === 'Space') e.preventDefault()
   if (e.repeat) return
   keys.add(e.code)
   if (e.code === 'KeyV') {
     assist = !assist
     assistEl.textContent = assist ? 'COUPLED' : 'DECOUPLED'
   }
+  if (e.code === 'Space' && running && !docked && dockable) dock(dockable)
 })
 addEventListener('keyup', (e) => keys.delete(e.code))
 addEventListener('mousemove', (e) => {
@@ -167,6 +217,8 @@ function launch(): void {
   statusEl.hidden = false
   helpEl.hidden = false
   crosshairEl.hidden = false
+  walletEl.hidden = false
+  refreshWallet()
   renderer.domElement.requestPointerLock()
   net.connect()
   running = true
@@ -196,8 +248,9 @@ function frame(now: number): void {
   last = now
 
   station.rotation.z += dt * 0.05
+  colony.rotation.y += dt * 0.03
 
-  if (running) {
+  if (running && !docked) {
     stepShip(ship, readInput(), dt)
     shipMesh.position.copy(ship.position)
     shipMesh.quaternion.copy(ship.quaternion)
@@ -205,11 +258,17 @@ function frame(now: number): void {
     speedEl.textContent = String(Math.round(ship.velocity.length()))
     boostEl.style.visibility = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 'visible' : 'hidden'
 
+    dockable = dockableTarget(ship.position, ship.velocity.length(), dockTargets)
+    dockPromptEl.hidden = dockable === null
+
     net.sendState(
       [ship.position.x, ship.position.y, ship.position.z],
       [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],
       now,
     )
+  }
+
+  if (running) {
     updateRemotes()
     updateCamera(dt)
   } else {
