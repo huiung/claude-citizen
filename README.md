@@ -4,7 +4,7 @@
 
 **They've had 14 years and $800M. We have Claude Fable 5 and weekends.**
 
-![Day 0 flight — procedural everything, real-time multiplayer, in the browser](./docs/flight.gif)
+![Dock, trade, haul — the full economy loop, all in the browser](./docs/loop.gif)
 
 > ⚠️ **Not affiliated with Cloud Imperium Games or Roberts Space Industries.**
 > This is an independent open-source project. "Star Citizen" is referenced purely
