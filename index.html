@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>STAR CITIZEN CALIBER</title>
+  <title>Claude Citizen — finish Star Citizen before Star Citizen does</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
@@ -158,6 +158,14 @@
     }
     #overlay button:hover { background: #1b5a30; }
     #overlay .foot { font-size: 11px; opacity: .4; }
+    #landing-stats { font-size: 13px; color: #9fffb0; opacity: .9; letter-spacing: 1px; }
+    #landing-stats span { color: #ffe08a; font-weight: 600; }
+    #landing-links { display: flex; gap: 22px; margin-top: 4px; }
+    #landing-links a {
+      color: #7fc99a; font-size: 12px; text-decoration: none;
+      border-bottom: 1px solid rgba(127, 201, 154, .3); padding-bottom: 1px;
+    }
+    #landing-links a:hover { color: #9fffb0; }
   </style>
 </head>
 <body>
@@ -191,11 +199,16 @@
     LEFT-CLICK mine · RIGHT-CLICK fire · SPACE dock · J quantum-jump · ENTER chat
   </div>
   <div id="overlay">
-    <h1>STAR CITIZEN <span>CALIBER</span></h1>
+    <h1>CLAUDE <span>CITIZEN</span></h1>
     <p>An open-source attempt to finish Star Citizen before Star Citizen does.<br/>Built with Claude Fable 5. Not affiliated with CIG/RSI.</p>
+    <div id="landing-stats"><span id="stat-online">—</span> online · <span id="stat-registered">—</span> pilots registered</div>
     <input id="nickname" maxlength="16" placeholder="CALLSIGN" autocomplete="off" />
     <button id="launch">LAUNCH</button>
     <p class="foot">click LAUNCH to grab mouse · 60 seconds from click to flight, that's the rule</p>
+    <div id="landing-links">
+      <a href="https://github.com/huiung/star-citizen-caliber" target="_blank" rel="noopener">★ Open source on GitHub</a>
+      <a href="/wiki.html">📖 Wiki &amp; Guide</a>
+    </div>
   </div>
   <script type="module" src="/src/main.ts"></script>
 </body>

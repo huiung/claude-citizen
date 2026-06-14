@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Claude Citizen — Wiki &amp; Guide</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { background: #02060a; color: #cfeede; font-family: "SF Mono", "Fira Code", ui-monospace, monospace; }
+    body { line-height: 1.7; padding: 0 20px 80px; }
+    .wrap { max-width: 760px; margin: 0 auto; }
+    header { padding: 40px 0 24px; border-bottom: 1px solid rgba(63, 174, 95, .25); margin-bottom: 28px; }
+    h1 { font-size: 26px; letter-spacing: 3px; color: #9fffb0; font-weight: 600; }
+    h1 span { opacity: .5; }
+    .sub { font-size: 13px; opacity: .6; margin-top: 8px; }
+    nav { margin-top: 16px; display: flex; gap: 18px; flex-wrap: wrap; }
+    nav a { color: #7fc99a; font-size: 12px; text-decoration: none; border-bottom: 1px solid rgba(127,201,154,.3); }
+    nav a:hover { color: #9fffb0; }
+    h2 { font-size: 17px; color: #9fffb0; letter-spacing: 2px; margin: 34px 0 10px; }
+    p, li { font-size: 14px; opacity: .9; }
+    ul { margin: 8px 0 8px 22px; }
+    li { margin: 4px 0; }
+    code, kbd { background: rgba(63,174,95,.14); border: 1px solid rgba(63,174,95,.3); border-radius: 3px; padding: 1px 6px; font-size: 13px; color: #aef6ff; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+    th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid rgba(63,174,95,.18); }
+    th { color: #9fffb0; }
+    .key { color: #ffe08a; }
+    .foot { margin-top: 48px; padding-top: 18px; border-top: 1px solid rgba(63,174,95,.25); font-size: 12px; opacity: .55; }
+    a { color: #7fc99a; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>CLAUDE <span>CITIZEN</span> — WIKI</h1>
+      <div class="sub">An open-source attempt to finish Star Citizen before Star Citizen does. Built with Claude Fable 5.</div>
+      <nav>
+        <a href="/">▶ Play</a>
+        <a href="https://github.com/huiung/star-citizen-caliber" target="_blank" rel="noopener">★ GitHub</a>
+      </nav>
+    </header>
+
+    <h2>GETTING STARTED</h2>
+    <p>Pick a callsign and hit <kbd>LAUNCH</kbd>. You spawn in your hauler near the Meridian Refinery. No download, no account — your progress saves automatically (anonymously) and follows you back when you return.</p>
+    <p>The one rule of this game: <strong>60 seconds from click to flight.</strong> Everything that breaks that gets cut.</p>
+
+    <h2>CONTROLS</h2>
+    <table>
+      <tr><th>Input</th><th>Action</th></tr>
+      <tr><td class="key">Mouse</td><td>Pitch / yaw (aim)</td></tr>
+      <tr><td class="key">W / S</td><td>Forward / reverse thrust</td></tr>
+      <tr><td class="key">A / D</td><td>Strafe</td></tr>
+      <tr><td class="key">R / F</td><td>Vertical thrust</td></tr>
+      <tr><td class="key">Q / E</td><td>Roll</td></tr>
+      <tr><td class="key">Shift</td><td>Boost</td></tr>
+      <tr><td class="key">X</td><td>Brake</td></tr>
+      <tr><td class="key">V</td><td>Toggle flight assist (coupled ↔ Newtonian)</td></tr>
+      <tr><td class="key">Left-click</td><td>Mining laser (hold, near an asteroid)</td></tr>
+      <tr><td class="key">Right-click</td><td>Fire weapon (hold)</td></tr>
+      <tr><td class="key">Space</td><td>Dock (slow + near an outpost)</td></tr>
+      <tr><td class="key">J</td><td>Quantum jump to the nearest planet</td></tr>
+      <tr><td class="key">Enter</td><td>Chat</td></tr>
+    </table>
+
+    <h2>TRADING</h2>
+    <p>The core loop. Dock at an outpost (<kbd>Space</kbd>) to open the station menu, then use the <strong>TRADE</strong> tab. Buy a commodity where it's cheap, sell where it's dear:</p>
+    <ul>
+      <li><strong>ORE</strong> — cheap at Helios Mining Colony, dear at Meridian Refinery</li>
+      <li><strong>ALLOY</strong> — cheap at Refinery, dear at Colony</li>
+    </ul>
+    <p>Both legs of the Colony ↔ Refinery run turn a profit, so you never fly home empty. Prices are <strong>dynamic</strong> — buying pushes a price up, selling pushes it down, and they drift back over time. Don't dump your whole hold at once.</p>
+
+    <h2>MINING</h2>
+    <p>Asteroids with glowing cyan veins hold ORE. Fly within range, hold <kbd>Left-click</kbd>, and the laser extracts ore straight into your hold — free cargo if you're willing to work for it. Asteroids deplete, so move on when one runs dry.</p>
+
+    <h2>CRAFT &amp; UPGRADES</h2>
+    <p>At a station, the <strong>UPGRADES</strong> tab spends credits on cargo / speed / boost tiers. The <strong>SHIPYARD</strong> tab sells whole new hulls:</p>
+    <table>
+      <tr><th>Hull</th><th>Role</th></tr>
+      <tr><td class="key">Hauler</td><td>Balanced starter — solid cargo and hull</td></tr>
+      <tr><td class="key">Fighter</td><td>Fast and agile, little cargo — for fighting pirates</td></tr>
+      <tr><td class="key">Miner</td><td>Huge hold, tanky, slow — for hauling and mining</td></tr>
+      <tr><td class="key">Interceptor</td><td>Fastest, fragile — hit-and-run</td></tr>
+    </table>
+
+    <h2>PIRATES &amp; SAFE ZONES</h2>
+    <p>Out in open space, pirate interceptors hunt you. Fight back with <kbd>Right-click</kbd>, watch your hull bar, and collect the bounty on a kill. If you're losing, run for an outpost — <strong>safe zones</strong> around the stations keep hostiles off you. Die and you respawn at the origin, losing a little money but keeping your cargo.</p>
+
+    <h2>QUANTUM TRAVEL</h2>
+    <p>Space is vast. Press <kbd>J</kbd> to spool the quantum drive and jump to the nearest planet — a couple seconds of charge, then you streak across the sector and drop out just short of it. Press <kbd>J</kbd> again to cancel.</p>
+
+    <h2>MULTIPLAYER</h2>
+    <p>Other pilots share your sector in real time — you'll see their craft and callsigns. Hit <kbd>Enter</kbd> to chat. (Combat is currently solo; co-op fights are on the roadmap.)</p>
+
+    <h2>TIPS</h2>
+    <ul>
+      <li>Toggle flight assist (<kbd>V</kbd>) off for true Newtonian drift — great for lining up a strafing run, harder to fly.</li>
+      <li>Mine ORE for free, then sell it at the Refinery to bootstrap your first upgrades.</li>
+      <li>Take delivery <strong>contracts</strong> (station tab) for guaranteed payouts on routes you're flying anyway.</li>
+      <li>Buy a Fighter before you go pirate-hunting; the Hauler can take hits but can't chase.</li>
+    </ul>
+
+    <div class="foot">
+      Open source · <a href="https://github.com/huiung/star-citizen-caliber" target="_blank" rel="noopener">github.com/huiung/star-citizen-caliber</a> · Built with Claude Fable 5 · Not affiliated with Cloud Imperium Games / Roberts Space Industries.
+    </div>
+  </div>
+</body>
+</html>

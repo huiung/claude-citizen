@@ -2,14 +2,26 @@
 // by an anonymous client token (no accounts, no passwords) and flushed to a JSON
 // file. Swap STORE_FILE for a volume/DB when hosting for real durability.
 import { readFileSync, writeFileSync } from 'fs'
+import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 
 const PORT = process.env.PORT ?? 8080
 const STORE_FILE = process.env.STORE_FILE ?? './progress.json'
-const wss = new WebSocketServer({ port: PORT })
 
 let nextColor = 0
 const clients = new Map() // ws -> { id, name, color, p, q, token }
+
+// HTTP server: a /stats endpoint for the landing page + the WebSocket upgrade.
+const httpServer = createServer((req, res) => {
+  if (req.url === '/stats') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+    res.end(JSON.stringify({ online: clients.size, registered: Object.keys(store).length }))
+    return
+  }
+  res.writeHead(200, { 'Content-Type': 'text/plain' })
+  res.end('star-citizen-caliber relay')
+})
+const wss = new WebSocketServer({ server: httpServer })
 
 // --- Token-keyed progress store (anonymous, no accounts)
 let store = {}
@@ -111,4 +123,6 @@ wss.on('connection', (ws) => {
   })
 })
 
-console.log(`star-citizen-caliber relay listening on :${PORT} (store: ${STORE_FILE})`)
+httpServer.listen(PORT, () => {
+  console.log(`star-citizen-caliber relay listening on :${PORT} (store: ${STORE_FILE})`)
+})
