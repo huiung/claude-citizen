@@ -1,12 +1,45 @@
-// Day 0 relay server: a dumb mirror. No auth, no persistence, no validation
-// beyond message shape — there is nothing to cheat at yet.
+// Relay + progress server. Position relay is a dumb mirror; persistence is keyed
+// by an anonymous client token (no accounts, no passwords) and flushed to a JSON
+// file. Swap STORE_FILE for a volume/DB when hosting for real durability.
+import { readFileSync, writeFileSync } from 'fs'
 import { WebSocketServer } from 'ws'
 
 const PORT = process.env.PORT ?? 8080
+const STORE_FILE = process.env.STORE_FILE ?? './progress.json'
 const wss = new WebSocketServer({ port: PORT })
 
 let nextColor = 0
-const clients = new Map() // ws -> { id, name, color, p, q }
+const clients = new Map() // ws -> { id, name, color, p, q, token }
+
+// --- Token-keyed progress store (anonymous, no accounts)
+let store = {}
+try { store = JSON.parse(readFileSync(STORE_FILE, 'utf8')) } catch { store = {} }
+let flushTimer = null
+function flush() {
+  if (flushTimer) return
+  flushTimer = setTimeout(() => {
+    flushTimer = null
+    try { writeFileSync(STORE_FILE, JSON.stringify(store)) } catch { /* disk unavailable */ }
+  }, 2000)
+}
+
+/** Accept only the small, known progress shape — never trust the client blindly. */
+function sanitizeProgress(p) {
+  if (!p || typeof p !== 'object') return null
+  return {
+    credits: Number(p.credits) || 0,
+    cargo: { ORE: Number(p.cargo?.ORE) || 0, ALLOY: Number(p.cargo?.ALLOY) || 0 },
+    upgrades: {
+      cargo: Number(p.upgrades?.cargo) || 0,
+      speed: Number(p.upgrades?.speed) || 0,
+      boost: Number(p.upgrades?.boost) || 0,
+    },
+    hangar: {
+      selected: String(p.hangar?.selected ?? 'hauler').slice(0, 16),
+      owned: Array.isArray(p.hangar?.owned) ? p.hangar.owned.slice(0, 16).map((t) => String(t).slice(0, 16)) : ['hauler'],
+    },
+  }
+}
 
 function broadcast(from, msg) {
   const data = JSON.stringify(msg)
@@ -21,26 +54,38 @@ wss.on('connection', (ws) => {
     try { msg = JSON.parse(raw) } catch { return }
 
     if (msg.t === 'join' && !clients.has(ws)) {
+      const token = typeof msg.token === 'string' ? msg.token.slice(0, 64) : null
       const client = {
         id: Math.random().toString(36).slice(2, 10),
         name: String(msg.name ?? 'PILOT').slice(0, 16),
         color: nextColor++,
         p: [0, 0, 0],
         q: [0, 0, 0, 1],
+        token,
       }
       clients.set(ws, client)
-      ws.send(JSON.stringify({ t: 'welcome', id: client.id, peers: [...clients.values()].filter((c) => c !== client) }))
-      broadcast(ws, { t: 'peer-join', ...client })
-      console.log(`[join] ${client.name} (${client.id}) — ${clients.size} online`)
+      ws.send(JSON.stringify({ t: 'welcome', id: client.id, peers: [...clients.values()].filter((c) => c !== client).map(({ token: _t, ...rest }) => rest) }))
+      // Hand back saved progress for this token, if any.
+      if (token && store[token]) ws.send(JSON.stringify({ t: 'progress', data: store[token] }))
+      broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q })
+      console.log(`[join] ${client.name} (${client.id})${token ? ' +token' : ''} — ${clients.size} online`)
       return
     }
 
     const client = clients.get(ws)
     if (!client) return
+
     if (msg.t === 'state' && Array.isArray(msg.p) && Array.isArray(msg.q)) {
       client.p = msg.p.slice(0, 3).map(Number)
       client.q = msg.q.slice(0, 4).map(Number)
       broadcast(ws, { t: 'peer-state', id: client.id, p: client.p, q: client.q })
+      return
+    }
+
+    if (msg.t === 'save' && client.token) {
+      const clean = sanitizeProgress(msg.progress)
+      if (clean) { store[client.token] = clean; flush() }
+      return
     }
   })
 
@@ -53,4 +98,4 @@ wss.on('connection', (ws) => {
   })
 })
 
-console.log(`star-citizen-caliber relay listening on :${PORT}`)
+console.log(`star-citizen-caliber relay listening on :${PORT} (store: ${STORE_FILE})`)

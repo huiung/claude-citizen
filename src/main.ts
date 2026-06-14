@@ -7,7 +7,7 @@ import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
   buildStarfield, buildStation, COLONY_POS, MINEABLE_SITES, REFINERY_POS,
 } from './render/world'
-import { NetClient, type PeerState } from './net/client'
+import { NetClient, type PeerState, type PlayerProgress } from './net/client'
 import { dockableTarget, type DockTarget } from './sim/docking'
 import { cargoUsed, loadEconomy, OUTPOSTS, saveEconomy } from './sim/economy'
 import { createAsteroidField, mineStep } from './sim/mining'
@@ -52,6 +52,17 @@ const quantumEl = document.getElementById('quantum')!
 const safeEl = document.getElementById('safe-zone')!
 
 nicknameEl.value = localStorage.getItem('callsign') ?? ''
+
+// Anonymous progress token — no accounts. The server persists progress keyed by this.
+function loadToken(): string {
+  let t = localStorage.getItem('scc.token')
+  if (!t) {
+    t = (crypto.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    localStorage.setItem('scc.token', t)
+  }
+  return t
+}
+const playerToken = loadToken()
 
 // --- Renderer / scene
 const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -394,10 +405,20 @@ function updateWalletHUD(): void {
   cargoEl.textContent = `${Math.floor(cargoUsed(econ))}/${effCargo()}`
 }
 
+function currentProgress(): PlayerProgress {
+  return {
+    credits: econ.credits,
+    cargo: { ORE: econ.cargo.ORE, ALLOY: econ.cargo.ALLOY },
+    upgrades: { cargo: upgrades.tiers.cargo, speed: upgrades.tiers.speed, boost: upgrades.tiers.boost },
+    hangar: { selected: selectedShipType, owned: [...ownedShips] },
+  }
+}
+
 function refreshWallet(): void {
   updateWalletHUD()
   saveEconomy(econ)
   saveUpgrades(upgrades)
+  net.saveProgress(currentProgress())
 }
 
 const stationMenu = new StationMenu({
@@ -513,7 +534,25 @@ interface RemoteShip { mesh: THREE.Group; peer: PeerState }
 const remotes = new Map<string, RemoteShip>()
 const PALETTE = [0xc75d5d, 0x5d8ac7, 0xc7a85d, 0x9b5dc7, 0x5dc7b8, 0xc75da6]
 
-const net = new NetClient(nicknameEl.value || 'PILOT', {
+const net = new NetClient(nicknameEl.value || 'PILOT', playerToken, {
+  onProgress(p) {
+    // Server is the source of truth — adopt saved progress when it arrives.
+    econ.credits = p.credits
+    econ.cargo.ORE = p.cargo.ORE
+    econ.cargo.ALLOY = p.cargo.ALLOY
+    upgrades.tiers.cargo = p.upgrades.cargo
+    upgrades.tiers.speed = p.upgrades.speed
+    upgrades.tiers.boost = p.upgrades.boost
+    ownedShips.clear()
+    for (const t of p.hangar.owned) if (t in SHIP_STATS) ownedShips.add(t as ShipType)
+    ownedShips.add('hauler')
+    const sel = (p.hangar.selected in SHIP_STATS ? p.hangar.selected : 'hauler') as ShipType
+    setPlayerCraft(ownedShips.has(sel) ? sel : 'hauler')
+    saveEconomy(econ)
+    saveUpgrades(upgrades)
+    saveHangar()
+    updateWalletHUD()
+  },
   onPeerJoin(peer) {
     const mesh = buildCraft('hauler', PALETTE[peer.color % PALETTE.length])
     const label = document.createElement('div')
@@ -716,7 +755,7 @@ function frame(now: number): void {
         oreAccum -= Math.floor(oreAccum)
         lastFloat = now
       }
-      if (now - lastSave > 2000) { saveEconomy(econ); lastSave = now }
+      if (now - lastSave > 2000) { saveEconomy(econ); net.saveProgress(currentProgress()); lastSave = now }
     }
     updateMiningVFX(miningActive && mineResult.inRange, mineResult.asteroid?.position ?? null, now)
     audio.setMining(miningActive, mineResult.inRange)

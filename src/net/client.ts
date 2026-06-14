@@ -1,4 +1,4 @@
-// WebSocket relay client. Day 0 protocol: positions only, server is a dumb mirror.
+// WebSocket relay client: position relay + token-keyed progress sync.
 
 export interface PeerState {
   id: string
@@ -10,11 +10,21 @@ export interface PeerState {
   prev?: { p: [number, number, number]; q: [number, number, number, number]; receivedAt: number }
 }
 
+/** The small progress blob the server persists per anonymous token. */
+export interface PlayerProgress {
+  credits: number
+  cargo: { ORE: number; ALLOY: number }
+  upgrades: { cargo: number; speed: number; boost: number }
+  hangar: { selected: string; owned: string[] }
+}
+
 export interface NetEvents {
   onPeerJoin(peer: PeerState): void
   onPeerState(peer: PeerState): void
   onPeerLeave(id: string): void
   onStatus(connected: boolean, online: number): void
+  /** Server returned saved progress for our token (server is the source of truth). */
+  onProgress(progress: PlayerProgress): void
 }
 
 const SEND_HZ = 10
@@ -25,7 +35,7 @@ export class NetClient {
   private lastSend = 0
   private online = 1
 
-  constructor(private name: string, private events: NetEvents) {}
+  constructor(private name: string, private token: string, private events: NetEvents) {}
 
   connect(): void {
     const url = import.meta.env.VITE_WS_URL
@@ -37,7 +47,7 @@ export class NetClient {
       return
     }
     this.ws.onopen = () => {
-      this.ws?.send(JSON.stringify({ t: 'join', name: this.name }))
+      this.ws?.send(JSON.stringify({ t: 'join', name: this.name, token: this.token }))
       this.events.onStatus(true, this.online)
     }
     this.ws.onclose = () => {
@@ -76,6 +86,9 @@ export class NetClient {
           this.events.onStatus(true, this.online)
         }
         break
+      case 'progress':
+        if (msg.data) this.events.onProgress(msg.data as PlayerProgress)
+        break
     }
   }
 
@@ -94,6 +107,12 @@ export class NetClient {
     if (now - this.lastSend < 1000 / SEND_HZ) return
     this.lastSend = now
     this.ws.send(JSON.stringify({ t: 'state', p, q }))
+  }
+
+  /** Persist progress under our token (no-op if disconnected). */
+  saveProgress(progress: PlayerProgress): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+    this.ws.send(JSON.stringify({ t: 'save', progress }))
   }
 
   getPeers(): ReadonlyMap<string, PeerState> {

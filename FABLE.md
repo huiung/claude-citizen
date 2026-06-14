@@ -98,3 +98,16 @@ Pirates now fly the interceptor hull. Also removed a capture/recording harness f
 one green hauler, directed the fix, and is tuning density/balance by flying it.
 **Model did:** the three modules (in parallel), all the integration, the shipyard UI, and the
 celestial streaming/rendering.
+
+## Day 2 — 2026-06-14: safe zones + persistence
+
+- **Safe zones** — pirates don't spawn near outposts, and existing hostiles break off when you
+  arrive. Trade routes stay tense; stations are a place to breathe.
+- **Anonymous-token persistence** — no accounts. The client mints a random token (localStorage);
+  the relay server persists progress (credits, cargo, upgrades, owned/selected ships) keyed by it,
+  and hands it back on reconnect. Verified headless: save under a token, reconnect, get it back;
+  a fresh token starts clean. Goes fully live once the relay is hosted.
+
+**Human did:** asked for safe zones (getting jumped while parked was annoying) and chose the
+persistence model — anonymous token over full accounts, to keep zero signup friction.
+**Model did:** safe zones, the server progress store + client sync, and the headless verification.
