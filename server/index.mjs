@@ -77,8 +77,12 @@ wss.on('connection', (ws) => {
       }
       clients.set(ws, client)
       ws.send(JSON.stringify({ t: 'welcome', id: client.id, peers: [...clients.values()].filter((c) => c !== client).map(({ token: _t, ...rest }) => rest) }))
-      // Hand back saved progress for this token, if any.
-      if (token && store[token]) ws.send(JSON.stringify({ t: 'progress', data: store[token] }))
+      // Hand back saved progress for this token, if any. Otherwise mark the token as
+      // seen (null) so it counts as a registered pilot without faking any progress.
+      if (token) {
+        if (store[token]) ws.send(JSON.stringify({ t: 'progress', data: store[token] }))
+        else if (!(token in store)) { store[token] = null; flush() }
+      }
       broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q })
       console.log(`[join] ${client.name} (${client.id})${token ? ' +token' : ''} — ${clients.size} online`)
       return
