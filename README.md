@@ -13,9 +13,10 @@
 
 ## Play now
 
-Runs in your browser. No account. No 30,000-word backstory. **Clone → fly in under 60 seconds.**
-That's the one rule of this project: every feature that breaks "60 seconds to flight" gets rejected.
-(Hosted instance — click-to-fly, zero install — coming this week.)
+**▶ Play now: [claudecitizen.com](https://claudecitizen.com)** — no download, no account. Click → fly, in seconds.
+
+Other pilots share your sector in real time (and you can chat). Every feature that breaks
+"60 seconds to flight" gets rejected — that's the one rule. Prefer to self-host? See below.
 
 ```bash
 git clone https://github.com/huiung/star-citizen-caliber
