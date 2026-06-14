@@ -42,6 +42,17 @@
       font-size: 13px; line-height: 1.7; text-shadow: 0 0 6px rgba(80, 255, 120, .4);
     }
     #wallet b { color: #ffe08a; }
+    #hull-line { margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    #hull-track {
+      display: inline-block; width: 130px; height: 9px; border-radius: 4px; overflow: hidden;
+      background: rgba(255, 90, 90, .15); border: 1px solid rgba(255, 120, 120, .35);
+    }
+    #hull-bar { display: block; height: 100%; width: 100%; background: #6fdc8c; transition: width .15s linear; }
+    #enemies { color: #ff8a6b; }
+    #damage-flash {
+      position: fixed; inset: 0; pointer-events: none; z-index: 5; opacity: 0;
+      transition: opacity .13s ease-out; box-shadow: inset 0 0 130px 30px rgba(255, 40, 40, .55);
+    }
     #dock-prompt {
       position: fixed; left: 50%; top: 62%; transform: translate(-50%, 0);
       pointer-events: none; font-size: 15px; letter-spacing: 2px;
@@ -141,15 +152,18 @@
     <div class="big"><span id="speed">0</span> m/s</div>
     <div>FLIGHT ASSIST: <span id="assist">COUPLED</span></div>
     <div id="boost" style="visibility:hidden">⚡ BOOST</div>
+    <div id="hull-line">HULL <span id="hull-track"><i id="hull-bar"></i></span></div>
   </div>
   <div id="status" hidden>
     <div id="net">CONNECTING…</div>
     <div><span id="online">1</span> PILOT(S) IN SECTOR</div>
+    <div><span id="enemies">0</span> HOSTILE(S)</div>
   </div>
+  <div id="damage-flash"></div>
   <div id="help" hidden>
     MOUSE aim · W/S thrust · A/D strafe · R/F vertical · Q/E roll<br />
-    SHIFT boost · X brake · V flight assist · LEFT-CLICK mine ore · ESC release mouse<br />
-    approach an outpost slowly → SPACE to dock, trade, upgrade &amp; take contracts
+    SHIFT boost · X brake · V flight assist · ESC release mouse<br />
+    LEFT-CLICK mine ore · RIGHT-CLICK fire weapon · SPACE dock (trade / upgrade / contracts)
   </div>
   <div id="overlay">
     <h1>STAR CITIZEN <span>CALIBER</span></h1>

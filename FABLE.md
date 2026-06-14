@@ -61,3 +61,19 @@ Each note became a fix.
 
 **Model did:** the five systems (in parallel), the integration, the mining VFX, the hauler
 redesign, and the audio retune.
+
+## Day 2 — 2026-06-14: the sector gets dangerous
+
+Added a threat system so the trade loop has stakes:
+
+- **Combat core** (`sim/combat.ts`) — health, projectiles, hit resolution, weapon cooldown
+- **Pirates** (`sim/pirates.ts`) — spawn, chase, hold range, harass; deterministic spawn points
+- Right-click fires; pirates hunt you, hull bar drains, kills pay a bounty, death respawns you
+- Tracer bolts, expanding explosions, a red damage flash, and combat audio (fire/hit/boom)
+- A quiet mining-laser hum, gated so it only sounds when you're actually cutting a rock in range
+
+19 new tests; 97 total green.
+
+**Human did:** flew the fight, tuned it — mouse felt sluggish (raised sensitivity), asked how
+to shoot (right-click), and added the gated mining hum.
+**Model did:** the combat + pirate systems, integration, VFX, and combat audio.

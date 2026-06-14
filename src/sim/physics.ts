@@ -7,8 +7,8 @@ export const TUNING = {
   accelResponse: 1.6,    // 1/s, how fast velocity converges to command (coupled)
   decoupledThrust: 45,   // m/s², raw acceleration in decoupled mode
   brakeResponse: 2.4,    // 1/s, X key
-  maxAngularSpeed: 1.6,  // rad/s pitch/yaw
-  maxRollSpeed: 2.2,     // rad/s
+  maxAngularSpeed: 2.0,  // rad/s pitch/yaw
+  maxRollSpeed: 2.4,     // rad/s
   angularResponse: 8,    // 1/s, how fast angular velocity converges
 }
 

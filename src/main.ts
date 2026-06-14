@@ -13,6 +13,11 @@ import { createAsteroidField, mineStep } from './sim/mining'
 import { createMarket, step as marketStep } from './sim/market'
 import { generateContracts } from './sim/contracts'
 import { boostMultiplier, cargoCapacity, loadUpgrades, saveUpgrades, topSpeed } from './sim/upgrades'
+import {
+  canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
+  isDead, type Projectile, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
+} from './sim/combat'
+import { type Pirate, PIRATE_REWARD, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 
@@ -37,6 +42,9 @@ const creditsEl = document.getElementById('credits')!
 const cargoEl = document.getElementById('cargo')!
 const dockPromptEl = document.getElementById('dock-prompt')!
 const mineEl = document.getElementById('mine-prompt')!
+const hullBarEl = document.getElementById('hull-bar')!
+const enemiesEl = document.getElementById('enemies')!
+const flashEl = document.getElementById('damage-flash')!
 
 nicknameEl.value = localStorage.getItem('callsign') ?? ''
 
@@ -98,6 +106,104 @@ let lastFloat = 0
 const _beamUp = new THREE.Vector3(0, 1, 0)
 const _beamDir = new THREE.Vector3()
 
+// --- Combat state
+const playerHealth = createHealth(100)
+const playerWeapon = createWeapon(0.16)
+const projectiles: Projectile[] = []
+const projectileMeshes = new Map<Projectile, THREE.Mesh>()
+const pirates: Pirate[] = []
+const pirateMeshes = new Map<string, THREE.Group>()
+const explosions: { mesh: THREE.Mesh; born: number }[] = []
+let weaponActive = false
+let pirateSpawnCount = 0
+let nextSpawnAt = Infinity
+const MAX_PIRATES = 3
+const _fwd = new THREE.Vector3()
+
+const boltGeo = new THREE.SphereGeometry(0.45, 6, 6)
+const playerBoltMat = new THREE.MeshBasicMaterial({ color: 0x8ff0ff })
+const pirateBoltMat = new THREE.MeshBasicMaterial({ color: 0xff7b4a })
+const explosionGeo = new THREE.SphereGeometry(1, 10, 10)
+
+function makeBolt(faction: 'player' | 'pirate'): THREE.Mesh {
+  const mesh = new THREE.Mesh(boltGeo, faction === 'player' ? playerBoltMat : pirateBoltMat)
+  mesh.scale.set(1, 1, 2.2) // elongated like a tracer
+  return mesh
+}
+
+function spawnExplosion(pos: THREE.Vector3, now: number): void {
+  const mat = new THREE.MeshBasicMaterial({
+    color: 0xffb347, transparent: true, opacity: 0.9,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  })
+  const mesh = new THREE.Mesh(explosionGeo, mat)
+  mesh.position.copy(pos)
+  scene.add(mesh)
+  explosions.push({ mesh, born: now })
+}
+
+function damageFlash(): void {
+  flashEl.style.opacity = '0.55'
+  setTimeout(() => { flashEl.style.opacity = '0' }, 130)
+}
+
+function spawnPirateWave(now: number): void {
+  if (pirates.length >= MAX_PIRATES) return
+  const pos = spawnPositionAround(ship.position, 600, pirateSpawnCount++)
+  const pirate = spawnPirate(`pir-${pirateSpawnCount}`, pos)
+  pirates.push(pirate)
+  const mesh = buildShip(0xc0392b)
+  mesh.position.copy(pos)
+  scene.add(mesh)
+  pirateMeshes.set(pirate.id, mesh)
+  void now
+}
+
+function respawnPlayer(now: number): void {
+  spawnExplosion(ship.position, now)
+  audio.blip('explosion')
+  damageFlash()
+  ship.position.set(0, 0, 0)
+  ship.velocity.set(0, 0, 0)
+  playerHealth.hull = playerHealth.max
+  econ.credits = Math.max(0, econ.credits - 100)
+  refreshWallet()
+}
+
+function syncProjectileMeshes(): void {
+  const live = new Set(projectiles)
+  for (const [proj, mesh] of projectileMeshes) {
+    if (!live.has(proj)) {
+      scene.remove(mesh)
+      projectileMeshes.delete(proj)
+    }
+  }
+  for (const proj of projectiles) {
+    let mesh = projectileMeshes.get(proj)
+    if (!mesh) {
+      mesh = makeBolt(proj.faction)
+      scene.add(mesh)
+      projectileMeshes.set(proj, mesh)
+    }
+    mesh.position.copy(proj.position)
+    if (proj.velocity.lengthSq() > 1e-6) mesh.lookAt(proj.position.clone().add(proj.velocity))
+  }
+}
+
+function updateExplosions(now: number): void {
+  for (let i = explosions.length - 1; i >= 0; i--) {
+    const e = explosions[i]
+    const age = (now - e.born) / 650
+    if (age >= 1) {
+      scene.remove(e.mesh)
+      explosions.splice(i, 1)
+      continue
+    }
+    e.mesh.scale.setScalar(2 + age * 20)
+    ;(e.mesh.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - age)
+  }
+}
+
 // --- Game systems (main owns all state; modules are pure)
 const econ = loadEconomy()
 const upgrades = loadUpgrades()
@@ -138,8 +244,10 @@ function dock(id: string): void {
   mineEl.hidden = true
   beam.visible = false
   impact.visible = false
+  weaponActive = false
   ship.velocity.set(0, 0, 0)
   audio.setThrust(0, false)
+  audio.setMining(false, false)
   audio.blip('dock')
   document.exitPointerLock()
   stationMenu.open({ outpostId: id, econ, market, upgrades, contracts, audio })
@@ -170,18 +278,22 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => keys.delete(e.code))
 addEventListener('mousemove', (e) => {
   if (document.pointerLockElement !== renderer.domElement) return
-  mouseYaw -= e.movementX * 0.0015
-  mousePitch -= e.movementY * 0.0015
+  mouseYaw -= e.movementX * 0.0024
+  mousePitch -= e.movementY * 0.0024
   mouseYaw = THREE.MathUtils.clamp(mouseYaw, -1, 1)
   mousePitch = THREE.MathUtils.clamp(mousePitch, -1, 1)
 })
-// Hold left mouse to fire the mining laser (only while flying, mouse captured).
+// Left mouse = mining laser, right mouse = weapon (only while flying, mouse captured).
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault())
 renderer.domElement.addEventListener('mousedown', (e) => {
-  if (e.button === 0 && running && !docked && document.pointerLockElement === renderer.domElement) {
-    miningActive = true
-  }
+  if (!(running && !docked && document.pointerLockElement === renderer.domElement)) return
+  if (e.button === 0) miningActive = true
+  if (e.button === 2) weaponActive = true
 })
-addEventListener('mouseup', (e) => { if (e.button === 0) miningActive = false })
+addEventListener('mouseup', (e) => {
+  if (e.button === 0) miningActive = false
+  if (e.button === 2) weaponActive = false
+})
 
 function readInput(): ControlInput {
   // Mouse deflection decays toward center — feels like a virtual joystick
@@ -321,6 +433,8 @@ function launch(): void {
   crosshairEl.hidden = false
   walletEl.hidden = false
   refreshWallet()
+  hullBarEl.style.width = '100%'
+  nextSpawnAt = performance.now() + 8000 // first hostiles arrive after ~8s
   audio.init()
   audio.resume()
   renderer.domElement.requestPointerLock()
@@ -341,6 +455,152 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight)
   labelRenderer.setSize(innerWidth, innerHeight)
 })
+
+let captureCameraLocked = false
+
+declare global {
+  interface Window {
+    __sccCapture?: {
+      damagePlayer: (hull: number) => void
+      launch: () => void
+      reset: () => void
+      setCamera: (pos: [number, number, number], target: [number, number, number]) => void
+      setMining: (active: boolean) => void
+      setPlayerHull: (hull: number) => void
+      setPose: (pos: [number, number, number], target: [number, number, number]) => void
+      setWeapon: (active: boolean) => void
+      spawnPirateAt: (pos: [number, number, number], hull?: number) => void
+      unlockCamera: () => void
+    }
+  }
+}
+
+if (new URLSearchParams(location.search).has('capture')) {
+  const captureTarget = new THREE.Vector3()
+
+  const syncCaptureHUD = () => {
+    hullBarEl.style.width = `${Math.round(hullFraction(playerHealth) * 100)}%`
+    enemiesEl.textContent = String(pirates.length)
+    updateWalletHUD()
+  }
+
+  window.__sccCapture = {
+    damagePlayer(hull) {
+      playerHealth.hull = THREE.MathUtils.clamp(hull, 0, playerHealth.max)
+      damageFlash()
+      syncCaptureHUD()
+    },
+    launch() {
+      if (running) return
+      overlayEl.hidden = true
+      overlayEl.style.display = 'none'
+      hudEl.hidden = false
+      statusEl.hidden = false
+      helpEl.hidden = false
+      crosshairEl.hidden = false
+      walletEl.hidden = false
+      refreshWallet()
+      nextSpawnAt = Infinity
+      running = true
+      syncCaptureHUD()
+    },
+    reset() {
+      econ.credits = 500
+      econ.cargo.ORE = 0
+      econ.cargo.ALLOY = 0
+      upgrades.tiers.cargo = 0
+      upgrades.tiers.speed = 0
+      upgrades.tiers.boost = 0
+      for (const entry of Object.values(market.entries)) entry.impulse = 0
+      for (const contract of contracts) contract.status = 'offered'
+      for (const site of field.asteroids) {
+        const original = MINEABLE_SITES.find((s) => s.id === site.id)
+        site.reserves = original?.reserves ?? site.reserves
+        const rock = rockMeshes.get(site.id)
+        if (rock) {
+          rock.initial = site.reserves
+          rock.mesh.visible = true
+          rock.mesh.scale.setScalar(1)
+        }
+      }
+      for (const floating of oreFloats.splice(0)) scene.remove(floating.obj)
+      for (const mesh of projectileMeshes.values()) scene.remove(mesh)
+      projectileMeshes.clear()
+      projectiles.splice(0)
+      for (const mesh of pirateMeshes.values()) scene.remove(mesh)
+      pirateMeshes.clear()
+      pirates.splice(0)
+      for (const e of explosions.splice(0)) scene.remove(e.mesh)
+      oreAccum = 0
+      lastFloat = 0
+      pirateSpawnCount = 0
+      nextSpawnAt = Infinity
+      playerHealth.hull = playerHealth.max
+      miningActive = false
+      weaponActive = false
+      docked = false
+      dockable = null
+      captureCameraLocked = false
+      stationMenu.close()
+      dockPromptEl.hidden = true
+      mineEl.hidden = true
+      beam.visible = false
+      impact.visible = false
+      ship.position.set(0, 0, 0)
+      ship.velocity.set(0, 0, 0)
+      ship.quaternion.identity()
+      shipMesh.position.copy(ship.position)
+      shipMesh.quaternion.copy(ship.quaternion)
+      refreshWallet()
+      syncCaptureHUD()
+    },
+    setCamera(pos, target) {
+      captureCameraLocked = true
+      camera.position.fromArray(pos)
+      captureTarget.fromArray(target)
+      camera.lookAt(captureTarget)
+    },
+    setMining(active) {
+      miningActive = active
+    },
+    setPlayerHull(hull) {
+      playerHealth.hull = THREE.MathUtils.clamp(hull, 0, playerHealth.max)
+      syncCaptureHUD()
+    },
+    setPose(pos, target) {
+      docked = false
+      stationMenu.close()
+      ship.position.fromArray(pos)
+      ship.velocity.set(0, 0, 0)
+      shipMesh.position.copy(ship.position)
+      captureTarget.fromArray(target)
+      shipMesh.lookAt(captureTarget)
+      ship.quaternion.copy(shipMesh.quaternion)
+      if (!captureCameraLocked) updateCamera(1)
+    },
+    setWeapon(active) {
+      weaponActive = active
+    },
+    spawnPirateAt(pos, hull) {
+      if (pirates.length >= MAX_PIRATES) return
+      const pirate = spawnPirate(`cap-pir-${pirateSpawnCount++}`, new THREE.Vector3(...pos))
+      if (typeof hull === 'number') {
+        pirate.health.max = Math.max(1, hull)
+        pirate.health.hull = pirate.health.max
+      }
+      pirates.push(pirate)
+      const mesh = buildShip(0xc0392b)
+      mesh.position.copy(pirate.position)
+      mesh.lookAt(ship.position)
+      scene.add(mesh)
+      pirateMeshes.set(pirate.id, mesh)
+      syncCaptureHUD()
+    },
+    unlockCamera() {
+      captureCameraLocked = false
+    },
+  }
+}
 
 // --- Main loop
 let running = false
@@ -389,6 +649,7 @@ function frame(now: number): void {
       if (now - lastSave > 2000) { saveEconomy(econ); lastSave = now }
     }
     updateMiningVFX(miningActive && mineResult.inRange, mineResult.asteroid?.position ?? null, now)
+    audio.setMining(miningActive, mineResult.inRange)
     mineEl.hidden = !(miningActive && mineResult.inRange)
 
     dockable = dockableTarget(ship.position, ship.velocity.length(), dockTargets)
@@ -399,11 +660,66 @@ function frame(now: number): void {
       [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],
       now,
     )
+
+    // --- Combat
+    stepWeapon(playerWeapon, dt)
+    if (weaponActive && canFire(playerWeapon)) {
+      _fwd.set(0, 0, -1).applyQuaternion(ship.quaternion)
+      projectiles.push(spawnProjectile(ship.position, _fwd, 'player'))
+      fireWeapon(playerWeapon)
+      audio.blip('fire')
+    }
+
+    if (now >= nextSpawnAt) {
+      spawnPirateWave(now)
+      nextSpawnAt = now + 15000
+    }
+
+    for (const pirate of pirates) {
+      const r = stepPirate(pirate, ship.position, dt)
+      if (r.fired) projectiles.push(r.fired) // pirate fire is silent — many at once would be noise
+      const mesh = pirateMeshes.get(pirate.id)
+      if (mesh) {
+        mesh.position.copy(pirate.position)
+        mesh.lookAt(ship.position)
+      }
+    }
+
+    stepProjectiles(projectiles, dt)
+
+    const targets: HitTarget[] = [
+      { position: ship.position, radius: 4, health: playerHealth, faction: 'player' },
+      ...pirates.map((p) => ({ position: p.position, radius: 5, health: p.health, faction: 'pirate' as const })),
+    ]
+    const hits = resolveHits(projectiles, targets)
+    for (const h of hits) {
+      audio.blip('hit')
+      if (h.target.faction === 'player') damageFlash()
+    }
+
+    for (let i = pirates.length - 1; i >= 0; i--) {
+      if (isDead(pirates[i].health)) {
+        const p = pirates[i]
+        spawnExplosion(p.position, now)
+        audio.blip('explosion')
+        econ.credits += PIRATE_REWARD
+        refreshWallet()
+        const mesh = pirateMeshes.get(p.id)
+        if (mesh) { scene.remove(mesh); pirateMeshes.delete(p.id) }
+        pirates.splice(i, 1)
+      }
+    }
+
+    if (isDead(playerHealth)) respawnPlayer(now)
+
+    syncProjectileMeshes()
+    hullBarEl.style.width = `${Math.round(hullFraction(playerHealth) * 100)}%`
+    enemiesEl.textContent = String(pirates.length)
   }
 
   if (running) {
     updateRemotes()
-    updateCamera(dt)
+    if (!captureCameraLocked) updateCamera(dt)
   } else {
     // Menu background: slow orbit around the station
     const t = now * 0.0001
@@ -412,6 +728,7 @@ function frame(now: number): void {
   }
 
   updateOreFloats(now)
+  updateExplosions(now)
 
   renderer.render(scene, camera)
   labelRenderer.render(scene, camera)

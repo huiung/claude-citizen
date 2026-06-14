@@ -8,6 +8,7 @@ import {
   ENGINE_GAIN_BOOST_MULT,
   ENGINE_GAIN_IDLE,
   ENGINE_GAIN_MAX,
+  miningToGain,
   thrustToFrequency,
   thrustToGain,
 } from './sound'
@@ -86,5 +87,16 @@ describe('BLIP_SPECS', () => {
   it('error cue descends in pitch, dock cue rises', () => {
     expect(BLIP_SPECS.error.to).toBeLessThan(BLIP_SPECS.error.from)
     expect(BLIP_SPECS.dock.to).toBeGreaterThan(BLIP_SPECS.dock.from)
+  })
+})
+
+describe('mining audio shaping', () => {
+  it('only gives a quiet gain while actively mining something in range', () => {
+    const activeGain = miningToGain(true, true)
+
+    expect(activeGain).toBeGreaterThan(0)
+    expect(activeGain).toBeLessThan(ENGINE_GAIN_IDLE)
+    expect(miningToGain(true, false)).toBe(0)
+    expect(miningToGain(false, true)).toBe(0)
   })
 })

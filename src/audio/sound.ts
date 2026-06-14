@@ -14,6 +14,9 @@ export const ENGINE_GAIN_IDLE = 0.006
 export const ENGINE_GAIN_MAX = 0.04
 /** Multiplier applied to the gain when boost is engaged. */
 export const ENGINE_GAIN_BOOST_MULT = 1.3
+/** Quiet continuous mining laser tone. Kept below idle engine gain on purpose. */
+export const MINING_GAIN_ACTIVE = 0.0035
+export const MINING_FREQ = 520
 
 /** Clamp `x` into [min, max]. NaN collapses to `min` so audio params never go NaN. */
 export function clamp(x: number, min: number, max: number): number {
@@ -42,8 +45,13 @@ export function thrustToGain(level: number, boost = false): number {
   return g * (boost ? ENGINE_GAIN_BOOST_MULT : 1)
 }
 
-/** One-shot UI cue kinds. */
-export type BlipKind = 'dock' | 'trade' | 'error'
+/** Mining hum is audible only while the laser is active and a rock is actually in range. */
+export function miningToGain(active: boolean, inRange: boolean): number {
+  return active && inRange ? MINING_GAIN_ACTIVE : 0
+}
+
+/** One-shot UI / combat cue kinds. */
+export type BlipKind = 'dock' | 'trade' | 'error' | 'fire' | 'hit' | 'explosion'
 
 interface BlipSpec {
   /** Oscillator start/end frequency in Hz (a quick glide). */
@@ -64,6 +72,12 @@ export const BLIP_SPECS: Record<BlipKind, BlipSpec> = {
   trade: { from: 660, to: 880, peak: 0.16, dur: 0.14, type: 'square' },
   // low descending buzz on error
   error: { from: 220, to: 110, peak: 0.2, dur: 0.22, type: 'sawtooth' },
+  // quick high "pew" on weapon fire — quiet, since it repeats rapidly
+  fire: { from: 900, to: 320, peak: 0.07, dur: 0.09, type: 'sawtooth' },
+  // dull thud when something takes a hit
+  hit: { from: 320, to: 170, peak: 0.13, dur: 0.11, type: 'square' },
+  // low descending boom on a kill
+  explosion: { from: 160, to: 40, peak: 0.24, dur: 0.5, type: 'sawtooth' },
 }
 
 /** Smoothing time (s) for engine parameter ramps — avoids zipper noise. */
@@ -83,6 +97,8 @@ export class GameAudio {
   private osc2: OscillatorNode | null = null
   private engineGain: GainNode | null = null
   private noiseGain: GainNode | null = null
+  private miningOsc: OscillatorNode | null = null
+  private miningGain: GainNode | null = null
 
   private started = false
 
@@ -149,6 +165,18 @@ export class GameAudio {
         noise.start()
       }
       this.noiseGain = noiseGain
+
+      // Mining laser: a very quiet, smooth continuous tone, gated by setMining().
+      const miningGain = ctx.createGain()
+      miningGain.gain.value = 0
+      miningGain.connect(master)
+      const miningOsc = ctx.createOscillator()
+      miningOsc.type = 'triangle'
+      miningOsc.frequency.value = MINING_FREQ
+      miningOsc.connect(miningGain)
+      miningOsc.start()
+      this.miningGain = miningGain
+      this.miningOsc = miningOsc
     } catch {
       // Audio unavailable (headless, blocked, OOM) — degrade to silence.
       this.ctx = null
@@ -186,6 +214,22 @@ export class GameAudio {
       if (this.noiseGain) {
         this.noiseGain.gain.setTargetAtTime(gain * 0.1 * clamp(level, 0, 1), now, RAMP)
       }
+    } catch {
+      /* ignore transient audio errors */
+    }
+  }
+
+  /**
+   * Gate the mining laser hum. Keep this tied to actual in-range mining so merely
+   * holding the mouse in empty space stays quiet.
+   */
+  setMining(active: boolean, inRange: boolean): void {
+    const ctx = this.ctx
+    if (!ctx || !this.miningGain || !this.miningOsc) return
+    try {
+      const now = ctx.currentTime
+      this.miningOsc.frequency.setTargetAtTime(MINING_FREQ + (active && inRange ? 12 : 0), now, RAMP)
+      this.miningGain.gain.setTargetAtTime(miningToGain(active, inRange), now, 0.05)
     } catch {
       /* ignore transient audio errors */
     }
