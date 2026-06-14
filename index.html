@@ -32,6 +32,16 @@
       position: fixed; right: 16px; bottom: 16px; pointer-events: none;
       font-size: 11px; line-height: 1.6; opacity: .55; text-align: right;
     }
+    #minimap-wrap {
+      position: fixed; right: 16px; top: 92px; pointer-events: none; text-align: center;
+    }
+    #minimap {
+      display: block; border: 1px solid rgba(63, 174, 95, .35); border-radius: 50%;
+      background: rgba(0, 16, 8, .45);
+    }
+    #minimap-legend {
+      font-size: 9px; letter-spacing: 1px; margin-top: 3px; opacity: .7;
+    }
     #crosshair {
       position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
       width: 6px; height: 6px; border: 1px solid #9fffb0; border-radius: 50%;
@@ -191,6 +201,10 @@
   </div>
   <div id="damage-flash"></div>
   <div id="quantum" hidden></div>
+  <div id="minimap-wrap" hidden>
+    <canvas id="minimap" width="120" height="120"></canvas>
+    <div id="minimap-legend"><span style="color:#6fdc8c">●</span> REF&nbsp;&nbsp;<span style="color:#ffb347">●</span> COL&nbsp;&nbsp;<span style="color:#ff5d5d">●</span> HOSTILE</div>
+  </div>
   <div id="chat-log"></div>
   <input id="chat-input" hidden maxlength="160" autocomplete="off" placeholder="say something…  (Enter to send · Esc to cancel)" />
   <div id="help" hidden>

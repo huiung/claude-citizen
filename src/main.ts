@@ -57,6 +57,9 @@ const chatInputEl = document.getElementById('chat-input') as HTMLInputElement
 const chatLogEl = document.getElementById('chat-log')!
 const statOnlineEl = document.getElementById('stat-online')!
 const statRegisteredEl = document.getElementById('stat-registered')!
+const minimapWrapEl = document.getElementById('minimap-wrap')!
+const minimapCanvas = document.getElementById('minimap') as HTMLCanvasElement
+const mctx = minimapCanvas.getContext('2d')!
 
 nicknameEl.value = localStorage.getItem('callsign') ?? ''
 
@@ -741,6 +744,7 @@ function launch(): void {
   helpEl.hidden = false
   crosshairEl.hidden = false
   walletEl.hidden = false
+  minimapWrapEl.hidden = false
   refreshWallet()
   hullBarEl.style.width = '100%'
   nextSpawnAt = performance.now() + 8000 // first hostiles arrive after ~8s
@@ -768,6 +772,46 @@ addEventListener('resize', () => {
 // --- Main loop
 let running = false
 let last = performance.now()
+
+// --- Minimap (top-down radar, north-up, player-centered)
+const MAP_RANGE = 4500 // world units from player to minimap edge
+function drawMinimap(): void {
+  const w = minimapCanvas.width
+  const c = w / 2
+  const R = c - 4
+  mctx.clearRect(0, 0, w, w)
+  mctx.strokeStyle = 'rgba(63,174,95,0.14)'
+  mctx.beginPath(); mctx.arc(c, c, R * 0.5, 0, Math.PI * 2); mctx.stroke()
+
+  const plot = (wx: number, wz: number, color: string, size: number, clampEdge: boolean, outline = false): void => {
+    let mx = ((wx - ship.position.x) / MAP_RANGE) * R
+    let my = ((wz - ship.position.z) / MAP_RANGE) * R
+    const d = Math.hypot(mx, my)
+    if (d > R) {
+      if (!clampEdge) return
+      mx = (mx / d) * R; my = (my / d) * R
+    }
+    mctx.fillStyle = color
+    mctx.beginPath(); mctx.arc(c + mx, c + my, size, 0, Math.PI * 2); mctx.fill()
+    if (outline) {
+      mctx.strokeStyle = 'rgba(255,255,255,0.85)'; mctx.lineWidth = 1
+      mctx.stroke()
+    }
+  }
+
+  for (const mesh of spawnedBodies.values()) plot(mesh.position.x, mesh.position.z, 'rgba(150,170,190,0.55)', 1.4, false)
+  plot(REFINERY_POS.x, REFINERY_POS.z, '#6fdc8c', 3.4, true, true)
+  plot(COLONY_POS.x, COLONY_POS.z, '#ffb347', 3.4, true, true)
+  for (const p of pirates) plot(p.position.x, p.position.z, '#ff5d5d', 2.2, false)
+
+  // player heading arrow at center
+  _fwd.set(0, 0, -1).applyQuaternion(ship.quaternion)
+  const ang = Math.atan2(_fwd.x, -_fwd.z)
+  mctx.save(); mctx.translate(c, c); mctx.rotate(ang)
+  mctx.fillStyle = '#9fffb0'
+  mctx.beginPath(); mctx.moveTo(0, -5); mctx.lineTo(3.5, 4); mctx.lineTo(-3.5, 4); mctx.closePath(); mctx.fill()
+  mctx.restore()
+}
 
 function frame(now: number): void {
   requestAnimationFrame(frame)
@@ -919,6 +963,7 @@ function frame(now: number): void {
   if (running) {
     updateRemotes()
     updateCamera(dt)
+    drawMinimap()
   } else {
     // Menu background: slow orbit around the station
     const t = now * 0.0001
