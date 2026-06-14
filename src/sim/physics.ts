@@ -47,7 +47,15 @@ function approach(rate: number, dt: number): number {
   return 1 - Math.exp(-rate * dt)
 }
 
-export function stepShip(state: ShipState, input: ControlInput, dt: number): void {
+/** Optional per-call overrides (e.g. from ship upgrades). Falls back to TUNING. */
+export interface ShipTuningOverride {
+  maxSpeed?: number
+  boostMultiplier?: number
+}
+
+export function stepShip(
+  state: ShipState, input: ControlInput, dt: number, tuning?: ShipTuningOverride,
+): void {
   // --- Rotation: angular velocity converges to commanded rates (always assisted, SC-style)
   _v1.set(
     input.pitch * TUNING.maxAngularSpeed,
@@ -63,7 +71,9 @@ export function stepShip(state: ShipState, input: ControlInput, dt: number): voi
   }
 
   // --- Translation
-  const speedCap = TUNING.maxSpeed * (input.boost ? TUNING.boostMultiplier : 1)
+  const maxSpeed = tuning?.maxSpeed ?? TUNING.maxSpeed
+  const boostMult = tuning?.boostMultiplier ?? TUNING.boostMultiplier
+  const speedCap = maxSpeed * (input.boost ? boostMult : 1)
   // local thrust → world space; forward is -Z in three.js convention
   _v1.set(input.thrust.x, input.thrust.y, -input.thrust.z).applyQuaternion(state.quaternion)
 

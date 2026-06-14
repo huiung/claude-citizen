@@ -3,15 +3,18 @@ import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer
 import { createShipState, stepShip, type ControlInput } from './sim/physics'
 import { buildShip } from './render/ship'
 import {
-  buildAsteroids, buildColony, buildLights, buildPlanet, buildStarfield, buildStation,
-  COLONY_POS, REFINERY_POS,
+  buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
+  buildStarfield, buildStation, COLONY_POS, MINEABLE_SITES, REFINERY_POS,
 } from './render/world'
 import { NetClient, type PeerState } from './net/client'
 import { dockableTarget, type DockTarget } from './sim/docking'
-import {
-  CARGO_CAPACITY, cargoUsed, loadEconomy, OUTPOSTS, saveEconomy,
-} from './sim/economy'
-import { TradePanel } from './ui/tradePanel'
+import { cargoUsed, loadEconomy, OUTPOSTS, saveEconomy } from './sim/economy'
+import { createAsteroidField, mineStep } from './sim/mining'
+import { createMarket, step as marketStep } from './sim/market'
+import { generateContracts } from './sim/contracts'
+import { boostMultiplier, cargoCapacity, loadUpgrades, saveUpgrades, topSpeed } from './sim/upgrades'
+import { GameAudio } from './audio/sound'
+import { StationMenu } from './ui/stationMenu'
 
 const INTERP_DELAY_MS = 120
 
@@ -33,6 +36,7 @@ const walletEl = document.getElementById('wallet')!
 const creditsEl = document.getElementById('credits')!
 const cargoEl = document.getElementById('cargo')!
 const dockPromptEl = document.getElementById('dock-prompt')!
+const mineEl = document.getElementById('mine-prompt')!
 
 nicknameEl.value = localStorage.getItem('callsign') ?? ''
 
@@ -59,42 +63,90 @@ const colony = buildColony()
 scene.add(station, colony)
 buildLights(scene)
 
+// Mineable asteroids — sim field + render meshes share MINEABLE_SITES positions.
+const field = createAsteroidField(MINEABLE_SITES)
+const rockMeshes = new Map<string, { mesh: THREE.Group; initial: number }>()
+for (const site of MINEABLE_SITES) {
+  const mesh = buildMineableAsteroid()
+  mesh.position.copy(site.position)
+  scene.add(mesh)
+  rockMeshes.set(site.id, { mesh, initial: site.reserves })
+}
+
 // --- Player
 const ship = createShipState(new THREE.Vector3(0, 0, 0))
 const shipMesh = buildShip(0x4f8a5f)
 scene.add(shipMesh)
 
-// --- Economy & docking
+// --- Mining VFX: cyan laser beam + impact glow + floating +ORE text
+const beamMat = new THREE.MeshBasicMaterial({
+  color: 0x6fe8ff, transparent: true, opacity: 0.55,
+  blending: THREE.AdditiveBlending, depthWrite: false,
+})
+const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.7, 1, 6, 1, true), beamMat)
+beam.visible = false
+const impactMat = new THREE.MeshBasicMaterial({
+  color: 0xaef6ff, transparent: true, opacity: 0.8,
+  blending: THREE.AdditiveBlending, depthWrite: false,
+})
+const impact = new THREE.Mesh(new THREE.SphereGeometry(3.5, 10, 10), impactMat)
+impact.visible = false
+scene.add(beam, impact)
+const oreFloats: { obj: CSS2DObject; born: number }[] = []
+let oreAccum = 0
+let lastFloat = 0
+const _beamUp = new THREE.Vector3(0, 1, 0)
+const _beamDir = new THREE.Vector3()
+
+// --- Game systems (main owns all state; modules are pure)
 const econ = loadEconomy()
+const upgrades = loadUpgrades()
+const market = createMarket()
+const contracts = generateContracts(20260614, OUTPOSTS)
+const audio = new GameAudio()
+
 const dockTargets: DockTarget[] = [
   { id: 'refinery', position: REFINERY_POS },
   { id: 'colony', position: COLONY_POS },
 ]
 let dockable: string | null = null
 let docked = false
+let miningActive = false
+let lastSave = 0
 
-function refreshWallet(): void {
-  creditsEl.textContent = String(econ.credits)
-  cargoEl.textContent = `${cargoUsed(econ)}/${CARGO_CAPACITY}`
-  saveEconomy(econ)
+function updateWalletHUD(): void {
+  creditsEl.textContent = String(Math.floor(econ.credits))
+  cargoEl.textContent = `${Math.floor(cargoUsed(econ))}/${cargoCapacity(upgrades)}`
 }
 
-const tradePanel = new TradePanel({
+function refreshWallet(): void {
+  updateWalletHUD()
+  saveEconomy(econ)
+  saveUpgrades(upgrades)
+}
+
+const stationMenu = new StationMenu({
   onChange: refreshWallet,
   onUndock: undock,
 })
-document.body.appendChild(tradePanel.root)
+document.body.appendChild(stationMenu.root)
 
 function dock(id: string): void {
   docked = true
+  miningActive = false
   dockPromptEl.hidden = true
+  mineEl.hidden = true
+  beam.visible = false
+  impact.visible = false
   ship.velocity.set(0, 0, 0)
+  audio.setThrust(0, false)
+  audio.blip('dock')
   document.exitPointerLock()
-  tradePanel.open(id === 'colony' ? OUTPOSTS.colony : OUTPOSTS.refinery, econ)
+  stationMenu.open({ outpostId: id, econ, market, upgrades, contracts, audio })
 }
 
 function undock(): void {
-  tradePanel.close()
+  stationMenu.close()
   docked = false
   renderer.domElement.requestPointerLock()
 }
@@ -123,6 +175,13 @@ addEventListener('mousemove', (e) => {
   mouseYaw = THREE.MathUtils.clamp(mouseYaw, -1, 1)
   mousePitch = THREE.MathUtils.clamp(mousePitch, -1, 1)
 })
+// Hold left mouse to fire the mining laser (only while flying, mouse captured).
+renderer.domElement.addEventListener('mousedown', (e) => {
+  if (e.button === 0 && running && !docked && document.pointerLockElement === renderer.domElement) {
+    miningActive = true
+  }
+})
+addEventListener('mouseup', (e) => { if (e.button === 0) miningActive = false })
 
 function readInput(): ControlInput {
   // Mouse deflection decays toward center — feels like a virtual joystick
@@ -197,6 +256,49 @@ function updateRemotes(): void {
   }
 }
 
+// --- Mining VFX helpers
+function updateMiningVFX(active: boolean, target: THREE.Vector3 | null, now: number): void {
+  if (!active || !target) {
+    beam.visible = false
+    impact.visible = false
+    return
+  }
+  _beamDir.subVectors(target, shipMesh.position)
+  const len = _beamDir.length()
+  beam.position.copy(shipMesh.position).addScaledVector(_beamDir, 0.5)
+  beam.scale.set(1, len, 1)
+  beam.quaternion.setFromUnitVectors(_beamUp, _beamDir.normalize())
+  beamMat.opacity = 0.4 + 0.25 * Math.sin(now * 0.04)
+  beam.visible = true
+  impact.position.copy(target)
+  impact.scale.setScalar(1 + 0.3 * Math.sin(now * 0.02))
+  impact.visible = true
+}
+
+function spawnOreFloat(amount: number, pos: THREE.Vector3, now: number): void {
+  const div = document.createElement('div')
+  div.className = 'ore-float'
+  div.textContent = `+${amount} ORE`
+  const obj = new CSS2DObject(div)
+  obj.position.copy(pos)
+  scene.add(obj)
+  oreFloats.push({ obj, born: now })
+}
+
+function updateOreFloats(now: number): void {
+  for (let i = oreFloats.length - 1; i >= 0; i--) {
+    const f = oreFloats[i]
+    const age = (now - f.born) / 1300
+    if (age >= 1) {
+      scene.remove(f.obj)
+      oreFloats.splice(i, 1)
+      continue
+    }
+    f.obj.position.y += 0.07
+    ;(f.obj.element as HTMLElement).style.opacity = String(1 - age)
+  }
+}
+
 // --- Chase camera
 const camOffset = new THREE.Vector3()
 const camTarget = new THREE.Vector3()
@@ -219,6 +321,8 @@ function launch(): void {
   crosshairEl.hidden = false
   walletEl.hidden = false
   refreshWallet()
+  audio.init()
+  audio.resume()
   renderer.domElement.requestPointerLock()
   net.connect()
   running = true
@@ -251,12 +355,41 @@ function frame(now: number): void {
   colony.rotation.y += dt * 0.03
 
   if (running && !docked) {
-    stepShip(ship, readInput(), dt)
+    const input = readInput()
+    stepShip(ship, input, dt, { maxSpeed: topSpeed(upgrades), boostMultiplier: boostMultiplier(upgrades) })
     shipMesh.position.copy(ship.position)
     shipMesh.quaternion.copy(ship.quaternion)
 
     speedEl.textContent = String(Math.round(ship.velocity.length()))
-    boostEl.style.visibility = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 'visible' : 'hidden'
+    boostEl.style.visibility = input.boost ? 'visible' : 'hidden'
+
+    // Engine audio tracks commanded thrust.
+    audio.setThrust(Math.min(1, input.thrust.length()), input.boost)
+
+    // Market prices drift back toward base over time.
+    marketStep(market, dt)
+
+    // Mining: transfer ORE from the nearest in-range asteroid while the laser is held.
+    const mineResult = mineStep(field, ship.position, econ, dt, miningActive, cargoCapacity(upgrades))
+    if (mineResult.mined > 0 && mineResult.asteroid) {
+      updateWalletHUD()
+      const rm = rockMeshes.get(mineResult.asteroid.id)
+      if (rm) {
+        const ratio = Math.max(0, mineResult.asteroid.reserves / rm.initial)
+        rm.mesh.scale.setScalar(0.3 + 0.7 * ratio)
+        if (mineResult.asteroid.reserves <= 0) rm.mesh.visible = false
+      }
+      // Accumulate mined ORE into periodic floating "+N ORE" cues.
+      oreAccum += mineResult.mined
+      if (now - lastFloat > 500 && oreAccum >= 1) {
+        spawnOreFloat(Math.floor(oreAccum), mineResult.asteroid.position, now)
+        oreAccum -= Math.floor(oreAccum)
+        lastFloat = now
+      }
+      if (now - lastSave > 2000) { saveEconomy(econ); lastSave = now }
+    }
+    updateMiningVFX(miningActive && mineResult.inRange, mineResult.asteroid?.position ?? null, now)
+    mineEl.hidden = !(miningActive && mineResult.inRange)
 
     dockable = dockableTarget(ship.position, ship.velocity.length(), dockTargets)
     dockPromptEl.hidden = dockable === null
@@ -277,6 +410,8 @@ function frame(now: number): void {
     camera.position.set(Math.cos(t) * 220 + 120, 60, Math.sin(t) * 220 - 350)
     camera.lookAt(station.position)
   }
+
+  updateOreFloats(now)
 
   renderer.render(scene, camera)
   labelRenderer.render(scene, camera)

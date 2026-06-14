@@ -40,3 +40,24 @@ rule, so the overlay never actually hid. One-line fix (`#trade[hidden] { display
 good reminder: AI writes the code, a human still has to fly it.
 
 **Model did:** everything above, plus the bug fix once the symptom was reported.
+
+## Day 2, continued — 2026-06-14: five systems in one session
+
+Ran five subagents in parallel, one per system, each writing a brand-new module + tests
+and touching no shared files (so they couldn't collide). Then integrated them by hand:
+
+- **Mining** — fire a laser at an asteroid to extract ORE (+ VFX: beam, impact glow, floating `+ORE` text)
+- **Dynamic market** — prices rise when you buy, fall when you sell, mean-revert over time
+- **Craft upgrades** — cargo / speed / boost tiers as credit sinks
+- **Delivery contracts** — haul missions that pay out on delivery
+- **Procedural audio** — engine hum + dock/trade/error cues, synthesized live
+
+Plus a hauler redesign (the old craft read as a fighter, not a working ship) and ship→craft wording.
+57 new tests; 77 green total.
+
+**Human did:** directed the parallel build, then flew it and gave sharp art/audio notes —
+the engine sounded harsh, the craft looked like a plane, mining didn't read on screen.
+Each note became a fix.
+
+**Model did:** the five systems (in parallel), the integration, the mining VFX, the hauler
+redesign, and the audio retune.

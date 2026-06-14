@@ -80,6 +80,42 @@ export function buildPlanet(): THREE.Group {
 export const REFINERY_POS = new THREE.Vector3(120, 30, -350)
 export const COLONY_POS = new THREE.Vector3(-1900, -800, -7000)
 
+// Mineable ORE asteroids near the spawn corridor — sim (mining) and render share these.
+export const MINEABLE_SITES: ReadonlyArray<{ id: string; position: THREE.Vector3; reserves: number }> = [
+  { id: 'rock-1', position: new THREE.Vector3(70, 10, -140), reserves: 220 },
+  { id: 'rock-2', position: new THREE.Vector3(-60, -25, -180), reserves: 220 },
+  { id: 'rock-3', position: new THREE.Vector3(160, -20, -240), reserves: 300 },
+]
+
+/** A large, visually distinct mineable rock with glowing ORE veins. Caller positions/scales it. */
+export function buildMineableAsteroid(): THREE.Group {
+  const group = new THREE.Group()
+  const rand = mulberry32(99)
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x5a5048, flatShading: true, roughness: 1 })
+  const geo = new THREE.IcosahedronGeometry(20, 1)
+  const pos = geo.getAttribute('position') as THREE.BufferAttribute
+  const v = new THREE.Vector3()
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i)
+    v.multiplyScalar(0.7 + rand() * 0.6)
+    pos.setXYZ(i, v.x, v.y, v.z)
+  }
+  geo.computeVertexNormals()
+  group.add(new THREE.Mesh(geo, rockMat))
+
+  // Glowing ORE veins so pilots can spot a mineable rock at a glance.
+  const veinMat = new THREE.MeshBasicMaterial({ color: 0x4fd0e0 })
+  for (let i = 0; i < 7; i++) {
+    const vein = new THREE.Mesh(new THREE.IcosahedronGeometry(2 + rand() * 1.5, 0), veinMat)
+    const a = rand() * Math.PI * 2
+    const b = rand() * Math.PI
+    const r = 15 + rand() * 6
+    vein.position.set(r * Math.sin(b) * Math.cos(a), r * Math.cos(b), r * Math.sin(b) * Math.sin(a))
+    group.add(vein)
+  }
+  return group
+}
+
 export function buildStation(): THREE.Group {
   const group = new THREE.Group()
   const hull = new THREE.MeshStandardMaterial({ color: 0x9aa3ad, flatShading: true, metalness: 0.6, roughness: 0.4 })

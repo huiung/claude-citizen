@@ -43,20 +43,24 @@ export function cargoUsed(econ: PlayerEconomy): number {
   return econ.cargo.ORE + econ.cargo.ALLOY
 }
 
-export function cargoFree(econ: PlayerEconomy): number {
-  return CARGO_CAPACITY - cargoUsed(econ)
+export function cargoFree(econ: PlayerEconomy, capacity: number = CARGO_CAPACITY): number {
+  return capacity - cargoUsed(econ)
 }
 
 export type TradeResult =
   | { ok: true }
   | { ok: false; reason: 'no-credits' | 'no-cargo-space' | 'no-stock' | 'bad-qty' }
 
-/** Buy `qty` units of `commodity` at `outpost`. Mutates `econ` only on success. */
-export function buy(econ: PlayerEconomy, outpost: Outpost, commodity: CommodityId, qty: number): TradeResult {
+/** Buy `qty` units of `commodity` at `outpost`. Mutates `econ` only on success.
+ *  `capacity` overrides the cargo cap (e.g. from ship upgrades). */
+export function buy(
+  econ: PlayerEconomy, outpost: Outpost, commodity: CommodityId, qty: number,
+  capacity: number = CARGO_CAPACITY,
+): TradeResult {
   if (!Number.isInteger(qty) || qty <= 0) return { ok: false, reason: 'bad-qty' }
   const cost = outpost.prices[commodity] * qty
   if (cost > econ.credits) return { ok: false, reason: 'no-credits' }
-  if (qty > cargoFree(econ)) return { ok: false, reason: 'no-cargo-space' }
+  if (qty > cargoFree(econ, capacity)) return { ok: false, reason: 'no-cargo-space' }
   econ.credits -= cost
   econ.cargo[commodity] += qty
   return { ok: true }
