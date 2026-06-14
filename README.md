@@ -1,6 +1,6 @@
-# STAR CITIZEN CALIBER
+# Claude Citizen
 
-> An open-source attempt to finish Star Citizen before Star Citizen does.
+> An open-source attempt to finish Star Citizen before Star Citizen does. Built with Claude Fable 5.
 
 **They've had 14 years and $800M. We have Claude Fable 5 and weekends.**
 
@@ -19,8 +19,8 @@ Other pilots share your sector in real time (and you can chat). Every feature th
 "60 seconds to flight" gets rejected — that's the one rule. Prefer to self-host? See below.
 
 ```bash
-git clone https://github.com/huiung/star-citizen-caliber
-cd star-citizen-caliber
+git clone https://github.com/huiung/claude-citizen
+cd claude-citizen
 npm install
 npm run server &   # multiplayer relay on :8080
 npm run dev        # open http://localhost:5173, enter a callsign, LAUNCH
