@@ -4,7 +4,7 @@
 
 **They've had 14 years and $800M. We have Claude Fable 5 and weekends.**
 
-![Dock, trade, haul — the full economy loop, all in the browser](./docs/loop.gif)
+![Mine, trade, fight pirates, jump across the galaxy, and chat — multiplayer, in your browser](./docs/loop.gif)
 
 > ⚠️ **Not affiliated with Cloud Imperium Games or Roberts Space Industries.**
 > This is an independent open-source project. "Star Citizen" is referenced purely
@@ -28,7 +28,7 @@ npm run dev        # open http://localhost:5173, enter a callsign, LAUNCH
 
 Other pilots on the same server show up next to you in real time. That's it. That's the MMO (so far).
 
-## What works today (Day 0)
+## What works today
 
 - 6DOF spaceflight in your browser — coupled (flight assist) and decoupled (full Newton) modes
 - A refinery, a mining colony, a planet, an asteroid belt — 100% procedurally generated, zero asset files
@@ -42,6 +42,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor, each trading cargo/speed/toughness
 - Procedural engine + combat + UI audio — synthesized live, no sound files
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
+- **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours
 - 128 tests, because "built with AI" shouldn't mean "built badly"
 
 ## Controls
@@ -68,11 +69,12 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | 0 | Flyable browser sandbox + multiplayer presence | ✅ shipped (day one) |
 | 1 | Docking, two-way cargo loop, credits | ✅ shipped |
 | 2 | Mining, dynamic market, craft upgrades, contracts, audio | ✅ shipped |
-| 3 | Pirate threats — combat, hull, bounties | ✅ shipped |
+| 3 | Pirate threats — combat, hull, bounties, safe zones | ✅ shipped |
 | 4 | Endless procedural galaxy, quantum travel, ship classes | ✅ shipped |
-| 5 | Persistence — your craft is still yours tomorrow | next |
-| 6 | Co-op combat, safe zones, deeper systems | planned |
-| 4 | Procedural planetary landings | planned |
+| 5 | Persistence (anonymous token) + in-sector chat | ✅ shipped |
+| 6 | Hosted, playable at [claudecitizen.com](https://claudecitizen.com) | ✅ shipped |
+| 7 | Co-op combat — fight pirates together | next |
+| 8 | Procedural planetary landings | planned |
 | … | … | … |
 | 9 | Getting out of bed animation *(took the original 6 years — we'll take a weekend)* | someday |
 | 1.0 | **Ship before Star Citizen ships** | the whole point |
