@@ -18,11 +18,18 @@ const CRAFT_MODEL_TARGET_SIZES: Record<ShipType, number> = {
   interceptor: 8.4,
 }
 
+const PIRATE_MODEL_URL = '/assets/ships/pirate-raider.glb'
+const PIRATE_MODEL_TARGET_SIZE = 8.8
+
 export function craftModelUrl(type: ShipType): string {
   return CRAFT_MODEL_URLS[type]
 }
 
-/** Load a CC0 GLB hull, normalized to game scale (by bounding box) and wrapped in a
+export function pirateModelUrl(): string {
+  return PIRATE_MODEL_URL
+}
+
+/** Load a generated GLB hull, normalized to game scale (by bounding box) and wrapped in a
  *  Group so the caller drives a stable transform. Returns null on 404/parse failure
  *  so callers can fall back to the procedural hull. Nose alignment is tuned per-asset. */
 export async function loadCraftModel(url: string, targetSize = 8): Promise<THREE.Group | null> {
@@ -45,6 +52,10 @@ export async function loadCraftModel(url: string, targetSize = 8): Promise<THREE
 
 export async function loadCraftModelForType(type: ShipType): Promise<THREE.Group | null> {
   return loadCraftModel(CRAFT_MODEL_URLS[type], CRAFT_MODEL_TARGET_SIZES[type])
+}
+
+export async function loadPirateModel(): Promise<THREE.Group | null> {
+  return loadCraftModel(PIRATE_MODEL_URL, PIRATE_MODEL_TARGET_SIZE)
 }
 
 /**

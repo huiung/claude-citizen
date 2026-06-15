@@ -6,7 +6,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { createShipState, stepShip, type ControlInput } from './sim/physics'
-import { buildCraft, loadCraftModelForType } from './render/shipyard'
+import { buildCraft, loadCraftModelForType, loadPirateModel } from './render/shipyard'
 import { SHIP_STATS, type ShipType } from './sim/shipTypes'
 import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
@@ -455,6 +455,19 @@ function spawnPirateWave(now: number): void {
   mesh.position.copy(pos)
   scene.add(mesh)
   pirateMeshes.set(pirate.id, mesh)
+  loadPirateModel().then((model) => {
+    if (!model) return
+    if (pirateMeshes.get(pirate.id) !== mesh) {
+      disposeObject(model)
+      return
+    }
+    model.position.copy(mesh.position)
+    model.quaternion.copy(mesh.quaternion)
+    scene.remove(mesh)
+    disposeObject(mesh)
+    scene.add(model)
+    pirateMeshes.set(pirate.id, model)
+  })
   void now
 }
 
@@ -758,17 +771,19 @@ function addChatLine(name: string, text: string): void {
   line.append(who, document.createTextNode(text)) // textContent — never innerHTML (no XSS)
   chatLogEl.appendChild(line)
   chatLines.push(line)
-  while (chatLines.length > 7) chatLines.shift()?.remove()
-  setTimeout(() => {
-    line.style.opacity = '0'
-    setTimeout(() => line.remove(), 600)
-  }, 9000)
+  while (chatLines.length > 200) chatLines.shift()?.remove() // keep the session's history, capped for memory
+  chatLogEl.scrollTop = chatLogEl.scrollHeight // newest at the bottom
+  // Fade visually after a while so the idle HUD stays clean — but keep it in the log,
+  // so opening chat ([Enter]) reveals the full scrollable history.
+  setTimeout(() => { line.style.opacity = '0' }, 9000)
 }
 
 function openChat(): void {
   if (chatOpen || !running || docked) return
   chatOpen = true
   document.exitPointerLock()
+  chatLogEl.classList.add('open') // expand into the scrollable history
+  chatLogEl.scrollTop = chatLogEl.scrollHeight
   chatInputEl.hidden = false
   chatInputEl.value = ''
   chatInputEl.focus()
@@ -776,6 +791,7 @@ function openChat(): void {
 
 function closeChat(): void {
   chatOpen = false
+  chatLogEl.classList.remove('open')
   chatInputEl.hidden = true
   chatInputEl.blur()
   if (running && !docked) renderer.domElement.requestPointerLock()
@@ -921,6 +937,7 @@ function drawCombatHud(): void {
 const camOffset = new THREE.Vector3()
 const camTarget = new THREE.Vector3()
 let camBoost = false // last-known boost input, read by the camera for FOV punch
+let camThrust = 0 // last-known commanded thrust 0..1, drives the engine flare (#2)
 let prevBoost = false // edge-detect boost engage for the ignition kick
 let boostKick = 0 // 1 on ignition, decays — drives camera pull-back, FOV punch, flare stretch
 // G-force sway: the camera lags opposite to acceleration, so thrust/braking has weight.
@@ -1093,7 +1110,8 @@ function frame(now: number): void {
     prevBoost = input.boost
 
     // Engine audio tracks commanded thrust; wind layer tracks actual speed.
-    audio.setThrust(Math.min(1, input.thrust.length()), input.boost, ship.velocity.length() / effSpeed())
+    camThrust = Math.min(1, input.thrust.length())
+    audio.setThrust(camThrust, input.boost, ship.velocity.length() / effSpeed())
 
     // Market prices drift back toward base over time.
     marketStep(market, dt)
@@ -1234,17 +1252,20 @@ function frame(now: number): void {
   if (running && !docked) drawCombatHud()
   else cctx.clearRect(0, 0, combatCanvas.width, combatCanvas.height)
 
-  // Boost flare: rides the ship's tail, flares while boosting, stretches on the ignition kick.
+  // Engine flare: reacts to thrust (a soft glow when accelerating, #2), flares hard on
+  // boost, and stretches on the ignition kick. Rides the ship's tail.
   boostKick = Math.max(0, boostKick - dt * 3.5)
   _flareBack.set(0, 0, 3.2).applyQuaternion(shipMesh.quaternion)
   boostFlare.position.copy(shipMesh.position).add(_flareBack)
   boostFlare.quaternion.copy(shipMesh.quaternion)
   boostFlare.rotateX(Math.PI / 2) // cone tip trails back along the ship's +z
   const flareMat = boostFlare.material as THREE.MeshBasicMaterial
-  const flareTarget = running && camBoost && quantum.phase === 'idle' ? 0.6 : 0
+  const flareTarget = running && quantum.phase === 'idle'
+    ? camThrust * 0.3 + (camBoost ? 0.45 : 0) // thrust glow + boost punch
+    : 0
   flareMat.opacity += (flareTarget - flareMat.opacity) * (1 - Math.exp(-12 * dt))
   boostFlare.visible = flareMat.opacity > 0.01
-  boostFlare.scale.set(1, 1 + boostKick * 1.2, 1)
+  boostFlare.scale.set(1, 1 + boostKick * 1.2 + camThrust * 0.4, 1) // stretches with thrust too
 
   composer.render()
   labelRenderer.render(scene, camera)

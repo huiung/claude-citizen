@@ -77,10 +77,18 @@
     #chat-log {
       position: fixed; left: 16px; bottom: 132px; width: 340px; max-width: 60vw; z-index: 7;
       pointer-events: none; display: flex; flex-direction: column; gap: 3px;
+      max-height: 132px; overflow: hidden; justify-content: flex-end;
     }
+    /* While chatting, the log expands into a scrollable history (mouse is unlocked then). */
+    #chat-log.open {
+      max-height: 300px; overflow-y: auto; pointer-events: auto;
+      background: rgba(2, 10, 6, .72); border-radius: 6px; padding: 6px 4px;
+    }
+    #chat-log.open .chat-line { opacity: 1 !important; }
     .chat-line {
       font-size: 12px; color: #cfeede; text-shadow: 0 0 4px #000; transition: opacity .5s;
       background: rgba(0, 12, 6, .45); padding: 1px 7px; border-radius: 3px; align-self: flex-start;
+      flex: 0 0 auto;
     }
     .chat-line b { color: #9fffb0; }
     #chat-input {
@@ -201,6 +209,7 @@
       border-bottom: 1px solid rgba(127, 201, 154, .3); padding-bottom: 1px;
     }
     #landing-links a:hover { color: #9fffb0; }
+    #landing-links a svg { vertical-align: -2px; margin-right: 4px; }
   </style>
 </head>
 <body>
@@ -260,7 +269,7 @@
     <button id="launch">LAUNCH</button>
     <p class="foot">click LAUNCH to grab mouse · 60 seconds from click to flight, that's the rule</p>
     <div id="landing-links">
-      <a href="https://github.com/huiung/claude-citizen" target="_blank" rel="noopener">★ Open source on GitHub</a>
+      <a href="https://github.com/huiung/claude-citizen" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Open source on GitHub</a>
       <a href="/wiki.html">📖 Wiki &amp; Guide</a>
     </div>
   </div>
