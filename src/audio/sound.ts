@@ -144,6 +144,8 @@ export class GameAudio {
   private osc2: OscillatorNode | null = null
   private engineGain: GainNode | null = null
   private noiseGain: GainNode | null = null
+  private windGain: GainNode | null = null // air-rush layer that swells with speed
+  private windFilter: BiquadFilterNode | null = null
   private miningOsc: OscillatorNode | null = null
   private miningGain: GainNode | null = null
   private assetBuffers = new Map<BlipKind, AudioBuffer[]>()
@@ -213,6 +215,24 @@ export class GameAudio {
         noise.connect(lp)
         lp.connect(noiseGain)
         noise.start()
+
+        // Air-rush layer: a separate band-passed noise voice whose gain and brightness
+        // climb with speed — the "wind" of going fast (no real air up here, but it sells it).
+        const windGain = ctx.createGain()
+        windGain.gain.value = 0
+        windGain.connect(master)
+        const windFilter = ctx.createBiquadFilter()
+        windFilter.type = 'lowpass' // soft air flow, not a high-frequency hiss
+        windFilter.frequency.value = 300
+        windFilter.Q.value = 0.5
+        windFilter.connect(windGain)
+        const wind = ctx.createBufferSource()
+        wind.buffer = buf
+        wind.loop = true
+        wind.connect(windFilter)
+        wind.start()
+        this.windGain = windGain
+        this.windFilter = windFilter
       }
       this.noiseGain = noiseGain
 
@@ -305,7 +325,7 @@ export class GameAudio {
    * pass `boost` to raise both. No-op (never throws) if `init()` has not run or
    * audio is unavailable. Call every frame.
    */
-  setThrust(level: number, boost = false): void {
+  setThrust(level: number, boost = false, speedFrac = 0): void {
     const ctx = this.ctx
     if (!ctx || !this.engineGain || !this.osc1 || !this.osc2) return
     try {
@@ -317,6 +337,12 @@ export class GameAudio {
       this.engineGain.gain.setTargetAtTime(gain, now, RAMP)
       if (this.noiseGain) {
         this.noiseGain.gain.setTargetAtTime(gain * 0.1 * clamp(level, 0, 1), now, RAMP)
+      }
+      // Air-rush: louder and brighter the faster you go; boost pushes it further.
+      if (this.windGain && this.windFilter) {
+        const s = clamp(speedFrac, 0, 1.4)
+        this.windGain.gain.setTargetAtTime(0.011 * Math.min(s, 1) * (boost ? 1.3 : 1), now, RAMP)
+        this.windFilter.frequency.setTargetAtTime(260 + s * 700, now, RAMP) // dark, rumbly — never hisses
       }
     } catch {
       /* ignore transient audio errors */

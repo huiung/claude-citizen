@@ -985,7 +985,7 @@ function frame(now: number): void {
       ? `QUANTUM SPOOLING → ${jumpTargetName}…`
       : `QUANTUM TRAVEL → ${jumpTargetName} · ${Math.round(qr.progress * 100)}%`
     navHintEl.textContent = ''
-    audio.setThrust(qr.phase === 'traveling' ? 1 : 0.2, qr.phase === 'traveling')
+    audio.setThrust(qr.phase === 'traveling' ? 1 : 0.2, qr.phase === 'traveling', qr.phase === 'traveling' ? 1.4 : 0)
     net.sendState(
       [ship.position.x, ship.position.y, ship.position.z],
       [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],
@@ -1008,8 +1008,8 @@ function frame(now: number): void {
     if (input.boost && !prevBoost) { boostKick = 1; audio.blip('boost') } // ignition punch
     prevBoost = input.boost
 
-    // Engine audio tracks commanded thrust.
-    audio.setThrust(Math.min(1, input.thrust.length()), input.boost)
+    // Engine audio tracks commanded thrust; wind layer tracks actual speed.
+    audio.setThrust(Math.min(1, input.thrust.length()), input.boost, ship.velocity.length() / effSpeed())
 
     // Market prices drift back toward base over time.
     marketStep(market, dt)
