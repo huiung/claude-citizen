@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  ASSET_BLIP_SPECS,
   BLIP_SPECS,
   clamp,
   ENGINE_FREQ_BOOST,
@@ -87,6 +88,31 @@ describe('BLIP_SPECS', () => {
   it('error cue descends in pitch, dock cue rises', () => {
     expect(BLIP_SPECS.error.to).toBeLessThan(BLIP_SPECS.error.from)
     expect(BLIP_SPECS.dock.to).toBeGreaterThan(BLIP_SPECS.dock.from)
+  })
+})
+
+describe('ASSET_BLIP_SPECS', () => {
+  it('uses CC0 asset cues for short events while leaving trade synthetic', () => {
+    expect(Object.keys(ASSET_BLIP_SPECS).sort()).toEqual(['dock', 'error', 'explosion', 'fire', 'hit'])
+    expect(ASSET_BLIP_SPECS).not.toHaveProperty('trade')
+  })
+
+  it('keeps every asset cue on public Kenney OGG paths with conservative gain', () => {
+    for (const spec of Object.values(ASSET_BLIP_SPECS)) {
+      expect(spec.variants.length).toBeGreaterThan(0)
+      expect(spec.gain).toBeGreaterThan(0)
+      expect(spec.gain).toBeLessThanOrEqual(0.75)
+      for (const path of spec.variants) {
+        expect(path.startsWith('/audio/kenney-sci-fi/')).toBe(true)
+        expect(path.endsWith('.ogg')).toBe(true)
+      }
+    }
+  })
+
+  it('keeps an oscillator fallback for every asset-backed cue', () => {
+    for (const kind of Object.keys(ASSET_BLIP_SPECS)) {
+      expect(BLIP_SPECS).toHaveProperty(kind)
+    }
   })
 })
 

@@ -41,7 +41,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **A named solar system:** Sun + Mercury through Saturn at a compressed scale, each with a procedurally textured surface (oceans/continents, gas bands, ice caps) — and they're solid, so you fly *around* them, not through
 - **Quantum travel:** charge the drive and jump to the nearest planet (its name + distance show on the HUD) in seconds
 - **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor, each trading cargo/speed/toughness
-- Procedural engine + combat + UI audio — synthesized live, no sound files
+- Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
 - **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours
 - 128 tests, because "built with AI" shouldn't mean "built badly"
@@ -74,10 +74,11 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | 4 | Endless procedural galaxy, quantum travel, ship classes | ✅ shipped |
 | 5 | Persistence (anonymous token) + in-sector chat | ✅ shipped |
 | 6 | Hosted, playable at [claudecitizen.com](https://claudecitizen.com) | ✅ shipped |
-| 7 | Co-op combat — fight pirates together | next |
-| 8 | Procedural planetary landings | planned |
+| 7 | Low-poly planet surfaces — terrain up close, low-altitude flight | 🚧 in progress |
+| 8 | Co-op combat — fight pirates together | next |
+| 9 | Procedural planetary landings (real terrain collision) | planned |
 | … | … | … |
-| 9 | Getting out of bed animation *(took the original 6 years — we'll take a weekend)* | someday |
+| 42 | Getting out of bed animation *(took the original 6 years — we'll take a weekend)* | someday |
 | 1.0 | **Ship before Star Citizen ships** | the whole point |
 
 ## How this is built

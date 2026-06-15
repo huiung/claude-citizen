@@ -53,6 +53,13 @@ export function miningToGain(active: boolean, inRange: boolean): number {
 /** One-shot UI / combat cue kinds. */
 export type BlipKind = 'dock' | 'trade' | 'error' | 'fire' | 'hit' | 'explosion'
 
+interface AssetBlipSpec {
+  /** Public URLs for short one-shot variants. */
+  variants: string[]
+  /** Buffer playback gain, kept below full scale because several cues can overlap. */
+  gain: number
+}
+
 interface BlipSpec {
   /** Oscillator start/end frequency in Hz (a quick glide). */
   from: number
@@ -80,6 +87,44 @@ export const BLIP_SPECS: Record<BlipKind, BlipSpec> = {
   explosion: { from: 160, to: 40, peak: 0.24, dur: 0.5, type: 'sawtooth' },
 }
 
+/** CC0 Kenney sci-fi sounds for short event cues. Continuous audio stays procedural. */
+export const ASSET_BLIP_SPECS: Partial<Record<BlipKind, AssetBlipSpec>> = {
+  fire: {
+    variants: [
+      '/audio/kenney-sci-fi/laserSmall_000.ogg',
+      '/audio/kenney-sci-fi/laserSmall_001.ogg',
+      '/audio/kenney-sci-fi/laserSmall_002.ogg',
+    ],
+    gain: 0.26,
+  },
+  hit: {
+    variants: [
+      '/audio/kenney-sci-fi/impactMetal_000.ogg',
+      '/audio/kenney-sci-fi/impactMetal_001.ogg',
+      '/audio/kenney-sci-fi/impactMetal_002.ogg',
+    ],
+    gain: 0.38,
+  },
+  explosion: {
+    variants: [
+      '/audio/kenney-sci-fi/explosionCrunch_003.ogg',
+      '/audio/kenney-sci-fi/explosionCrunch_004.ogg',
+    ],
+    gain: 0.58,
+  },
+  dock: {
+    variants: [
+      '/audio/kenney-sci-fi/doorClose_001.ogg',
+      '/audio/kenney-sci-fi/doorOpen_001.ogg',
+    ],
+    gain: 0.34,
+  },
+  error: {
+    variants: ['/audio/kenney-sci-fi/forceField_003.ogg'],
+    gain: 0.3,
+  },
+}
+
 /** Smoothing time (s) for engine parameter ramps — avoids zipper noise. */
 const RAMP = 0.08
 
@@ -99,6 +144,9 @@ export class GameAudio {
   private noiseGain: GainNode | null = null
   private miningOsc: OscillatorNode | null = null
   private miningGain: GainNode | null = null
+  private assetBuffers = new Map<BlipKind, AudioBuffer[]>()
+  private assetCursor = new Map<BlipKind, number>()
+  private loadingAssets = false
 
   private started = false
 
@@ -177,6 +225,7 @@ export class GameAudio {
       miningOsc.start()
       this.miningGain = miningGain
       this.miningOsc = miningOsc
+      void this.loadAssetBlips(ctx)
     } catch {
       // Audio unavailable (headless, blocked, OOM) — degrade to silence.
       this.ctx = null
@@ -193,6 +242,59 @@ export class GameAudio {
       return buf
     } catch {
       return null
+    }
+  }
+
+  private async loadAssetBlips(ctx: AudioContext): Promise<void> {
+    if (this.loadingAssets) return
+    this.loadingAssets = true
+    const entries = Object.entries(ASSET_BLIP_SPECS) as [BlipKind, AssetBlipSpec][]
+    await Promise.all(entries.map(async ([kind, spec]) => {
+      const decoded = await Promise.all(spec.variants.map(async (path) => {
+        try {
+          if (typeof fetch !== 'function') return null
+          const res = await fetch(path)
+          if (!res.ok) return null
+          const data = await res.arrayBuffer()
+          return await ctx.decodeAudioData(data.slice(0))
+        } catch {
+          return null
+        }
+      }))
+      const buffers = decoded.filter((buffer): buffer is AudioBuffer => buffer !== null)
+      if (buffers.length > 0) this.assetBuffers.set(kind, buffers)
+    }))
+  }
+
+  private playAssetBlip(kind: BlipKind): boolean {
+    const ctx = this.ctx
+    const master = this.master
+    const spec = ASSET_BLIP_SPECS[kind]
+    const buffers = this.assetBuffers.get(kind)
+    if (!ctx || !master || !spec || !buffers?.length) return false
+    try {
+      const cursor = this.assetCursor.get(kind) ?? 0
+      const buffer = buffers[cursor % buffers.length]
+      this.assetCursor.set(kind, cursor + 1)
+
+      const src = ctx.createBufferSource()
+      const gain = ctx.createGain()
+      src.buffer = buffer
+      gain.gain.value = spec.gain
+      src.connect(gain)
+      gain.connect(master)
+      src.start(ctx.currentTime)
+      src.onended = () => {
+        try {
+          src.disconnect()
+          gain.disconnect()
+        } catch {
+          /* already gone */
+        }
+      }
+      return true
+    } catch {
+      return false
     }
   }
 
@@ -264,6 +366,7 @@ export class GameAudio {
     const master = this.master
     if (!ctx || !master) return
     try {
+      if (this.playAssetBlip(kind)) return
       const spec = BLIP_SPECS[kind]
       const now = ctx.currentTime
       const osc = ctx.createOscillator()

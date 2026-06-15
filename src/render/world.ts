@@ -237,23 +237,25 @@ export function buildSun(radius: number, color: number): THREE.Group {
  *  so flat-shaded faces read as terrain, not static. Range ~[-1, 1]. */
 function surfaceNoise(x: number, y: number, z: number, s: number): number {
   return (
-    Math.sin(x * 3.1 + s) * Math.cos(y * 2.7 + s * 1.3) * 0.6 +
+    Math.sin(x * 3.1 + s) * Math.cos(y * 2.7 + s * 1.3) * 0.55 +
     Math.sin(y * 6.3 + s * 2.1) * Math.cos(z * 5.9) * 0.3 +
-    Math.sin(z * 12.7 + s) * Math.cos(x * 11.3) * 0.15
+    Math.sin(z * 12.7 + s) * Math.cos(x * 11.3) * 0.18 +
+    Math.sin(x * 26.0 + s) * Math.cos(z * 24.0) * 0.11 + // ridges
+    Math.sin(y * 47.0 + s * 1.7) * Math.cos(x * 43.0) * 0.06 // fine detail
   )
 }
 
 const _sp = new THREE.Color()
 const _spB = new THREE.Color()
 
-/** A named-solar-system planet with a procedurally textured surface per kind. */
-export function buildSolarPlanet(
-  radius: number, color: number, hasRings: boolean, surface: SurfaceKind, seed: number,
-): THREE.Group {
-  const group = new THREE.Group()
+/** One surface mesh at a given tessellation + displacement scale — used as an LOD level.
+ *  Higher `dispScale` raises mountains/valleys (close-up detail); lower flattens (far away). */
+function makePlanetSurface(
+  radius: number, color: number, surface: SurfaceKind, seed: number, detail: number, dispScale: number,
+): THREE.Mesh {
   const s = seed * 0.013
   const isGas = surface === 'gas'
-  const geo = new THREE.IcosahedronGeometry(radius, isGas ? 4 : 5)
+  const geo = new THREE.IcosahedronGeometry(radius, detail)
   const pos = geo.getAttribute('position') as THREE.BufferAttribute
   const v = new THREE.Vector3()
   const colors = new Float32Array(pos.count * 3)
@@ -267,16 +269,16 @@ export function buildSolarPlanet(
     let disp = 0
 
     if (surface === 'earth') {
-      if (h < 0.5) { _sp.setRGB(0.1, 0.28, 0.5).lerp(_spB.setRGB(0.16, 0.42, 0.62), h * 2) } // ocean
-      else { _sp.setRGB(0.23, 0.48, 0.27).lerp(_spB.setRGB(0.5, 0.42, 0.26), (h - 0.5) * 2); disp = (h - 0.5) * radius * 0.05 } // land
+      if (h < 0.5) { _sp.setRGB(0.1, 0.28, 0.5).lerp(_spB.setRGB(0.16, 0.42, 0.62), h * 2) } // ocean (flat)
+      else { _sp.setRGB(0.23, 0.48, 0.27).lerp(_spB.setRGB(0.5, 0.42, 0.26), (h - 0.5) * 2); disp = (h - 0.5) * radius * 0.1 } // mountainous land
       if (polar > 0.8) _sp.setRGB(0.9, 0.93, 0.95) // ice caps
     } else if (surface === 'mars') {
       _sp.setRGB(0.5, 0.22, 0.13).lerp(_spB.setRGB(0.78, 0.4, 0.24), h)
-      disp = (h - 0.5) * radius * 0.06
+      disp = raw * radius * 0.07 // craters + ridges (both directions)
       if (polar > 0.85) _sp.setRGB(0.85, 0.85, 0.88)
     } else if (surface === 'rocky') {
       _sp.setRGB(0.36, 0.34, 0.3).lerp(_spB.setRGB(0.64, 0.6, 0.55), h)
-      disp = (h - 0.5) * radius * 0.05
+      disp = raw * radius * 0.06
     } else if (surface === 'venus') {
       _sp.setRGB(0.78, 0.6, 0.32).lerp(_spB.setRGB(0.92, 0.78, 0.5), h * 0.7 + 0.15)
     } else { // gas — horizontal bands
@@ -284,14 +286,32 @@ export function buildSolarPlanet(
       _sp.set(color).lerp(_spB.setRGB(0.66, 0.54, 0.36), band * 0.6)
     }
 
-    v.setLength(radius + disp)
+    v.setLength(radius + disp * dispScale)
     pos.setXYZ(i, v.x, v.y, v.z)
     colors[i * 3] = _sp.r; colors[i * 3 + 1] = _sp.g; colors[i * 3 + 2] = _sp.b
   }
 
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
   geo.computeVertexNormals()
-  group.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: isGas ? 0.7 : 0.95 })))
+  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: isGas ? 0.7 : 0.95 }))
+}
+
+/** A named-solar-system planet: LOD surface (detailed terrain up close, low-poly far) + atmosphere (+ rings).
+ *  Rocky/earthy bodies get an LOD; gas giants are a single banded sphere. Returned group holds the LOD —
+ *  the caller must call .update(camera) on it each frame. */
+export function buildSolarPlanet(
+  radius: number, color: number, hasRings: boolean, surface: SurfaceKind, seed: number,
+): THREE.Group {
+  const group = new THREE.Group()
+  const isGas = surface === 'gas'
+  if (isGas) {
+    group.add(makePlanetSurface(radius, color, surface, seed, 4, 1))
+  } else {
+    const lod = new THREE.LOD()
+    lod.addLevel(makePlanetSurface(radius, color, surface, seed, 6, 1.5), 0) // close: detailed terrain
+    lod.addLevel(makePlanetSurface(radius, color, surface, seed, 4, 0.5), radius * 3.5) // far: low-poly, flatter
+    group.add(lod)
+  }
 
   // Atmosphere haze (tinted by kind)
   const atmoColor = surface === 'earth' ? 0x88bbff : surface === 'venus' ? 0xe8c070 : isGas ? 0xd8c0a0 : 0x9fb4c8

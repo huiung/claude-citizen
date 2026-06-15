@@ -122,10 +122,12 @@ scene.add(sun)
 const sunLight = new THREE.PointLight(0xfff0be, 2.5, 0, 0) // no falloff — lights the whole system
 sunLight.position.copy(SUN_POSITION)
 scene.add(sunLight)
+const planetLODs: THREE.LOD[] = []
 for (const planet of PLANETS) {
   const mesh = buildSolarPlanet(planet.radius, planet.color, planet.hasRings, planet.surface, planet.seed)
   mesh.position.copy(planet.position)
   scene.add(mesh)
+  mesh.traverse((o) => { if (o instanceof THREE.LOD) planetLODs.push(o) })
 }
 buildLights(scene)
 
@@ -308,21 +310,25 @@ let jumpTargetName = '' // destination of the current jump (for the HUD)
 let navCache: { name: string; dist: number } | null = null
 let lastNav = -Infinity
 
-/** Nearest jump destination — a solar-system planet or a procedural planet/moon/station. */
+const _navDir = new THREE.Vector3()
+/** Nearest jump destination — arrival point sits just OFF the body's surface (not its center),
+ *  so the quantum drop-out lands you outside it, never inside. */
 function nearestJumpTarget(): { position: THREE.Vector3; name: string } | null {
   let best: { position: THREE.Vector3; name: string } | null = null
   let bestD = Infinity
-  for (const planet of PLANETS) {
-    const d = planet.position.distanceToSquared(ship.position)
-    if (d < bestD) { bestD = d; best = { position: planet.position, name: planet.name } }
+  const consider = (center: THREE.Vector3, radius: number, name: string): void => {
+    const d = center.distanceToSquared(ship.position)
+    if (d >= bestD) return
+    bestD = d
+    _navDir.copy(ship.position).sub(center)
+    if (_navDir.lengthSq() < 1) _navDir.set(0, 0, 1)
+    _navDir.normalize()
+    best = { position: center.clone().addScaledVector(_navDir, radius * 1.5), name }
   }
+  for (const planet of PLANETS) consider(planet.position, planet.radius, planet.name)
   for (const c of queryCelestials(ship.position, STREAM_RADIUS)) {
     if (c.type !== 'planet' && c.type !== 'moon' && c.type !== 'station') continue
-    const d = c.position.distanceToSquared(ship.position)
-    if (d < bestD) {
-      bestD = d
-      best = { position: c.position, name: c.type === 'station' ? 'Station' : c.type === 'moon' ? 'Moon' : 'Planet' }
-    }
+    consider(c.position, c.radius, c.type === 'station' ? 'Station' : c.type === 'moon' ? 'Moon' : 'Planet')
   }
   return best
 }
@@ -341,7 +347,7 @@ function resolvePlanetCollisions(): void {
   const hit = (cx: number, cy: number, cz: number, radius: number): void => {
     _toShip.set(ship.position.x - cx, ship.position.y - cy, ship.position.z - cz)
     const dist = _toShip.length()
-    const minDist = radius + 40
+    const minDist = radius * 1.13 + 30 // sit above the surface (clears terrain displacement)
     if (dist < minDist && dist > 1e-3) {
       _toShip.multiplyScalar(1 / dist) // surface normal
       ship.position.set(cx, cy, cz).addScaledVector(_toShip, minDist)
@@ -874,7 +880,10 @@ function frame(now: number): void {
   station.rotation.z += dt * 0.05
   colony.rotation.y += dt * 0.03
   starfield.position.copy(ship.position) // keep the star backdrop centered on the player
-  if (running) streamCelestials(now)
+  if (running) {
+    streamCelestials(now)
+    for (const lod of planetLODs) lod.update(camera) // swap planet detail by distance
+  }
 
   if (running && !docked && quantum.phase !== 'idle') {
     // Quantum jump in progress: the drive flies the ship; normal flight/combat is suspended.
