@@ -6,7 +6,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { createShipState, stepShip, type ControlInput } from './sim/physics'
-import { buildCraft } from './render/shipyard'
+import { buildCraft, loadCraftModelForType } from './render/shipyard'
 import { SHIP_STATS, type ShipType } from './sim/shipTypes'
 import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
@@ -532,7 +532,7 @@ function effCargo(): number {
 function setPlayerCraft(type: ShipType): void {
   scene.remove(shipMesh)
   disposeObject(shipMesh)
-  shipMesh = buildCraft(type, PLAYER_TINT)
+  shipMesh = buildCraft(type, PLAYER_TINT) // procedural hull shows immediately
   shipMesh.position.copy(ship.position)
   shipMesh.quaternion.copy(ship.quaternion)
   scene.add(shipMesh)
@@ -540,6 +540,16 @@ function setPlayerCraft(type: ShipType): void {
   playerHealth.max = SHIP_STATS[type].hull
   playerHealth.hull = playerHealth.max
   saveHangar()
+  // Upgrade to the generated GLB model if available (async; keeps the procedural hull on failure).
+  loadCraftModelForType(type).then((model) => {
+    if (!model || selectedShipType !== type) return // asset missing, or the type changed mid-load
+    scene.remove(shipMesh)
+    disposeObject(shipMesh)
+    shipMesh = model
+    shipMesh.position.copy(ship.position)
+    shipMesh.quaternion.copy(ship.quaternion)
+    scene.add(shipMesh)
+  })
 }
 
 function updateWalletHUD(): void {
@@ -963,6 +973,7 @@ function launch(): void {
   net.connect()
   running = true
   selectedJumpIdx = nearestPlanetIdx() // start aimed at the closest planet
+  setPlayerCraft(selectedShipType) // apply hull (and load its GLB model) on launch
 }
 launchEl.addEventListener('click', launch)
 nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') launch() })

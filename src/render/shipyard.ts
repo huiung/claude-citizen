@@ -1,5 +1,51 @@
 import * as THREE from 'three'
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import type { ShipType } from '../sim/shipTypes'
+
+const gltfLoader = new GLTFLoader()
+
+const CRAFT_MODEL_URLS: Record<ShipType, string> = {
+  hauler: '/assets/ships/hauler.glb',
+  fighter: '/assets/ships/fighter.glb',
+  miner: '/assets/ships/miner.glb',
+  interceptor: '/assets/ships/interceptor.glb',
+}
+
+const CRAFT_MODEL_TARGET_SIZES: Record<ShipType, number> = {
+  hauler: 9.5,
+  fighter: 8.2,
+  miner: 9,
+  interceptor: 8.4,
+}
+
+export function craftModelUrl(type: ShipType): string {
+  return CRAFT_MODEL_URLS[type]
+}
+
+/** Load a CC0 GLB hull, normalized to game scale (by bounding box) and wrapped in a
+ *  Group so the caller drives a stable transform. Returns null on 404/parse failure
+ *  so callers can fall back to the procedural hull. Nose alignment is tuned per-asset. */
+export async function loadCraftModel(url: string, targetSize = 8): Promise<THREE.Group | null> {
+  try {
+    const gltf = await gltfLoader.loadAsync(url)
+    const model = gltf.scene
+    const box = new THREE.Box3().setFromObject(model)
+    const size = box.getSize(new THREE.Vector3())
+    const maxDim = Math.max(size.x, size.y, size.z) || 1
+    const s = targetSize / maxDim
+    model.scale.setScalar(s)
+    model.position.sub(box.getCenter(new THREE.Vector3()).multiplyScalar(s)) // recenter at origin
+    const group = new THREE.Group()
+    group.add(model)
+    return group
+  } catch {
+    return null
+  }
+}
+
+export async function loadCraftModelForType(type: ShipType): Promise<THREE.Group | null> {
+  return loadCraftModel(CRAFT_MODEL_URLS[type], CRAFT_MODEL_TARGET_SIZES[type])
+}
 
 /**
  * Shipyard — procedural low-poly flat-shaded hulls, one distinct silhouette per
