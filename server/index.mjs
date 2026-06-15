@@ -18,6 +18,17 @@ const httpServer = createServer((req, res) => {
     res.end(JSON.stringify({ online: clients.size, registered: Object.keys(store).length }))
     return
   }
+  if (req.url === '/leaderboard') {
+    // Top pilots by credits — every activity (mining, bounties, contracts) settles into credits.
+    const top = Object.values(store)
+      .filter((e) => e && typeof e.credits === 'number')
+      .sort((a, b) => b.credits - a.credits)
+      .slice(0, 10)
+      .map((e) => ({ name: e.name ?? 'PILOT', credits: e.credits }))
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+    res.end(JSON.stringify(top))
+    return
+  }
   res.writeHead(200, { 'Content-Type': 'text/plain' })
   res.end('star-citizen-caliber relay')
 })
@@ -100,7 +111,7 @@ wss.on('connection', (ws) => {
 
     if (msg.t === 'save' && client.token) {
       const clean = sanitizeProgress(msg.progress)
-      if (clean) { store[client.token] = clean; flush() }
+      if (clean) { clean.name = client.name; store[client.token] = clean; flush() } // stamp callsign for the leaderboard
       return
     }
 

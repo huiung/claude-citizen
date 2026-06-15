@@ -83,7 +83,27 @@ const playerToken = loadToken()
 // Landing stats (online / registered pilots) from the relay's /stats endpoint.
 const WS_URL = import.meta.env.VITE_WS_URL ?? `ws://${location.hostname}:8080`
 const STATS_URL = WS_URL.replace(/^ws/, 'http') + '/stats'
+const LEADERBOARD_URL = WS_URL.replace(/^ws/, 'http') + '/leaderboard'
+const lbListLandingEl = document.getElementById('lb-list-landing')!
+const lbListHudEl = document.getElementById('lb-list-hud')!
+const leaderboardPanelEl = document.getElementById('leaderboard-panel')!
 let statsTimer: ReturnType<typeof setInterval> | undefined
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c)
+}
+function renderLeaderboard(listEl: HTMLElement, rows: Array<{ name: string; credits: number }>): void {
+  if (!rows.length) { listEl.innerHTML = '<li class="lb-empty">no pilots yet — be the first</li>'; return }
+  listEl.innerHTML = rows.map((r, i) =>
+    `<li><span class="rank">${i + 1}</span><span class="nm">${escapeHtml(String(r.name))}</span>`
+    + `<span class="cr">${(Number(r.credits) || 0).toLocaleString()} cr</span></li>`,
+  ).join('')
+}
+function fetchLeaderboard(listEl: HTMLElement): void {
+  fetch(LEADERBOARD_URL).then((r) => r.json())
+    .then((rows) => renderLeaderboard(listEl, Array.isArray(rows) ? rows : []))
+    .catch(() => { /* relay offline */ })
+}
 function refreshLandingStats(): void {
   fetch(STATS_URL)
     .then((r) => r.json())
@@ -92,6 +112,7 @@ function refreshLandingStats(): void {
       statRegisteredEl.textContent = String(d.registered ?? '—')
     })
     .catch(() => { /* relay offline — leave placeholders */ })
+  fetchLeaderboard(lbListLandingEl)
 }
 refreshLandingStats()
 statsTimer = setInterval(refreshLandingStats, 6000)
@@ -526,6 +547,7 @@ document.body.appendChild(stationMenu.root)
 function dock(id: string): void {
   docked = true
   miningActive = false
+  leaderboardPanelEl.hidden = true // don't strand the leaderboard open behind the station menu
   dockPromptEl.hidden = true
   mineEl.hidden = true
   beam.visible = false
@@ -582,6 +604,11 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyN' && running && !docked && quantum.phase === 'idle') {
     selectedJumpIdx = (selectedJumpIdx + 1) % PLANETS.length // cycle the quantum destination
     audio.blip('dock')
+  }
+  if (e.code === 'KeyL' && running && !docked) {
+    const willShow = leaderboardPanelEl.hidden
+    leaderboardPanelEl.hidden = !willShow
+    if (willShow) fetchLeaderboard(lbListHudEl) // refresh standings each time it opens
   }
   if (e.code === 'KeyJ' && running && !docked) {
     if (quantum.phase === 'idle') {

@@ -172,13 +172,28 @@
     #overlay button:hover { background: #1b5a30; }
     #overlay .foot { font-size: 11px; opacity: .4; }
     #mobile-notice { display: none; }
-    .is-mobile #nickname, .is-mobile #launch, .is-mobile .foot, .is-mobile #landing-stats { display: none; }
+    .is-mobile #nickname, .is-mobile #launch, .is-mobile .foot, .is-mobile #landing-stats, .is-mobile #leaderboard-landing { display: none; }
     .is-mobile #mobile-notice {
       display: block; color: #ffd08a; font-size: 14px; max-width: 360px; line-height: 1.7;
       border: 1px solid rgba(255, 208, 138, .4); border-radius: 6px; padding: 14px 16px;
     }
     #landing-stats { font-size: 13px; color: #9fffb0; opacity: .9; letter-spacing: 1px; }
     #landing-stats span { color: #ffe08a; font-weight: 600; }
+    .lb { margin: 10px auto 0; width: 300px; text-align: left; font: 12px/1.6 ui-monospace, "SF Mono", Menlo, monospace; }
+    .lb-title { color: #9fffb0; letter-spacing: 1px; font-weight: 600; margin-bottom: 5px; text-align: center; }
+    .lb ol { list-style: none; margin: 0; padding: 0; }
+    .lb li { display: flex; gap: 8px; padding: 1px 4px; color: #cfe3d0; }
+    .lb li .rank { color: #ffe08a; width: 1.5em; flex: none; }
+    .lb li .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lb li .cr { color: #ffe08a; flex: none; }
+    .lb-empty { opacity: .5; justify-content: center; }
+    #leaderboard-panel {
+      position: fixed; top: 50%; right: 24px; transform: translateY(-50%);
+      background: rgba(2, 8, 12, .82); border: 1px solid rgba(159, 255, 176, .25);
+      border-radius: 8px; padding: 14px 16px; z-index: 30;
+    }
+    #leaderboard-panel .lb { margin: 0; width: 230px; }
+    #leaderboard-panel .lb-hint { margin-top: 9px; text-align: center; opacity: .45; font-size: 11px; color: #9fffb0; }
     #landing-links { display: flex; gap: 22px; margin-top: 4px; }
     #landing-links a {
       color: #7fc99a; font-size: 12px; text-decoration: none;
@@ -196,6 +211,13 @@
   </div>
   <div id="dock-prompt" hidden>▸ PRESS SPACE TO DOCK</div>
   <div id="mine-prompt" hidden>⛏ MINING ORE — hold to extract</div>
+  <div id="leaderboard-panel" hidden>
+    <div class="lb">
+      <div class="lb-title">◆ TOP PILOTS · credits</div>
+      <ol id="lb-list-hud"><li class="lb-empty">—</li></ol>
+    </div>
+    <div class="lb-hint">[L] to close</div>
+  </div>
   <div id="hud" hidden>
     <div class="big"><span id="speed">0</span> m/s</div>
     <div>FLIGHT ASSIST: <span id="assist">COUPLED</span></div>
@@ -220,12 +242,17 @@
   <div id="help" hidden>
     MOUSE aim · W/S thrust · A/D strafe · R/F vertical · Q/E roll<br />
     SHIFT boost · X brake · V flight assist · ESC release mouse<br />
-    LEFT-CLICK mine · RIGHT-CLICK fire · SPACE dock · J quantum-jump · ENTER chat
+    LEFT-CLICK mine · RIGHT-CLICK fire · SPACE dock · N pick destination · J quantum-jump<br />
+    L leaderboard · ENTER chat
   </div>
   <div id="overlay">
     <h1>CLAUDE <span>CITIZEN</span></h1>
     <p>An open-source attempt to finish Star Citizen before Star Citizen does.<br/>Built with Claude Fable 5. Not affiliated with CIG/RSI.</p>
     <div id="landing-stats"><span id="stat-online">—</span> online · <span id="stat-registered">—</span> pilots registered</div>
+    <div id="leaderboard-landing" class="lb">
+      <div class="lb-title">◆ TOP PILOTS</div>
+      <ol id="lb-list-landing"><li class="lb-empty">—</li></ol>
+    </div>
     <div id="mobile-notice">⌨️ Best experienced on desktop — Claude Citizen flies with a keyboard + mouse. Open <b>claudecitizen.com</b> on a computer to play. (Code &amp; details on GitHub below.)</div>
     <input id="nickname" maxlength="16" placeholder="CALLSIGN" autocomplete="off" />
     <button id="launch">LAUNCH</button>
