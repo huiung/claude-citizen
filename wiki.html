@@ -6,16 +6,17 @@
   <title>Claude Citizen — Wiki &amp; Guide</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { background: #02060a; color: #cfeede; font-family: "SF Mono", "Fira Code", ui-monospace, monospace; }
+    html, body { background: #02060a; color: #cfeede; font-family: "Share Tech Mono", "SF Mono", Consolas, ui-monospace, monospace; }
     body { line-height: 1.7; padding: 0 20px 80px; }
     .wrap { max-width: 760px; margin: 0 auto; }
     header { padding: 40px 0 24px; border-bottom: 1px solid rgba(63, 174, 95, .25); margin-bottom: 28px; }
-    h1 { font-size: 26px; letter-spacing: 3px; color: #9fffb0; font-weight: 600; }
+    h1 { font-family: "Orbitron", "Share Tech Mono", sans-serif; font-size: 26px; letter-spacing: 3px; color: #9fffb0; font-weight: 700; }
     h1 span { opacity: .5; }
     .sub { font-size: 13px; opacity: .6; margin-top: 8px; }
     nav { margin-top: 16px; display: flex; gap: 18px; flex-wrap: wrap; }
     nav a { color: #7fc99a; font-size: 12px; text-decoration: none; border-bottom: 1px solid rgba(127,201,154,.3); }
     nav a:hover { color: #9fffb0; }
+    nav a svg { vertical-align: -2px; margin-right: 4px; }
     h2 { font-size: 17px; color: #9fffb0; letter-spacing: 2px; margin: 34px 0 10px; }
     p, li { font-size: 14px; opacity: .9; }
     ul { margin: 8px 0 8px 22px; }
@@ -28,6 +29,11 @@
     .foot { margin-top: 48px; padding-top: 18px; border-top: 1px solid rgba(63,174,95,.25); font-size: 12px; opacity: .55; }
     a { color: #7fc99a; }
   </style>
+  <script type="module">
+    // Self-hosted web fonts (same as the game) — Orbitron for the title, Share Tech Mono for body.
+    import '@fontsource/orbitron/700.css'
+    import '@fontsource/share-tech-mono/400.css'
+  </script>
 </head>
 <body>
   <div class="wrap">
@@ -36,7 +42,7 @@
       <div class="sub">An open-source attempt to finish Star Citizen before Star Citizen does. Built with Claude Fable 5.</div>
       <nav>
         <a href="/">▶ Play</a>
-        <a href="https://github.com/huiung/claude-citizen" target="_blank" rel="noopener">★ GitHub</a>
+        <a href="https://github.com/huiung/claude-citizen" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
       </nav>
     </header>
 
@@ -60,7 +66,8 @@
       <tr><td class="key">Space</td><td>Dock (slow + near an outpost)</td></tr>
       <tr><td class="key">N</td><td>Cycle the quantum destination (Mercury → Saturn)</td></tr>
       <tr><td class="key">J</td><td>Quantum jump to the selected planet</td></tr>
-      <tr><td class="key">Enter</td><td>Chat</td></tr>
+      <tr><td class="key">L</td><td>Toggle the leaderboard</td></tr>
+      <tr><td class="key">Enter</td><td>Chat (the log scrolls when open)</td></tr>
     </table>
 
     <h2>TRADING</h2>
@@ -85,13 +92,13 @@
     </table>
 
     <h2>PIRATES &amp; SAFE ZONES</h2>
-    <p>Out in open space, pirate interceptors hunt you. Fight back with <kbd>Right-click</kbd>, watch your hull bar, and collect the bounty on a kill. If you're losing, run for an outpost — <strong>safe zones</strong> around the stations keep hostiles off you. Die and you respawn at the origin, losing a little money but keeping your cargo.</p>
+    <p>Out in open space, pirate interceptors hunt you. Fight back with <kbd>Right-click</kbd>, watch your hull bar, and collect the bounty on a kill. The combat HUD helps: <strong>red brackets</strong> mark hostiles with their range, <strong>arrows at the screen edge</strong> point to threats behind or beside you, and a <strong>green lead indicator</strong> shows where to aim so your shots land. If you're losing, run for an outpost — <strong>safe zones</strong> around the stations keep hostiles off you. Die and you respawn at the origin, losing a little money but keeping your cargo.</p>
 
     <h2>QUANTUM TRAVEL</h2>
     <p>Space is vast. Press <kbd>N</kbd> to pick a destination — it cycles through the named planets (Mercury → Saturn), shown on the HUD with its distance. Then press <kbd>J</kbd> to spool the quantum drive: a couple seconds of charge, then you streak across the sector and drop out just short of the planet you chose. Press <kbd>J</kbd> again to cancel. Distant targets (Jupiter, Saturn) make for a long, cinematic cruise.</p>
 
     <h2>MULTIPLAYER</h2>
-    <p>Other pilots share your sector in real time — you'll see their craft and callsigns. Hit <kbd>Enter</kbd> to chat. (Combat is currently solo; co-op fights are on the roadmap.)</p>
+    <p>Other pilots share your sector in real time — you'll see their craft and callsigns. Hit <kbd>Enter</kbd> to chat; open it any time to scroll back through the session's history. A <strong>leaderboard</strong> ranks the top pilots by credits — on the landing screen and in-game with <kbd>L</kbd>. (Combat is currently solo; co-op fights are on the roadmap.)</p>
 
     <h2>TIPS</h2>
     <ul>
