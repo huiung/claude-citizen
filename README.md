@@ -39,7 +39,8 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Pirates:** hostiles hunt you in the sector — shoot back, watch your hull, collect the bounty
 - **An endless procedural galaxy:** fly any direction and planets, moons, stations, and derelicts keep appearing — some planets are vast
 - **A named solar system:** Sun + Mercury through Saturn at a compressed scale, each with a procedurally textured surface (oceans/continents, gas bands, ice caps) — and they're solid, so you fly *around* them, not through
-- **Quantum travel:** charge the drive and jump to the nearest planet (its name + distance show on the HUD) in seconds
+- **Quantum travel:** pick a destination with `[N]`, charge the drive, and jump to any planet in the system — warp streaks, a wide-FOV cruise, and a named arrival
+- **A cinematic sky:** bloom glow, fresnel planet atmospheres, a procedural nebula backdrop, slowly rotating worlds, and parallax dust that streams past for a sense of speed
 - **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor, each trading cargo/speed/toughness
 - Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
@@ -61,7 +62,8 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | Left-click (hold) | Fire mining laser at a nearby asteroid |
 | Right-click (hold) | Fire weapon at hostiles |
 | Space | Dock (when slow + near an outpost) — trade, upgrade, buy ships, take contracts |
-| J | Quantum jump to the nearest planet |
+| N | Cycle the quantum destination (Mercury → Saturn) |
+| J | Quantum jump to the selected planet |
 
 ## Roadmap
 
@@ -74,7 +76,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | 4 | Endless procedural galaxy, quantum travel, ship classes | ✅ shipped |
 | 5 | Persistence (anonymous token) + in-sector chat | ✅ shipped |
 | 6 | Hosted, playable at [claudecitizen.com](https://claudecitizen.com) | ✅ shipped |
-| 7 | Low-poly planet surfaces — terrain up close, low-altitude flight | 🚧 in progress |
+| 7 | Low-poly planet surfaces + cinematic sky (bloom, atmospheres, nebula, warp) | ✅ shipped |
 | 8 | Co-op combat — fight pirates together | next |
 | 9 | Procedural planetary landings (real terrain collision) | planned |
 | … | … | … |

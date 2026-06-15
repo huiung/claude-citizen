@@ -1,11 +1,15 @@
 import * as THREE from 'three'
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { createShipState, stepShip, type ControlInput } from './sim/physics'
 import { buildCraft } from './render/shipyard'
 import { SHIP_STATS, type ShipType } from './sim/shipTypes'
 import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
-  buildSolarPlanet, buildStarfield, buildStation, buildSun, COLONY_POS, MINEABLE_SITES, REFINERY_POS,
+  buildDustField, buildNebula, buildSolarPlanet, buildStarfield, buildStation, buildSun, buildWarpField,
+  COLONY_POS, MINEABLE_SITES, REFINERY_POS, updateDustField, updateWarpField,
 } from './render/world'
 import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS } from './sim/solarSystem'
 import { NetClient, type PeerState, type PlayerProgress } from './net/client'
@@ -16,7 +20,7 @@ import { createMarket, step as marketStep } from './sim/market'
 import { generateContracts } from './sim/contracts'
 import { boostMultiplier, cargoCapacity, loadUpgrades, saveUpgrades, topSpeed } from './sim/upgrades'
 import { type Celestial, queryCelestials } from './sim/galaxy'
-import { cancelTravel, createQuantum, startTravel, stepQuantum } from './sim/quantum'
+import { cancelTravel, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
   canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
   isDead, type Projectile, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
@@ -96,6 +100,8 @@ statsTimer = setInterval(refreshLandingStats, 6000)
 const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true })
 renderer.setSize(innerWidth, innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.toneMapping = THREE.ACESFilmicToneMapping // filmic highlights — plays well with bloom
+renderer.toneMappingExposure = 1.15
 appEl.appendChild(renderer.domElement)
 
 const labelRenderer = new CSS2DRenderer()
@@ -109,8 +115,23 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x010206)
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.5, 500000)
 
+// Bloom post-processing: make the sun, engines, lasers and lit windows actually glow.
+const composer = new EffectComposer(renderer)
+composer.addPass(new RenderPass(scene, camera))
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.7, 0.5, 0.85) // strength, radius, threshold
+composer.addPass(bloomPass)
+
+const nebula = buildNebula()
+scene.add(nebula)
 const starfield = buildStarfield()
 scene.add(starfield, buildPlanet(), buildAsteroids())
+
+const dustField = buildDustField() // parallax motes — sense of speed in flight
+scene.add(dustField)
+const warpField = buildWarpField() // quantum hyperspace streaks (camera-local)
+camera.add(warpField)
+scene.add(camera) // camera must be in the graph for its child (warp) to render
+
 const station = buildStation()
 const colony = buildColony()
 scene.add(station, colony)
@@ -123,10 +144,13 @@ const sunLight = new THREE.PointLight(0xfff0be, 2.5, 0, 0) // no falloff — lig
 sunLight.position.copy(SUN_POSITION)
 scene.add(sunLight)
 const planetLODs: THREE.LOD[] = []
+const planetGroups: THREE.Group[] = []
 for (const planet of PLANETS) {
   const mesh = buildSolarPlanet(planet.radius, planet.color, planet.hasRings, planet.surface, planet.seed)
   mesh.position.copy(planet.position)
+  mesh.userData.spin = 0.004 + ((planet.seed % 100) / 100) * 0.012 // gentle, per-planet rotation
   scene.add(mesh)
+  planetGroups.push(mesh)
   mesh.traverse((o) => { if (o instanceof THREE.LOD) planetLODs.push(o) })
 }
 buildLights(scene)
@@ -307,38 +331,27 @@ function inSafeZone(pos: THREE.Vector3): boolean {
 const quantum = createQuantum()
 const _qLook = new THREE.Vector3()
 let jumpTargetName = '' // destination of the current jump (for the HUD)
-let navCache: { name: string; dist: number } | null = null
-let lastNav = -Infinity
+let selectedJumpIdx = 0 // index into PLANETS (named solar system) — the quantum destination, cycled with [N]
 
 const _navDir = new THREE.Vector3()
-/** Nearest jump destination — arrival point sits just OFF the body's surface (not its center),
- *  so the quantum drop-out lands you outside it, never inside. */
-function nearestJumpTarget(): { position: THREE.Vector3; name: string } | null {
-  let best: { position: THREE.Vector3; name: string } | null = null
-  let bestD = Infinity
-  const consider = (center: THREE.Vector3, radius: number, name: string): void => {
-    const d = center.distanceToSquared(ship.position)
-    if (d >= bestD) return
-    bestD = d
-    _navDir.copy(ship.position).sub(center)
-    if (_navDir.lengthSq() < 1) _navDir.set(0, 0, 1)
-    _navDir.normalize()
-    best = { position: center.clone().addScaledVector(_navDir, radius * 1.5), name }
-  }
-  for (const planet of PLANETS) consider(planet.position, planet.radius, planet.name)
-  for (const c of queryCelestials(ship.position, STREAM_RADIUS)) {
-    if (c.type !== 'planet' && c.type !== 'moon' && c.type !== 'station') continue
-    consider(c.position, c.radius, c.type === 'station' ? 'Station' : c.type === 'moon' ? 'Moon' : 'Planet')
-  }
-  return best
+/** Arrival point just OFF the selected planet's surface (never inside it), plus its name + distance. */
+function planetArrival(idx: number): { position: THREE.Vector3; name: string; dist: number } {
+  const p = PLANETS[idx]
+  _navDir.copy(ship.position).sub(p.position)
+  if (_navDir.lengthSq() < 1) _navDir.set(0, 0, 1)
+  _navDir.normalize()
+  const position = p.position.clone().addScaledVector(_navDir, p.radius * 1.5)
+  return { position, name: p.name, dist: ship.position.distanceTo(position) }
 }
 
-/** Throttled nearest-target lookup for the idle "press J to jump" HUD. */
-function updateNavCache(now: number): void {
-  if (now - lastNav < 400) return
-  lastNav = now
-  const t = nearestJumpTarget()
-  navCache = t ? { name: t.name, dist: ship.position.distanceTo(t.position) } : null
+/** Index of the closest named planet — seeds the selection so the first jump is sensible. */
+function nearestPlanetIdx(): number {
+  let idx = 0, bestD = Infinity
+  for (let i = 0; i < PLANETS.length; i++) {
+    const d = PLANETS[i].position.distanceToSquared(ship.position)
+    if (d < bestD) { bestD = d; idx = i }
+  }
+  return idx
 }
 
 const _toShip = new THREE.Vector3()
@@ -566,10 +579,14 @@ addEventListener('keydown', (e) => {
     assistEl.textContent = assist ? 'COUPLED' : 'DECOUPLED'
   }
   if (e.code === 'Space' && running && !docked && dockable) dock(dockable)
+  if (e.code === 'KeyN' && running && !docked && quantum.phase === 'idle') {
+    selectedJumpIdx = (selectedJumpIdx + 1) % PLANETS.length // cycle the quantum destination
+    audio.blip('dock')
+  }
   if (e.code === 'KeyJ' && running && !docked) {
     if (quantum.phase === 'idle') {
-      const t = nearestJumpTarget()
-      if (t) { startTravel(quantum, t.position); jumpTargetName = t.name; audio.blip('dock') }
+      const dest = planetArrival(selectedJumpIdx)
+      startTravel(quantum, dest.position); jumpTargetName = dest.name; audio.blip('dock')
     } else {
       cancelTravel(quantum)
     }
@@ -781,11 +798,16 @@ function updateOreFloats(now: number): void {
 // --- Chase camera
 const camOffset = new THREE.Vector3()
 const camTarget = new THREE.Vector3()
+let camBoost = false // last-known boost input, read by the camera for FOV punch
 function updateCamera(dt: number): void {
   camOffset.set(0, 3.2, 9.5).applyQuaternion(ship.quaternion)
   camTarget.copy(ship.position).add(camOffset)
   camera.position.lerp(camTarget, 1 - Math.exp(-8 * dt))
   camera.quaternion.slerp(ship.quaternion, 1 - Math.exp(-10 * dt))
+  // FOV gives a gentle sense of speed: a touch wider under boost / quantum travel. No hard punches.
+  const targetFov = quantum.phase === 'traveling' ? 78 : camBoost ? 82 : 72
+  camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-6 * dt))
+  camera.updateProjectionMatrix()
 }
 
 // --- Launch flow
@@ -810,6 +832,7 @@ function launch(): void {
   renderer.domElement.requestPointerLock()
   net.connect()
   running = true
+  selectedJumpIdx = nearestPlanetIdx() // start aimed at the closest planet
 }
 launchEl.addEventListener('click', launch)
 nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') launch() })
@@ -823,6 +846,7 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight
   camera.updateProjectionMatrix()
   renderer.setSize(innerWidth, innerHeight)
+  composer.setSize(innerWidth, innerHeight)
   labelRenderer.setSize(innerWidth, innerHeight)
 })
 
@@ -880,6 +904,8 @@ function frame(now: number): void {
   station.rotation.z += dt * 0.05
   colony.rotation.y += dt * 0.03
   starfield.position.copy(ship.position) // keep the star backdrop centered on the player
+  nebula.position.copy(ship.position) // nebula skydome rides with the player too
+  for (const g of planetGroups) g.rotation.y += dt * (g.userData.spin as number) // living, rotating worlds
   if (running) {
     streamCelestials(now)
     for (const lod of planetLODs) lod.update(camera) // swap planet detail by distance
@@ -908,8 +934,8 @@ function frame(now: number): void {
   } else if (running && !docked) {
     // Idle: small nav hint under the minimap (no big banner).
     quantumEl.hidden = true
-    updateNavCache(now)
-    navHintEl.textContent = navCache ? `[J] jump → ${navCache.name} · ${(navCache.dist / 1000).toFixed(1)} km` : ''
+    const dest = planetArrival(selectedJumpIdx)
+    navHintEl.textContent = `[N] ▶ ${dest.name} · ${(dest.dist / 1000).toFixed(1)} km   ·   [J] jump`
     const input = readInput()
     stepShip(ship, input, dt, { maxSpeed: effSpeed(), boostMultiplier: effBoost() })
     resolvePlanetCollisions()
@@ -918,6 +944,7 @@ function frame(now: number): void {
 
     speedEl.textContent = String(Math.round(ship.velocity.length()))
     boostEl.style.visibility = input.boost ? 'visible' : 'hidden'
+    camBoost = input.boost
 
     // Engine audio tracks commanded thrust.
     audio.setThrust(Math.min(1, input.thrust.length()), input.boost)
@@ -1041,7 +1068,23 @@ function frame(now: number): void {
   updateOreFloats(now)
   updateExplosions(now)
 
-  renderer.render(scene, camera)
+  // Subtle quantum motion: faint streaks ease in during the jump (spool-up pulls them gently
+  // toward the vanishing point, travel lets them drift past). Kept light — easy on the eyes.
+  let warpIntensity = 0, warpInward = false
+  if (running && !docked) {
+    if (quantum.phase === 'spooling') {
+      warpIntensity = (1 - quantum.spoolRemaining / QUANTUM_TUNING.spoolTime) * 0.3
+      warpInward = true
+    } else if (quantum.phase === 'traveling') {
+      warpIntensity = 0.45
+    }
+  } else {
+    camBoost = false // don't strand a wide FOV while docked/in menu
+  }
+  updateWarpField(warpField, warpIntensity, dt, warpInward)
+  if (running) updateDustField(dustField, camera.position)
+
+  composer.render()
   labelRenderer.render(scene, camera)
 }
 requestAnimationFrame(frame)

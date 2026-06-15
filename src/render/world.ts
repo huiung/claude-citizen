@@ -36,6 +36,93 @@ export function buildStarfield(): THREE.Points {
   return new THREE.Points(geo, mat)
 }
 
+/** Procedural deep-space backdrop: a huge inward-facing sphere whose fragment shader
+ *  paints fbm "nebula" clouds and a brighter Milky-Way band. Additive + depth-disabled
+ *  so it always reads as the sky behind everything. Caller keeps it centred on the player. */
+export function buildNebula(): THREE.Mesh {
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    depthWrite: false,
+    depthTest: false,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uColorA: { value: new THREE.Color(0x2a1a4a) }, // violet
+      uColorB: { value: new THREE.Color(0x103a5a) }, // teal-blue
+      uColorC: { value: new THREE.Color(0x4a1c34) }, // dim magenta
+    },
+    vertexShader: /* glsl */ `
+      varying vec3 vDir;
+      void main() {
+        vDir = normalize(position);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      precision highp float;
+      varying vec3 vDir;
+      uniform vec3 uColorA, uColorB, uColorC;
+      float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+      float noise(vec3 x){
+        vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(hash(i + vec3(0,0,0)), hash(i + vec3(1,0,0)), f.x),
+                       mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
+                       mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
+      }
+      float fbm(vec3 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ s += a * noise(p); p *= 2.03; a *= 0.5; } return s; }
+      void main(){
+        vec3 d = normalize(vDir);
+        float n = fbm(d * 3.0);
+        float n2 = fbm(d * 6.0 + 4.0);
+        float band = pow(1.0 - abs(d.y), 3.0); // bright belt across the y=0 plane
+        float cloud = smoothstep(0.45, 0.95, n) * 0.8 + band * 0.5 * smoothstep(0.3, 0.8, n2);
+        vec3 col = mix(uColorA, uColorB, n2);
+        col = mix(col, uColorC, smoothstep(0.5, 1.0, n));
+        col += vec3(0.55, 0.65, 0.9) * band * 0.3;
+        float intensity = cloud * 0.55;
+        gl_FragColor = vec4(col * intensity, intensity);
+      }
+    `,
+  })
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(30000, 64, 48), mat)
+  mesh.renderOrder = -1
+  return mesh
+}
+
+/** Fresnel atmosphere shell — glows along the limb (edge), fades to clear over the disc.
+ *  BackSide + additive so it reads as light scattering around the planet, not a painted skin. */
+function makeAtmosphere(radius: number, atmoColor: number, power: number): THREE.Mesh {
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: { uColor: { value: new THREE.Color(atmoColor) }, uPower: { value: power } },
+    vertexShader: /* glsl */ `
+      varying vec3 vNormal;
+      varying vec3 vView;
+      void main(){
+        vNormal = normalize(normalMatrix * normal);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vView = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying vec3 vNormal;
+      varying vec3 vView;
+      uniform vec3 uColor;
+      uniform float uPower;
+      void main(){
+        float fres = pow(1.0 - abs(dot(normalize(vNormal), normalize(vView))), uPower);
+        gl_FragColor = vec4(uColor * fres, fres);
+      }
+    `,
+  })
+  return new THREE.Mesh(new THREE.SphereGeometry(radius * 1.13, 48, 32), mat)
+}
+
 export function buildPlanet(): THREE.Group {
   const group = new THREE.Group()
   const rand = mulberry32(7)
@@ -313,12 +400,10 @@ export function buildSolarPlanet(
     group.add(lod)
   }
 
-  // Atmosphere haze (tinted by kind)
+  // Fresnel atmosphere — glowing limb tinted by kind (denser air ⇒ softer, wider falloff)
   const atmoColor = surface === 'earth' ? 0x88bbff : surface === 'venus' ? 0xe8c070 : isGas ? 0xd8c0a0 : 0x9fb4c8
-  group.add(new THREE.Mesh(
-    new THREE.SphereGeometry(radius * 1.05, 32, 24),
-    new THREE.MeshBasicMaterial({ color: atmoColor, transparent: true, opacity: surface === 'venus' ? 0.16 : 0.09, side: THREE.BackSide }),
-  ))
+  const atmoPower = surface === 'venus' || isGas ? 2.2 : 3.2 // thicker air bleeds further across the disc
+  group.add(makeAtmosphere(radius, atmoColor, atmoPower))
 
   if (hasRings) {
     const ring = new THREE.Mesh(
@@ -336,4 +421,92 @@ export function buildLights(scene: THREE.Scene): void {
   sun.position.set(8000, 3000, 5000)
   scene.add(sun)
   scene.add(new THREE.AmbientLight(0x223344, 0.7))
+}
+
+// --- Quantum warp streaks (camera-local hyperspace lines) ---
+const WARP_COUNT = 700
+const WARP_RANGE = 1600 // depth span ahead of the camera the streaks recycle through
+
+/** Radial field of streaks in CAMERA-LOCAL space — attach to the camera so they stay
+ *  aligned with the direction of travel. Idle by default; drive with updateWarpField. */
+export function buildWarpField(): THREE.LineSegments {
+  const rand = mulberry32(7)
+  const positions = new Float32Array(WARP_COUNT * 2 * 3)
+  const meta = new Float32Array(WARP_COUNT * 3) // per-streak local x, y, z0
+  for (let i = 0; i < WARP_COUNT; i++) {
+    const ang = rand() * Math.PI * 2
+    const radius = 6 + rand() * 260
+    meta[i * 3] = Math.cos(ang) * radius
+    meta[i * 3 + 1] = Math.sin(ang) * radius
+    meta[i * 3 + 2] = -WARP_RANGE * rand() // negative z = ahead of the camera
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  const mat = new THREE.LineBasicMaterial({
+    color: 0xbfe0ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+  })
+  const seg = new THREE.LineSegments(geo, mat)
+  seg.userData.meta = meta
+  seg.frustumCulled = false
+  seg.visible = false
+  return seg
+}
+
+/** Drive the warp streaks. `intensity` 0..1 (off → full quantum). When `inward` (spool-up),
+ *  streaks are sucked toward the vanishing point ahead — tension. Otherwise they stream past
+ *  the camera — travel. Opacity eases so the whole sequence is smooth. */
+export function updateWarpField(seg: THREE.LineSegments, intensity: number, dt: number, inward = false): void {
+  const mat = seg.material as THREE.LineBasicMaterial
+  mat.opacity += (intensity - mat.opacity) * Math.min(1, dt * 6)
+  if (mat.opacity < 0.01) { seg.visible = false; return }
+  seg.visible = true
+  const meta = seg.userData.meta as Float32Array
+  const attr = seg.geometry.getAttribute('position') as THREE.BufferAttribute
+  const arr = attr.array as Float32Array
+  const flow = 1400 * Math.max(intensity, 0.15) * (inward ? -1 : 1) // negative = pulled ahead into the vanishing point
+  const len = 30 + 300 * intensity // streak length scales with speed
+  for (let i = 0; i < WARP_COUNT; i++) {
+    let z = meta[i * 3 + 2] + flow * dt
+    if (z > 0) z -= WARP_RANGE       // streaming past: recycle back out ahead
+    else if (z < -WARP_RANGE) z += WARP_RANGE // sucked ahead: recycle near the camera
+    meta[i * 3 + 2] = z
+    const x = meta[i * 3], y = meta[i * 3 + 1], j = i * 6
+    arr[j] = x; arr[j + 1] = y; arr[j + 2] = z // far end (ahead)
+    arr[j + 3] = x; arr[j + 4] = y; arr[j + 5] = z + len // near end (toward camera)
+  }
+  attr.needsUpdate = true
+}
+
+// --- Space dust (parallax motes for a sense of speed) ---
+const DUST_COUNT = 480
+const DUST_HALF = 360 // motes wrap within ±this around the camera
+
+/** A box of faint motes the ship flies through — they streak past and sell speed. World-space. */
+export function buildDustField(): THREE.Points {
+  const rand = mulberry32(99)
+  const positions = new Float32Array(DUST_COUNT * 3)
+  for (let i = 0; i < DUST_COUNT * 3; i++) positions[i] = (rand() * 2 - 1) * DUST_HALF
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  const mat = new THREE.PointsMaterial({
+    color: 0x6a7a90, size: 2.2, transparent: true, opacity: 0.5, sizeAttenuation: true, depthWrite: false,
+  })
+  const pts = new THREE.Points(geo, mat)
+  pts.frustumCulled = false
+  return pts
+}
+
+/** Keep motes wrapped in a box around the camera — the ship's own motion makes them stream past. */
+export function updateDustField(pts: THREE.Points, cam: THREE.Vector3): void {
+  const attr = pts.geometry.getAttribute('position') as THREE.BufferAttribute
+  const arr = attr.array as Float32Array
+  for (let i = 0; i < DUST_COUNT; i++) {
+    for (let a = 0; a < 3; a++) {
+      const k = i * 3 + a
+      const rel = arr[k] - cam.getComponent(a)
+      if (rel > DUST_HALF) arr[k] -= 2 * DUST_HALF
+      else if (rel < -DUST_HALF) arr[k] += 2 * DUST_HALF
+    }
+  }
+  attr.needsUpdate = true
 }
