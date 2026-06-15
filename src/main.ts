@@ -308,6 +308,19 @@ const ship = createShipState(new THREE.Vector3(0, 0, 0))
 let shipMesh = buildCraft(selectedShipType, PLAYER_TINT)
 scene.add(shipMesh)
 
+// Boost flare — an additive cone of exhaust that follows the ship (independent of which
+// hull is equipped). Flares up on boost; stretches on the ignition kick. Bloom makes it pop.
+const boostFlare = new THREE.Mesh(
+  new THREE.ConeGeometry(0.7, 4, 14, 1, true),
+  new THREE.MeshBasicMaterial({
+    color: 0xbfe6ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+    depthWrite: false, side: THREE.DoubleSide,
+  }),
+)
+boostFlare.frustumCulled = false
+scene.add(boostFlare)
+const _flareBack = new THREE.Vector3()
+
 // --- Mining VFX: cyan laser beam + impact glow + floating +ORE text
 const beamMat = new THREE.MeshBasicMaterial({
   color: 0x6fe8ff, transparent: true, opacity: 0.55,
@@ -828,6 +841,8 @@ function updateOreFloats(now: number): void {
 const camOffset = new THREE.Vector3()
 const camTarget = new THREE.Vector3()
 let camBoost = false // last-known boost input, read by the camera for FOV punch
+let prevBoost = false // edge-detect boost engage for the ignition kick
+let boostKick = 0 // 1 on ignition, decays — drives camera pull-back, FOV punch, flare stretch
 // G-force sway: the camera lags opposite to acceleration, so thrust/braking has weight.
 const prevCamVel = new THREE.Vector3()
 const gSway = new THREE.Vector3()
@@ -844,12 +859,13 @@ function updateCamera(dt: number): void {
   if (_gTarget.lengthSq() > G_SWAY_MAX * G_SWAY_MAX) _gTarget.setLength(G_SWAY_MAX)
   gSway.lerp(_gTarget, 1 - Math.exp(-G_SWAY_RESP * dt))
 
-  camOffset.set(0, 3.2, 9.5).applyQuaternion(ship.quaternion)
+  // Ignition kick: pull the camera back along its boom and punch FOV for a beat.
+  camOffset.set(0, 3.2, 9.5 + boostKick * 4).applyQuaternion(ship.quaternion)
   camTarget.copy(ship.position).add(camOffset).add(gSway)
   camera.position.lerp(camTarget, 1 - Math.exp(-8 * dt))
   camera.quaternion.slerp(ship.quaternion, 1 - Math.exp(-10 * dt))
   // FOV gives a gentle sense of speed: a touch wider under boost / quantum travel. No hard punches.
-  const targetFov = quantum.phase === 'traveling' ? 78 : camBoost ? 82 : 72
+  const targetFov = (quantum.phase === 'traveling' ? 78 : camBoost ? 82 : 72) + boostKick * 6
   camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-6 * dt))
   camera.updateProjectionMatrix()
 }
@@ -989,6 +1005,8 @@ function frame(now: number): void {
     speedEl.textContent = String(Math.round(ship.velocity.length()))
     boostEl.style.visibility = input.boost ? 'visible' : 'hidden'
     camBoost = input.boost
+    if (input.boost && !prevBoost) { boostKick = 1; audio.blip('boost') } // ignition punch
+    prevBoost = input.boost
 
     // Engine audio tracks commanded thrust.
     audio.setThrust(Math.min(1, input.thrust.length()), input.boost)
@@ -1127,6 +1145,18 @@ function frame(now: number): void {
   }
   updateWarpField(warpField, warpIntensity, dt, warpInward)
   if (running) updateDustField(dustField, camera.position)
+
+  // Boost flare: rides the ship's tail, flares while boosting, stretches on the ignition kick.
+  boostKick = Math.max(0, boostKick - dt * 3.5)
+  _flareBack.set(0, 0, 3.2).applyQuaternion(shipMesh.quaternion)
+  boostFlare.position.copy(shipMesh.position).add(_flareBack)
+  boostFlare.quaternion.copy(shipMesh.quaternion)
+  boostFlare.rotateX(Math.PI / 2) // cone tip trails back along the ship's +z
+  const flareMat = boostFlare.material as THREE.MeshBasicMaterial
+  const flareTarget = running && camBoost && quantum.phase === 'idle' ? 0.6 : 0
+  flareMat.opacity += (flareTarget - flareMat.opacity) * (1 - Math.exp(-12 * dt))
+  boostFlare.visible = flareMat.opacity > 0.01
+  boostFlare.scale.set(1, 1 + boostKick * 1.2, 1)
 
   composer.render()
   labelRenderer.render(scene, camera)
