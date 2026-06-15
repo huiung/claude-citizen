@@ -76,33 +76,52 @@ wss.on('connection', (ws) => {
     let msg
     try { msg = JSON.parse(raw) } catch { return }
 
-    if (msg.t === 'join' && !clients.has(ws)) {
+    // Viewer presence — someone on the landing page. Counts toward "online" but is NOT
+    // a peer (no ship, never broadcast). Promoted to an active pilot on 'join' (LAUNCH).
+    if (msg.t === 'hello' && !clients.has(ws)) {
       const token = typeof msg.token === 'string' ? msg.token.slice(0, 64) : null
-      const client = {
+      clients.set(ws, {
         id: Math.random().toString(36).slice(2, 10),
-        name: String(msg.name ?? 'PILOT').slice(0, 16),
-        color: nextColor++,
-        p: [0, 0, 0],
-        q: [0, 0, 0, 1],
-        token,
+        name: null, color: -1, p: [0, 0, 0], q: [0, 0, 0, 1], token, active: false,
+      })
+      if (token && !(token in store)) { store[token] = null; flush() } // seen → counts as registered
+      console.log(`[hello] viewer — ${clients.size} online`)
+      return
+    }
+
+    if (msg.t === 'join') {
+      const token = typeof msg.token === 'string' ? msg.token.slice(0, 64) : null
+      let client = clients.get(ws)
+      if (client) {
+        // Promote an existing viewer into an active pilot.
+        client.active = true
+        client.name = String(msg.name ?? 'PILOT').slice(0, 16)
+        client.color = nextColor++
+        if (token) client.token = token
+      } else {
+        client = {
+          id: Math.random().toString(36).slice(2, 10),
+          name: String(msg.name ?? 'PILOT').slice(0, 16),
+          color: nextColor++, p: [0, 0, 0], q: [0, 0, 0, 1], token, active: true,
+        }
+        clients.set(ws, client)
       }
-      clients.set(ws, client)
-      ws.send(JSON.stringify({ t: 'welcome', id: client.id, peers: [...clients.values()].filter((c) => c !== client).map(({ token: _t, ...rest }) => rest) }))
-      // Hand back saved progress for this token, if any. Otherwise mark the token as
-      // seen (null) so it counts as a registered pilot without faking any progress.
-      if (token) {
-        if (store[token]) ws.send(JSON.stringify({ t: 'progress', data: store[token] }))
-        else if (!(token in store)) { store[token] = null; flush() }
+      // Only active pilots are peers (have ships).
+      const peers = [...clients.values()].filter((c) => c.active && c !== client).map(({ token: _t, active: _a, ...rest }) => rest)
+      ws.send(JSON.stringify({ t: 'welcome', id: client.id, peers }))
+      if (client.token) {
+        if (store[client.token]) ws.send(JSON.stringify({ t: 'progress', data: store[client.token] }))
+        else if (!(client.token in store)) { store[client.token] = null; flush() }
       }
       broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q })
-      console.log(`[join] ${client.name} (${client.id})${token ? ' +token' : ''} — ${clients.size} online`)
+      console.log(`[join] ${client.name} (${client.id})${client.token ? ' +token' : ''} — ${clients.size} online`)
       return
     }
 
     const client = clients.get(ws)
     if (!client) return
 
-    if (msg.t === 'state' && Array.isArray(msg.p) && Array.isArray(msg.q)) {
+    if (msg.t === 'state' && client.active && Array.isArray(msg.p) && Array.isArray(msg.q)) {
       client.p = msg.p.slice(0, 3).map(Number)
       client.q = msg.q.slice(0, 4).map(Number)
       broadcast(ws, { t: 'peer-state', id: client.id, p: client.p, q: client.q })

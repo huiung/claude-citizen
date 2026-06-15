@@ -36,6 +36,7 @@ export class NetClient {
   private peers = new Map<string, PeerState>()
   private lastSend = 0
   private online = 1
+  private active = false // false = viewer (presence only), true = in-game pilot
 
   constructor(private name: string, private token: string, private events: NetEvents) {}
 
@@ -49,7 +50,10 @@ export class NetClient {
       return
     }
     this.ws.onopen = () => {
-      this.ws?.send(JSON.stringify({ t: 'join', name: this.name, token: this.token }))
+      // Viewer presence by default; a full 'join' once the player launches.
+      this.ws?.send(JSON.stringify(this.active
+        ? { t: 'join', name: this.name, token: this.token }
+        : { t: 'hello', token: this.token }))
       this.events.onStatus(true, this.online)
     }
     this.ws.onclose = () => {
@@ -117,6 +121,16 @@ export class NetClient {
   /** Update the callsign sent on join (call before connect once the player picks one). */
   setName(name: string): void {
     this.name = name
+  }
+
+  /** Promote from viewer (presence) to an active in-game pilot — call on LAUNCH. */
+  enterGame(name: string): void {
+    this.name = name
+    this.active = true
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ t: 'join', name, token: this.token }))
+    }
+    // If the socket isn't open yet, onopen will send 'join' since active is now true.
   }
 
   /** Persist progress under our token (no-op if disconnected). */

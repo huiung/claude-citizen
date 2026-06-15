@@ -753,11 +753,17 @@ const net = new NetClient(nicknameEl.value || 'PILOT', playerToken, {
   onStatus(connected, online) {
     netEl.textContent = connected ? 'SECTOR LINK: ONLINE' : 'SECTOR LINK: OFFLINE (solo)'
     onlineEl.textContent = String(online)
+    if (connected) {
+      // Show our own presence immediately, then confirm with the server (don't wait the 6s tick).
+      statOnlineEl.textContent = String(Math.max(1, Number(statOnlineEl.textContent) || 0))
+      setTimeout(refreshLandingStats, 500)
+    }
   },
   onChat(name, text) {
     addChatLine(name, text)
   },
 })
+net.connect() // connect on page load as a viewer (presence) — counts toward "online" on the landing
 
 // --- Chat
 let chatOpen = false
@@ -971,7 +977,7 @@ function updateCamera(dt: number): void {
 function launch(): void {
   const callsign = nicknameEl.value.trim() || 'PILOT'
   localStorage.setItem('callsign', callsign)
-  net.setName(callsign) // net was created before the callsign was typed — sync it now
+  net.enterGame(callsign) // promote from viewer (presence) to an active pilot
   if (statsTimer) clearInterval(statsTimer)
   overlayEl.hidden = true
   overlayEl.style.display = 'none'
@@ -987,7 +993,6 @@ function launch(): void {
   audio.init()
   audio.resume()
   renderer.domElement.requestPointerLock()
-  net.connect()
   running = true
   selectedJumpIdx = nearestPlanetIdx() // start aimed at the closest planet
   setPlayerCraft(selectedShipType) // apply hull (and load its GLB model) on launch
