@@ -16,7 +16,7 @@ export const QUANTUM_TUNING = {
   /** Seconds the drive must charge before any motion begins. */
   spoolTime: 2,
   /** Peak cruise speed (m/s) — orders of magnitude above sublight TUNING.maxSpeed. */
-  cruiseSpeed: 4000,
+  cruiseSpeed: 6000,
   /** Acceleration / deceleration magnitude (m/s²) for the spin-up and braking ramps. */
   accel: 1500,
   /** Drop-out distance (m): travel ends this far short of the target, never inside it. */

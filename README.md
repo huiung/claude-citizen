@@ -38,7 +38,8 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Delivery contracts:** accept haul missions, deliver to the destination outpost for the reward
 - **Pirates:** hostiles hunt you in the sector — shoot back, watch your hull, collect the bounty
 - **An endless procedural galaxy:** fly any direction and planets, moons, stations, and derelicts keep appearing — some planets are vast
-- **Quantum travel:** charge the drive and jump across the sector to a distant planet in seconds
+- **A named solar system:** Sun + Mercury through Saturn at a compressed scale, each with a procedurally textured surface (oceans/continents, gas bands, ice caps) — and they're solid, so you fly *around* them, not through
+- **Quantum travel:** charge the drive and jump to the nearest planet (its name + distance show on the HUD) in seconds
 - **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor, each trading cargo/speed/toughness
 - Procedural engine + combat + UI audio — synthesized live, no sound files
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)

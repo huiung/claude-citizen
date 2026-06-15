@@ -5,8 +5,9 @@ import { buildCraft } from './render/shipyard'
 import { SHIP_STATS, type ShipType } from './sim/shipTypes'
 import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
-  buildStarfield, buildStation, COLONY_POS, MINEABLE_SITES, REFINERY_POS,
+  buildSolarPlanet, buildStarfield, buildStation, buildSun, COLONY_POS, MINEABLE_SITES, REFINERY_POS,
 } from './render/world'
+import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS } from './sim/solarSystem'
 import { NetClient, type PeerState, type PlayerProgress } from './net/client'
 import { dockableTarget, type DockTarget } from './sim/docking'
 import { cargoUsed, loadEconomy, OUTPOSTS, saveEconomy } from './sim/economy'
@@ -52,6 +53,7 @@ const hullBarEl = document.getElementById('hull-bar')!
 const enemiesEl = document.getElementById('enemies')!
 const flashEl = document.getElementById('damage-flash')!
 const quantumEl = document.getElementById('quantum')!
+const navHintEl = document.getElementById('nav-hint')!
 const safeEl = document.getElementById('safe-zone')!
 const chatInputEl = document.getElementById('chat-input') as HTMLInputElement
 const chatLogEl = document.getElementById('chat-log')!
@@ -91,7 +93,7 @@ refreshLandingStats()
 statsTimer = setInterval(refreshLandingStats, 6000)
 
 // --- Renderer / scene
-const renderer = new THREE.WebGLRenderer({ antialias: true })
+const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true })
 renderer.setSize(innerWidth, innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 appEl.appendChild(renderer.domElement)
@@ -105,13 +107,26 @@ appEl.appendChild(labelRenderer.domElement)
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x010206)
-const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.5, 120000)
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.5, 500000)
 
 const starfield = buildStarfield()
 scene.add(starfield, buildPlanet(), buildAsteroids())
 const station = buildStation()
 const colony = buildColony()
 scene.add(station, colony)
+
+// Named solar system — giant backdrop + quantum-travel targets. Trade/outposts stay local.
+const sun = buildSun(SUN_RADIUS, SUN_COLOR)
+sun.position.copy(SUN_POSITION)
+scene.add(sun)
+const sunLight = new THREE.PointLight(0xfff0be, 2.5, 0, 0) // no falloff — lights the whole system
+sunLight.position.copy(SUN_POSITION)
+scene.add(sunLight)
+for (const planet of PLANETS) {
+  const mesh = buildSolarPlanet(planet.radius, planet.color, planet.hasRings, planet.surface, planet.seed)
+  mesh.position.copy(planet.position)
+  scene.add(mesh)
+}
 buildLights(scene)
 
 // Mineable asteroids — sim field + render meshes share MINEABLE_SITES positions.
@@ -289,17 +304,53 @@ function inSafeZone(pos: THREE.Vector3): boolean {
 // --- Quantum travel
 const quantum = createQuantum()
 const _qLook = new THREE.Vector3()
+let jumpTargetName = '' // destination of the current jump (for the HUD)
+let navCache: { name: string; dist: number } | null = null
+let lastNav = -Infinity
 
-/** Nearest planet/moon/station within stream range — the natural jump destination. */
-function nearestJumpTarget(): Celestial | null {
-  let best: Celestial | null = null
+/** Nearest jump destination — a solar-system planet or a procedural planet/moon/station. */
+function nearestJumpTarget(): { position: THREE.Vector3; name: string } | null {
+  let best: { position: THREE.Vector3; name: string } | null = null
   let bestD = Infinity
+  for (const planet of PLANETS) {
+    const d = planet.position.distanceToSquared(ship.position)
+    if (d < bestD) { bestD = d; best = { position: planet.position, name: planet.name } }
+  }
   for (const c of queryCelestials(ship.position, STREAM_RADIUS)) {
     if (c.type !== 'planet' && c.type !== 'moon' && c.type !== 'station') continue
     const d = c.position.distanceToSquared(ship.position)
-    if (d < bestD) { bestD = d; best = c }
+    if (d < bestD) {
+      bestD = d
+      best = { position: c.position, name: c.type === 'station' ? 'Station' : c.type === 'moon' ? 'Moon' : 'Planet' }
+    }
   }
   return best
+}
+
+/** Throttled nearest-target lookup for the idle "press J to jump" HUD. */
+function updateNavCache(now: number): void {
+  if (now - lastNav < 400) return
+  lastNav = now
+  const t = nearestJumpTarget()
+  navCache = t ? { name: t.name, dist: ship.position.distanceTo(t.position) } : null
+}
+
+const _toShip = new THREE.Vector3()
+/** Stop the ship flying through the sun/planets: clamp to the surface, kill inward velocity (slide). */
+function resolvePlanetCollisions(): void {
+  const hit = (cx: number, cy: number, cz: number, radius: number): void => {
+    _toShip.set(ship.position.x - cx, ship.position.y - cy, ship.position.z - cz)
+    const dist = _toShip.length()
+    const minDist = radius + 40
+    if (dist < minDist && dist > 1e-3) {
+      _toShip.multiplyScalar(1 / dist) // surface normal
+      ship.position.set(cx, cy, cz).addScaledVector(_toShip, minDist)
+      const vn = ship.velocity.dot(_toShip)
+      if (vn < 0) ship.velocity.addScaledVector(_toShip, -vn)
+    }
+  }
+  hit(SUN_POSITION.x, SUN_POSITION.y, SUN_POSITION.z, SUN_RADIUS)
+  for (const p of PLANETS) hit(p.position.x, p.position.y, p.position.z, p.radius)
 }
 
 const boltGeo = new THREE.SphereGeometry(0.45, 6, 6)
@@ -512,7 +563,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyJ' && running && !docked) {
     if (quantum.phase === 'idle') {
       const t = nearestJumpTarget()
-      if (t) { startTravel(quantum, t.position); audio.blip('dock') }
+      if (t) { startTravel(quantum, t.position); jumpTargetName = t.name; audio.blip('dock') }
     } else {
       cancelTravel(quantum)
     }
@@ -800,6 +851,8 @@ function drawMinimap(): void {
   }
 
   for (const mesh of spawnedBodies.values()) plot(mesh.position.x, mesh.position.z, 'rgba(150,170,190,0.55)', 1.4, false)
+  plot(SUN_POSITION.x, SUN_POSITION.z, '#fff0be', 3, true)
+  for (const planet of PLANETS) plot(planet.position.x, planet.position.z, '#9bb8e0', 2, true)
   plot(REFINERY_POS.x, REFINERY_POS.z, '#6fdc8c', 3.4, true, true)
   plot(COLONY_POS.x, COLONY_POS.z, '#ffb347', 3.4, true, true)
   for (const p of pirates) plot(p.position.x, p.position.z, '#ff5d5d', 2.2, false)
@@ -834,8 +887,9 @@ function frame(now: number): void {
     }
     quantumEl.hidden = false
     quantumEl.textContent = qr.phase === 'spooling'
-      ? 'QUANTUM DRIVE SPOOLING…'
-      : `QUANTUM TRAVEL · ${Math.round(qr.progress * 100)}%`
+      ? `QUANTUM SPOOLING → ${jumpTargetName}…`
+      : `QUANTUM TRAVEL → ${jumpTargetName} · ${Math.round(qr.progress * 100)}%`
+    navHintEl.textContent = ''
     audio.setThrust(qr.phase === 'traveling' ? 1 : 0.2, qr.phase === 'traveling')
     net.sendState(
       [ship.position.x, ship.position.y, ship.position.z],
@@ -843,9 +897,13 @@ function frame(now: number): void {
       now,
     )
   } else if (running && !docked) {
+    // Idle: small nav hint under the minimap (no big banner).
     quantumEl.hidden = true
+    updateNavCache(now)
+    navHintEl.textContent = navCache ? `[J] jump → ${navCache.name} · ${(navCache.dist / 1000).toFixed(1)} km` : ''
     const input = readInput()
     stepShip(ship, input, dt, { maxSpeed: effSpeed(), boostMultiplier: effBoost() })
+    resolvePlanetCollisions()
     shipMesh.position.copy(ship.position)
     shipMesh.quaternion.copy(ship.quaternion)
 
