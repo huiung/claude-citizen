@@ -10,8 +10,8 @@ import { buildCraft, loadCraftModelForType, loadPirateModel } from './render/shi
 import { SHIP_STATS, type ShipType } from './sim/shipTypes'
 import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
-  buildCapitalShip, buildDustField, buildNebula, buildSolarPlanet, buildStarfield, buildStation, buildSun,
-  buildWarpField, COLONY_POS, MINEABLE_SITES, REFINERY_POS, updateDustField, updateWarpField,
+  buildCapitalShip, buildDustField, buildLootCrate, buildNebula, buildSolarPlanet, buildStarfield, buildStation,
+  buildSun, buildWarpField, COLONY_POS, MINEABLE_SITES, REFINERY_POS, updateDustField, updateWarpField,
 } from './render/world'
 import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS } from './sim/solarSystem'
 import { NetClient, type PeerState, type PlayerProgress } from './net/client'
@@ -358,11 +358,26 @@ const projectiles: Projectile[] = []
 const projectileMeshes = new Map<Projectile, THREE.Mesh>()
 const pirates: Pirate[] = []
 const pirateMeshes = new Map<string, THREE.Group>()
+
+// --- Loot: glowing crates dropped by pirates / floating in space. Magnet-collect for credits.
+interface Loot { mesh: THREE.Group; value: number; rare: boolean }
+const lootCrates: Loot[] = []
+const LOOT_MAGNET = 70 // crates start drifting toward you within this range
+const LOOT_PICKUP = 14 // collected within this range
+let lastTreasure = 0
+function spawnLoot(pos: THREE.Vector3): void {
+  const rare = Math.random() < 0.12
+  const value = rare ? 500 : 60 + Math.floor(Math.random() * 140)
+  const mesh = buildLootCrate(rare)
+  mesh.position.copy(pos)
+  scene.add(mesh)
+  lootCrates.push({ mesh, value, rare })
+}
 const explosions: { mesh: THREE.Mesh; born: number }[] = []
 let weaponActive = false
 let pirateSpawnCount = 0
 let nextSpawnAt = Infinity
-const MAX_PIRATES = 3
+const MAX_PIRATES = 2
 const _fwd = new THREE.Vector3()
 
 // Safe zones — no pirates near the hand-placed outposts. Trade routes between them are risky;
@@ -855,10 +870,11 @@ function updateMiningVFX(active: boolean, target: THREE.Vector3 | null, now: num
   impact.visible = true
 }
 
-function spawnOreFloat(amount: number, pos: THREE.Vector3, now: number): void {
+function spawnFloat(text: string, pos: THREE.Vector3, now: number, color?: string): void {
   const div = document.createElement('div')
   div.className = 'ore-float'
-  div.textContent = `+${amount} ORE`
+  div.textContent = text
+  if (color) div.style.color = color
   const obj = new CSS2DObject(div)
   obj.position.copy(pos)
   scene.add(obj)
@@ -876,6 +892,37 @@ function updateOreFloats(now: number): void {
     }
     f.obj.position.y += 0.07
     ;(f.obj.element as HTMLElement).style.opacity = String(1 - age)
+  }
+}
+
+// --- Loot: spin crates, drift them toward the ship within magnet range, collect on contact,
+// and occasionally spawn a free treasure crate nearby to reward exploration.
+const _lootDir = new THREE.Vector3()
+const _lootTmp = new THREE.Vector3()
+function updateLootCrates(now: number, dt: number): void {
+  if (now - lastTreasure > 22000 && lootCrates.length < 8) {
+    _lootDir.set(Math.random() * 2 - 1, (Math.random() * 2 - 1) * 0.3, Math.random() * 2 - 1)
+    if (_lootDir.lengthSq() < 1e-3) _lootDir.set(0, 0, 1)
+    _lootDir.normalize()
+    spawnLoot(_lootTmp.copy(ship.position).addScaledVector(_lootDir, 250 + Math.random() * 250))
+    lastTreasure = now
+  }
+  for (let i = lootCrates.length - 1; i >= 0; i--) {
+    const loot = lootCrates[i]
+    loot.mesh.rotation.y += 1.5 * dt
+    loot.mesh.rotation.x += 0.8 * dt
+    const d = loot.mesh.position.distanceTo(ship.position)
+    if (d < LOOT_PICKUP) {
+      econ.credits += loot.value
+      refreshWallet()
+      spawnFloat(`+${loot.value} cr`, loot.mesh.position, now, loot.rare ? '#ffd24d' : '#ffe08a')
+      audio.blip('trade')
+      scene.remove(loot.mesh)
+      disposeObject(loot.mesh)
+      lootCrates.splice(i, 1)
+    } else if (d < LOOT_MAGNET) {
+      loot.mesh.position.lerp(ship.position, (1 - d / LOOT_MAGNET) * dt * 4) // magnet pull
+    }
   }
 }
 
@@ -1134,7 +1181,7 @@ function frame(now: number): void {
       // Accumulate mined ORE into periodic floating "+N ORE" cues.
       oreAccum += mineResult.mined
       if (now - lastFloat > 500 && oreAccum >= 1) {
-        spawnOreFloat(Math.floor(oreAccum), mineResult.asteroid.position, now)
+        spawnFloat(`+${Math.floor(oreAccum)} ORE`, mineResult.asteroid.position, now)
         oreAccum -= Math.floor(oreAccum)
         lastFloat = now
       }
@@ -1178,7 +1225,7 @@ function frame(now: number): void {
 
     if (!safe && now >= nextSpawnAt) {
       spawnPirateWave(now)
-      nextSpawnAt = now + 15000
+      nextSpawnAt = now + 19000
     }
 
     for (const pirate of pirates) {
@@ -1210,6 +1257,7 @@ function frame(now: number): void {
         audio.blip('explosion')
         econ.credits += PIRATE_REWARD
         refreshWallet()
+        spawnLoot(p.position) // drop a loot crate where it died
         const mesh = pirateMeshes.get(p.id)
         if (mesh) { scene.remove(mesh); pirateMeshes.delete(p.id) }
         pirates.splice(i, 1)
@@ -1256,6 +1304,8 @@ function frame(now: number): void {
   // Combat HUD — target brackets, threat arrows, lead pip (hidden while docked/in menu).
   if (running && !docked) drawCombatHud()
   else cctx.clearRect(0, 0, combatCanvas.width, combatCanvas.height)
+
+  if (running && !docked) updateLootCrates(now, dt) // spin / magnet / collect loot crates
 
   // Engine flare: reacts to thrust (a soft glow when accelerating, #2), flares hard on
   // boost, and stretches on the ignition kick. Rides the ship's tail.

@@ -584,3 +584,19 @@ export function buildCapitalShip(seed = 7): THREE.Group {
 
   return g
 }
+
+/** A glowing loot/treasure crate — gold when rare, cyan otherwise. Caller spins it;
+ *  the emissive core + wireframe shell pop under bloom. */
+export function buildLootCrate(rare: boolean): THREE.Group {
+  const g = new THREE.Group()
+  const color = rare ? 0xffd24d : 0x6fe8ff
+  g.add(new THREE.Mesh(
+    new THREE.BoxGeometry(1.1, 1.1, 1.1),
+    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.85, flatShading: true, metalness: 0.4, roughness: 0.5 }),
+  ))
+  g.add(new THREE.Mesh(
+    new THREE.BoxGeometry(1.3, 1.3, 1.3),
+    new THREE.MeshBasicMaterial({ color, wireframe: true, transparent: true, opacity: 0.6 }),
+  ))
+  return g
+}
