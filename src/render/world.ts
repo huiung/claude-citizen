@@ -510,3 +510,77 @@ export function updateDustField(pts: THREE.Points, cam: THREE.Vector3): void {
   }
   attr.needsUpdate = true
 }
+
+/** A capital ship — a procedural dreadnought ~120× a fighter, with a lit hull, a bridge
+ *  tower, lateral ribs, and rows of tiny glowing windows (the "city in space" scale cue).
+ *  Static set-dressing: place it once and let the player fly its length for the awe. */
+export function buildCapitalShip(seed = 7): THREE.Group {
+  const g = new THREE.Group()
+  const rand = mulberry32(seed)
+  const hull = new THREE.MeshStandardMaterial({ color: 0x49515c, flatShading: true, metalness: 0.6, roughness: 0.5 })
+  const dark = new THREE.MeshStandardMaterial({ color: 0x1e232a, flatShading: true, metalness: 0.6, roughness: 0.45 })
+  const winA = new THREE.MeshBasicMaterial({ color: 0xffe0a0 }) // warm windows
+  const winB = new THREE.MeshBasicMaterial({ color: 0x9fe0ff }) // cool windows
+  const L = 620
+
+  // Main spine + angular prow.
+  g.add(new THREE.Mesh(new THREE.BoxGeometry(64, 84, L), hull))
+  const prow = new THREE.Mesh(new THREE.ConeGeometry(54, 150, 4), hull)
+  prow.rotation.x = -Math.PI / 2; prow.rotation.z = Math.PI / 4
+  prow.position.z = -(L / 2 + 58)
+  g.add(prow)
+  // Ventral keel.
+  const keel = new THREE.Mesh(new THREE.BoxGeometry(30, 28, L * 0.8), dark)
+  keel.position.y = -52
+  g.add(keel)
+
+  // Bridge tower + command block.
+  const tower = new THREE.Mesh(new THREE.BoxGeometry(42, 70, 130), hull)
+  tower.position.set(0, 78, -L * 0.18)
+  g.add(tower)
+  const bridge = new THREE.Mesh(new THREE.BoxGeometry(52, 26, 64), dark)
+  bridge.position.set(0, 120, -L * 0.18)
+  g.add(bridge)
+
+  // Dorsal greeble modules + lateral ribs.
+  for (let i = 0; i < 5; i++) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(40, 24, 50), dark)
+    m.position.set(0, 54, -L * 0.06 + i * 92)
+    g.add(m)
+  }
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 6; i++) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(12, 70, 24), hull)
+      rib.position.set(side * 38, 0, -L * 0.34 + i * 92)
+      g.add(rib)
+    }
+  }
+
+  // Window rows — tiny emissive boxes down both flanks; the scale cue.
+  for (const side of [-1, 1]) {
+    for (let row = 0; row < 3; row++) {
+      for (let i = 0; i < 26; i++) {
+        if (rand() < 0.25) continue // some cabins are dark
+        const w = new THREE.Mesh(new THREE.BoxGeometry(0.8, 3, 5), rand() < 0.35 ? winA : winB)
+        w.position.set(side * 33, -24 + row * 22, -L * 0.42 + i * (L * 0.84 / 25))
+        g.add(w)
+      }
+    }
+  }
+
+  // Stern engine cluster — large glowing bells with white-hot cores.
+  for (const [x, y] of [[-24, 18], [24, 18], [-24, -18], [24, -18], [0, 0]] as [number, number][]) {
+    const bell = new THREE.Mesh(new THREE.CylinderGeometry(13, 16, 30, 8), dark)
+    bell.rotation.x = Math.PI / 2
+    bell.position.set(x, y, L / 2 + 12)
+    g.add(bell)
+    const glow = new THREE.Mesh(new THREE.CircleGeometry(11, 16), new THREE.MeshBasicMaterial({ color: 0x8fd0ff }))
+    glow.position.set(x, y, L / 2 + 28)
+    g.add(glow)
+    const core = new THREE.Mesh(new THREE.CircleGeometry(5, 12), new THREE.MeshBasicMaterial({ color: 0xffffff }))
+    core.position.set(x, y, L / 2 + 28.5)
+    g.add(core)
+  }
+
+  return g
+}

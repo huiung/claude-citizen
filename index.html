@@ -50,6 +50,7 @@
       width: 6px; height: 6px; border: 1px solid #9fffb0; border-radius: 50%;
       opacity: .6; pointer-events: none;
     }
+    #combat-overlay { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
     #wallet {
       position: fixed; left: 16px; top: 16px; pointer-events: none;
       font-size: 13px; line-height: 1.7; text-shadow: 0 0 6px rgba(80, 255, 120, .4);
@@ -205,6 +206,7 @@
 <body>
   <div id="app"></div>
   <div id="crosshair" hidden></div>
+  <canvas id="combat-overlay"></canvas>
   <div id="wallet" hidden>
     <div><b id="credits">500</b> cr</div>
     <div>CARGO <span id="cargo">0/20</span></div>

@@ -10,8 +10,8 @@ import { buildCraft } from './render/shipyard'
 import { SHIP_STATS, type ShipType } from './sim/shipTypes'
 import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
-  buildDustField, buildNebula, buildSolarPlanet, buildStarfield, buildStation, buildSun, buildWarpField,
-  COLONY_POS, MINEABLE_SITES, REFINERY_POS, updateDustField, updateWarpField,
+  buildCapitalShip, buildDustField, buildNebula, buildSolarPlanet, buildStarfield, buildStation, buildSun,
+  buildWarpField, COLONY_POS, MINEABLE_SITES, REFINERY_POS, updateDustField, updateWarpField,
 } from './render/world'
 import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS } from './sim/solarSystem'
 import { NetClient, type PeerState, type PlayerProgress } from './net/client'
@@ -25,7 +25,7 @@ import { type Celestial, queryCelestials } from './sim/galaxy'
 import { cancelTravel, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
   canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
-  isDead, type Projectile, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
+  isDead, type Projectile, PROJECTILE_SPEED, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
 } from './sim/combat'
 import { type Pirate, PIRATE_REWARD, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
 import { GameAudio } from './audio/sound'
@@ -45,6 +45,10 @@ const hudEl = document.getElementById('hud')!
 const statusEl = document.getElementById('status')!
 const helpEl = document.getElementById('help')!
 const crosshairEl = document.getElementById('crosshair')!
+const combatCanvas = document.getElementById('combat-overlay') as HTMLCanvasElement
+const cctx = combatCanvas.getContext('2d')!
+combatCanvas.width = innerWidth
+combatCanvas.height = innerHeight
 const speedEl = document.getElementById('speed')!
 const assistEl = document.getElementById('assist')!
 const boostEl = document.getElementById('boost')!
@@ -158,6 +162,12 @@ scene.add(camera) // camera must be in the graph for its child (warp) to render
 const station = buildStation()
 const colony = buildColony()
 scene.add(station, colony)
+
+// Capital ship — set-dressing for scale. Parked off the spawn corridor; fly its length for awe.
+const capital = buildCapitalShip()
+capital.position.set(1000, 320, -2000)
+capital.rotation.y = 0.5
+scene.add(capital)
 
 // Named solar system — giant backdrop + quantum-travel targets. Trade/outposts stay local.
 const sun = buildSun(SUN_RADIUS, SUN_COLOR)
@@ -837,6 +847,66 @@ function updateOreFloats(now: number): void {
   }
 }
 
+// --- Combat HUD overlay: target brackets, off-screen threat arrows, and a lead pip.
+const _proj = new THREE.Vector3()
+const _lead = new THREE.Vector3()
+function drawCombatHud(): void {
+  const W = combatCanvas.width, H = combatCanvas.height
+  cctx.clearRect(0, 0, W, H)
+  if (!pirates.length) return
+  const cx = W / 2, cy = H / 2
+  let nearest: Pirate | null = null, nd = Infinity
+
+  for (const p of pirates) {
+    _proj.copy(p.position).project(camera)
+    const infront = _proj.z < 1
+    const sx = (_proj.x * 0.5 + 0.5) * W
+    const sy = (-_proj.y * 0.5 + 0.5) * H
+    const dist = ship.position.distanceTo(p.position)
+    const onScreen = infront && sx >= 0 && sx <= W && sy >= 0 && sy <= H
+
+    if (onScreen) {
+      const s = 16
+      cctx.strokeStyle = '#ff5d5d'; cctx.lineWidth = 2
+      cctx.beginPath()
+      for (const [ox, oy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as [number, number][]) {
+        cctx.moveTo(sx + ox * s, sy + oy * s); cctx.lineTo(sx + ox * s, sy + oy * (s - 6))
+        cctx.moveTo(sx + ox * s, sy + oy * s); cctx.lineTo(sx + ox * (s - 6), sy + oy * s)
+      }
+      cctx.stroke()
+      cctx.fillStyle = '#ff8a8a'; cctx.font = '11px ui-monospace, monospace'; cctx.textAlign = 'center'
+      cctx.fillText(`${Math.round(dist)}m`, sx, sy + s + 14)
+    } else {
+      let dx = sx - cx, dy = sy - cy
+      if (!infront) { dx = -dx; dy = -dy } // behind: flip so the arrow points the right way
+      const ang = Math.atan2(dy, dx)
+      const r = Math.min(W, H) * 0.4
+      const ax = cx + Math.cos(ang) * r, ay = cy + Math.sin(ang) * r
+      cctx.save(); cctx.translate(ax, ay); cctx.rotate(ang)
+      cctx.fillStyle = '#ff5d5d'
+      cctx.beginPath(); cctx.moveTo(13, 0); cctx.lineTo(-8, -7); cctx.lineTo(-8, 7); cctx.closePath(); cctx.fill()
+      cctx.restore()
+    }
+    if (infront && dist < nd) { nd = dist; nearest = p }
+  }
+
+  // Lead indicator on the nearest pirate ahead — put your crosshair here to land hits.
+  if (nearest) {
+    const t = nd / PROJECTILE_SPEED
+    _lead.copy(nearest.velocity).multiplyScalar(t).add(nearest.position)
+    _proj.copy(_lead).project(camera)
+    if (_proj.z < 1) {
+      const lx = (_proj.x * 0.5 + 0.5) * W, ly = (-_proj.y * 0.5 + 0.5) * H
+      cctx.strokeStyle = '#9fffb0'; cctx.lineWidth = 2
+      cctx.beginPath(); cctx.arc(lx, ly, 8, 0, Math.PI * 2); cctx.stroke()
+      cctx.beginPath()
+      cctx.moveTo(lx - 13, ly); cctx.lineTo(lx - 4, ly); cctx.moveTo(lx + 4, ly); cctx.lineTo(lx + 13, ly)
+      cctx.moveTo(lx, ly - 13); cctx.lineTo(lx, ly - 4); cctx.moveTo(lx, ly + 4); cctx.lineTo(lx, ly + 13)
+      cctx.stroke()
+    }
+  }
+}
+
 // --- Chase camera
 const camOffset = new THREE.Vector3()
 const camTarget = new THREE.Vector3()
@@ -908,6 +978,8 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight)
   composer.setSize(innerWidth, innerHeight)
   labelRenderer.setSize(innerWidth, innerHeight)
+  combatCanvas.width = innerWidth
+  combatCanvas.height = innerHeight
 })
 
 // --- Main loop
@@ -966,6 +1038,7 @@ function frame(now: number): void {
   starfield.position.copy(ship.position) // keep the star backdrop centered on the player
   nebula.position.copy(ship.position) // nebula skydome rides with the player too
   for (const g of planetGroups) g.rotation.y += dt * (g.userData.spin as number) // living, rotating worlds
+  capital.rotation.y += dt * 0.0015 // capital ship drifts almost imperceptibly
   if (running) {
     streamCelestials(now)
     for (const lod of planetLODs) lod.update(camera) // swap planet detail by distance
@@ -1145,6 +1218,10 @@ function frame(now: number): void {
   }
   updateWarpField(warpField, warpIntensity, dt, warpInward)
   if (running) updateDustField(dustField, camera.position)
+
+  // Combat HUD — target brackets, threat arrows, lead pip (hidden while docked/in menu).
+  if (running && !docked) drawCombatHud()
+  else cctx.clearRect(0, 0, combatCanvas.width, combatCanvas.height)
 
   // Boost flare: rides the ship's tail, flares while boosting, stretches on the ignition kick.
   boostKick = Math.max(0, boostKick - dt * 3.5)
