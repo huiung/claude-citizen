@@ -6,6 +6,10 @@
 
 ![Mine, trade, fight pirates, jump across the galaxy, and chat — multiplayer, in your browser](./docs/loop.gif)
 
+▶ **Full 1080p showcase** — mining → trading → combat → quantum travel, end to end:
+
+https://github.com/huiung/claude-citizen/releases/download/v0.7-cinematic/claude-citizen-showcase-1080p.mp4
+
 > ⚠️ **Not affiliated with Cloud Imperium Games or Roberts Space Industries.**
 > This is an independent open-source project. "Star Citizen" is referenced purely
 > as a comparison target. No assets, names, lore, or code from the original are used —
