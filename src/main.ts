@@ -1,3 +1,5 @@
+import '@fontsource/share-tech-mono/400.css' // HUD / body — self-hosted, OS-consistent
+import '@fontsource/orbitron/700.css' // title display — sci-fi
 import * as THREE from 'three'
 import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
@@ -826,9 +828,24 @@ function updateOreFloats(now: number): void {
 const camOffset = new THREE.Vector3()
 const camTarget = new THREE.Vector3()
 let camBoost = false // last-known boost input, read by the camera for FOV punch
+// G-force sway: the camera lags opposite to acceleration, so thrust/braking has weight.
+const prevCamVel = new THREE.Vector3()
+const gSway = new THREE.Vector3()
+const _accel = new THREE.Vector3()
+const _gTarget = new THREE.Vector3()
+const G_SWAY_K = 0.03   // accel (m/s²) → offset (m)
+const G_SWAY_MAX = 2.6  // clamp so it never gets nauseating
+const G_SWAY_RESP = 6   // spring stiffness
 function updateCamera(dt: number): void {
+  // Acceleration this frame → a damped offset opposite to it (push back on boost, dip on brake).
+  _accel.copy(ship.velocity).sub(prevCamVel).multiplyScalar(1 / Math.max(dt, 1e-4))
+  prevCamVel.copy(ship.velocity)
+  _gTarget.copy(_accel).multiplyScalar(-G_SWAY_K)
+  if (_gTarget.lengthSq() > G_SWAY_MAX * G_SWAY_MAX) _gTarget.setLength(G_SWAY_MAX)
+  gSway.lerp(_gTarget, 1 - Math.exp(-G_SWAY_RESP * dt))
+
   camOffset.set(0, 3.2, 9.5).applyQuaternion(ship.quaternion)
-  camTarget.copy(ship.position).add(camOffset)
+  camTarget.copy(ship.position).add(camOffset).add(gSway)
   camera.position.lerp(camTarget, 1 - Math.exp(-8 * dt))
   camera.quaternion.slerp(ship.quaternion, 1 - Math.exp(-10 * dt))
   // FOV gives a gentle sense of speed: a touch wider under boost / quantum travel. No hard punches.
