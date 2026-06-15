@@ -13,7 +13,7 @@ https://github.com/huiung/claude-citizen/releases/download/v0.7-cinematic/claude
 > ⚠️ **Not affiliated with Cloud Imperium Games or Roberts Space Industries.**
 > This is an independent open-source project. "Star Citizen" is referenced purely
 > as a comparison target. No assets, names, lore, or code from the original are used —
-> everything here is procedurally generated or written from scratch.
+> everything here is procedurally generated, hand-made, or CC0-licensed.
 
 ## Play now
 
@@ -35,7 +35,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 ## What works today
 
 - 6DOF spaceflight in your browser — coupled (flight assist) and decoupled (full Newton) modes
-- A refinery, a mining colony, a planet, an asteroid belt — 100% procedurally generated, zero asset files
+- A refinery, a mining colony, planets, an asteroid belt — the world is procedurally generated (ships & sound effects are hand-made or CC0)
 - **Mine ORE** from asteroids with a mining laser — free cargo if you're willing to work for it
 - **A living economy:** dock to trade ore and alloy; prices react to your trades and drift back over time
 - **Upgrade your craft:** cargo hold, top speed, boost — credits well spent
@@ -45,11 +45,15 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **A named solar system:** Sun + Mercury through Saturn at a compressed scale, each with a procedurally textured surface (oceans/continents, gas bands, ice caps) — and they're solid, so you fly *around* them, not through
 - **Quantum travel:** pick a destination with `[N]`, charge the drive, and jump to any planet in the system — warp streaks, a wide-FOV cruise, and a named arrival
 - **A cinematic sky:** bloom glow, fresnel planet atmospheres, a procedural nebula backdrop, slowly rotating worlds, and parallax dust that streams past for a sense of speed
-- **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor, each trading cargo/speed/toughness
+- **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor (detailed 3D models), each trading cargo/speed/toughness
+- **A capital ship:** a procedural dreadnought ~120× your fighter, its hull aglow with hundreds of windows — fly its length for the scale
+- **Game feel:** a chase camera that carries G-force weight, a boost ignition punch (FOV kick + exhaust flare + whoosh), and an air-rush layer that swells with speed
+- **Combat HUD:** target brackets + range, off-screen threat arrows (know where you're being shot from), and a lead indicator so you can actually land hits on pirates
+- **A leaderboard:** top pilots by credits — on the landing screen and in-game (`[L]`)
 - Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
 - **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours
-- 128 tests, because "built with AI" shouldn't mean "built badly"
+- 131 tests, because "built with AI" shouldn't mean "built badly"
 
 ## Controls
 
@@ -68,6 +72,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | Space | Dock (when slow + near an outpost) — trade, upgrade, buy ships, take contracts |
 | N | Cycle the quantum destination (Mercury → Saturn) |
 | J | Quantum jump to the selected planet |
+| L | Toggle the leaderboard |
 
 ## Roadmap
 
@@ -81,8 +86,9 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | 5 | Persistence (anonymous token) + in-sector chat | ✅ shipped |
 | 6 | Hosted, playable at [claudecitizen.com](https://claudecitizen.com) | ✅ shipped |
 | 7 | Low-poly planet surfaces + cinematic sky (bloom, atmospheres, nebula, warp) | ✅ shipped |
-| 8 | Co-op combat — fight pirates together | next |
-| 9 | Procedural planetary landings (real terrain collision) | planned |
+| 8 | Game feel + 3D ship models + capital ship + combat HUD + leaderboard | ✅ shipped |
+| 9 | Co-op combat — fight pirates together | next |
+| 10 | Procedural planetary landings (real terrain collision) | planned |
 | … | … | … |
 | 42 | Getting out of bed animation *(took the original 6 years — we'll take a weekend)* | someday |
 | 1.0 | **Ship before Star Citizen ships** | the whole point |
