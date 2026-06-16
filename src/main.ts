@@ -1101,6 +1101,7 @@ function launch(): void {
   crosshairEl.hidden = false
   walletEl.hidden = false
   minimapWrapEl.hidden = false
+  leaderboardPanelEl.hidden = true
   refreshWallet()
   hullBarEl.style.width = '100%'
   nextSpawnAt = performance.now() + 8000 // first hostiles arrive after ~8s
@@ -1115,7 +1116,7 @@ function launch(): void {
 launchEl.addEventListener('click', launch)
 nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') launch() })
 renderer.domElement.addEventListener('click', () => {
-  if (running && document.pointerLockElement !== renderer.domElement) {
+  if (running && !docked && !chatOpen && !solarMap.isOpen && document.pointerLockElement !== renderer.domElement) {
     requestFlightPointerLock()
   }
 })
