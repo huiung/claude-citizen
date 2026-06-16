@@ -277,7 +277,7 @@ function spawnOreSite(): void {
   const r = ORE_NEAR + Math.random() * (ORE_FAR - ORE_NEAR)
   _oreDir.set(Math.cos(a) * r, (Math.random() - 0.5) * 120, Math.sin(a) * r)
   const id = `ore-${oreSeq++}`
-  const reserves = 20 + Math.floor(Math.random() * 21) // ~one cargo hold or less, so a vein depletes and you move on
+  const reserves = 10 + Math.floor(Math.random() * 13) // a fraction of a hold — fill up across a few veins, not one
   const pos = ship.position.clone().add(_oreDir)
   field.asteroids.push({ id, position: pos, reserves })
   const mesh = buildMineableAsteroid()
