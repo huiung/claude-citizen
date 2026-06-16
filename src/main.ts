@@ -65,6 +65,30 @@ const enemiesEl = document.getElementById('enemies')!
 const flashEl = document.getElementById('damage-flash')!
 const quantumEl = document.getElementById('quantum')!
 const navHintEl = document.getElementById('nav-hint')!
+const objectiveEl = document.getElementById('objective')!
+// Onboarding: show a "next objective" only to brand-new pilots. localStorage gate (this device
+// hasn't onboarded) is the fast path; a returning token with saved progress also disables it.
+let onboardingActive = !localStorage.getItem('scc.onboarded')
+// Onboarding progress is persisted so a refresh keeps your step (and graduating sticks),
+// even without a relay connection.
+let minedEver = localStorage.getItem('scc.ob.mined') === '1'
+let dockedEver = localStorage.getItem('scc.ob.docked') === '1'
+function markOnboard(key: string, set: (v: true) => void): void {
+  set(true)
+  try { localStorage.setItem(key, '1') } catch { /* storage blocked */ }
+}
+function finishOnboarding(): void {
+  onboardingActive = false
+  try { localStorage.setItem('scc.onboarded', '1') } catch { /* storage blocked */ }
+}
+/** Action-gated steps — just *show* each system, no forced grind:
+ *  mine once → open the station (Space) → kill a pirate → done. */
+function currentObjective(): string | null {
+  if (!onboardingActive) return null
+  if (!minedEver) return 'Mine ORE — fly to a cyan-veined asteroid and hold Left-click'
+  if (!dockedEver) return 'Dock at an outpost (Space) — trade, upgrade & buy ships here'
+  return 'Hunt a pirate — hold Right-click to fire (watch your hull)' // killing one calls finishOnboarding()
+}
 const safeEl = document.getElementById('safe-zone')!
 const chatInputEl = document.getElementById('chat-input') as HTMLInputElement
 const chatLogEl = document.getElementById('chat-log')!
@@ -726,6 +750,7 @@ document.body.appendChild(solarMap.root)
 
 function dock(id: string): void {
   docked = true
+  if (!dockedEver) markOnboard('scc.ob.docked', (v) => { dockedEver = v }) // onboarding step 2 — opening the UI counts
   solarMap.close()
   miningActive = false
   leaderboardPanelEl.hidden = true // don't strand the leaderboard open behind the station menu
@@ -877,6 +902,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', playerToken, {
     saveUpgrades(upgrades)
     saveHangar()
     updateWalletHUD()
+    finishOnboarding() // a returning token already knows the ropes
   },
   onPeerJoin(peer) {
     const mesh = buildCraft('hauler', PALETTE[peer.color % PALETTE.length])
@@ -1310,6 +1336,7 @@ function frame(now: number): void {
     // Mining: transfer ORE from the nearest in-range asteroid while the laser is held.
     const mineResult = mineStep(field, ship.position, econ, dt, miningActive, effCargo())
     if (mineResult.mined > 0 && mineResult.asteroid) {
+      if (!minedEver) markOnboard('scc.ob.mined', (v) => { minedEver = v }) // onboarding step 1
       updateWalletHUD()
       const rm = rockMeshes.get(mineResult.asteroid.id)
       if (rm) {
@@ -1395,6 +1422,7 @@ function frame(now: number): void {
         spawnExplosion(p.position, now)
         audio.blip('explosion')
         econ.credits += PIRATE_REWARD
+        finishOnboarding() // graduates the onboarding objective
         refreshWallet()
         spawnLoot(p.position) // drop a loot crate where it died
         const mesh = pirateMeshes.get(p.id)
@@ -1460,6 +1488,11 @@ function frame(now: number): void {
   flareMat.opacity += (flareTarget - flareMat.opacity) * (1 - Math.exp(-12 * dt))
   boostFlare.visible = flareMat.opacity > 0.01
   boostFlare.scale.set(1, 1 + boostKick * 1.2 + camThrust * 0.4, 1) // stretches with thrust too
+
+  // Onboarding objective — new pilots get a "next step" until they hunt their first pirate.
+  const obj = running && !docked ? currentObjective() : null
+  objectiveEl.hidden = !obj
+  if (obj) objectiveEl.textContent = `▸ ${obj}`
 
   composer.render()
   labelRenderer.render(scene, camera)

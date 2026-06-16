@@ -89,6 +89,14 @@
       background: rgba(0, 20, 34, .5); border: 1px solid #6fe8ff; padding: 8px 22px;
       border-radius: 4px; text-shadow: 0 0 10px rgba(111, 232, 255, .7);
     }
+    /* Onboarding objective — shown to new pilots only, fades out as they progress */
+    #objective {
+      position: fixed; left: 50%; top: 10%; transform: translateX(-50%); pointer-events: none;
+      font-size: 13px; letter-spacing: 1px; color: #ffe08a; z-index: 6; max-width: 80vw; text-align: center;
+      background: rgba(22, 16, 2, .55); border: 1px solid rgba(255, 224, 138, .4);
+      padding: 7px 18px; border-radius: 4px; text-shadow: 0 0 8px rgba(255, 224, 138, .45);
+    }
+    #objective[hidden] { display: none; }
     #chat-log {
       position: fixed; left: 16px; bottom: 132px; width: 340px; max-width: 60vw; z-index: 7;
       pointer-events: none; display: flex; flex-direction: column; gap: 3px;
@@ -258,6 +266,7 @@
   </div>
   <div id="damage-flash"></div>
   <div id="quantum" hidden></div>
+  <div id="objective" hidden></div>
   <div id="minimap-wrap" hidden>
     <canvas id="minimap" width="120" height="120"></canvas>
     <div id="minimap-legend"><span style="color:#6fdc8c">●</span> REF&nbsp;&nbsp;<span style="color:#ffb347">●</span> COL&nbsp;&nbsp;<span style="color:#ff5d5d">●</span> HOSTILE</div>
