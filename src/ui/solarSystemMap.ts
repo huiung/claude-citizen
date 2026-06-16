@@ -89,6 +89,7 @@ const MAX_ATLAS_LABELS = 8
 const MAX_PREVIEW_ROUTES = 6
 const PREVIEW_STALE_MS = 30_000
 const PREVIEW_ROUTE_COLORS = [0xffb15f, 0x6ee7ff, 0xd6a8ff, 0xff7fa3, 0xf4e66a, 0x82f0b5]
+const ORBIT_TRACK_SEGMENTS = 192
 
 const PLANET_NOTES: Record<string, string> = {
   Earth: 'Familiar blue-world reference mass. Good for navigation calibration and the most legible system-scale landmark from spawn.',
@@ -154,6 +155,32 @@ function mapPosition(worldPosition: THREE.Vector3, origin: THREE.Vector3): THREE
 
 function worldFromMapPosition(mapLocalPosition: THREE.Vector3, origin: THREE.Vector3): THREE.Vector3 {
   return mapLocalPosition.clone().multiplyScalar(1 / POSITION_SCALE).add(origin)
+}
+
+function planetOrbitRadius(position: THREE.Vector3): number {
+  return position.distanceTo(SUN_POSITION)
+}
+
+function buildPlanetOrbitPoints(position: THREE.Vector3, origin: THREE.Vector3): THREE.Vector3[] {
+  const radial = position.clone().sub(SUN_POSITION)
+  const orbitRadius = radial.length()
+  if (orbitRadius <= 1e-6) return [mapPosition(SUN_POSITION, origin)]
+
+  const axisU = radial.clone().normalize()
+  const up = new THREE.Vector3(0, 1, 0)
+  const axisNormal = up.sub(axisU.clone().multiplyScalar(up.dot(axisU)))
+  if (axisNormal.lengthSq() <= 1e-6) axisNormal.set(0, 0, 1)
+  axisNormal.normalize()
+  const axisV = new THREE.Vector3().crossVectors(axisNormal, axisU).normalize()
+  const points: THREE.Vector3[] = []
+  for (let i = 0; i < ORBIT_TRACK_SEGMENTS; i++) {
+    const t = (i / ORBIT_TRACK_SEGMENTS) * Math.PI * 2
+    const world = SUN_POSITION.clone()
+      .add(axisU.clone().multiplyScalar(Math.cos(t) * orbitRadius))
+      .add(axisV.clone().multiplyScalar(Math.sin(t) * orbitRadius))
+    points.push(mapPosition(world, origin))
+  }
+  return points
 }
 
 function visualRadius(worldRadius: number, min: number, max: number): number {
@@ -303,7 +330,7 @@ function buildSunSurfaceMaterial(color: number): THREE.ShaderMaterial {
         float plasma = wave(normalize(vWorldPosition) * 1.7, 11.0, 0.55) * 0.5 + 0.5;
         vec3 color = mix(hotColor, coreColor, 0.32 + plasma * 0.18);
         color = mix(color, limbColor, limb * 0.56);
-        float intensity = 1.12 + plasma * 0.44 + limb * 0.28;
+        float intensity = 0.98 + plasma * 0.34 + limb * 0.22;
         gl_FragColor = vec4(color * intensity, 1.0);
       }
     `,
@@ -393,11 +420,21 @@ function injectSolarMapStyles(): void {
       display: flex; align-items: flex-start; justify-content: space-between; gap: 18px;
       pointer-events: none;
     }
+    .solar-map-head-actions {
+      display: flex; align-items: center; gap: 8px; pointer-events: auto;
+    }
     .solar-map-title {
       font-family: "Orbitron", "Share Tech Mono", sans-serif; font-size: 18px; letter-spacing: 3px;
       color: #f2fff7; text-shadow: 0 0 18px rgba(120, 255, 180, .32);
     }
     .solar-map-sub { margin-top: 5px; font-size: 11px; color: rgba(215, 255, 231, .72); letter-spacing: .8px; }
+    .solar-map-ui-toggle {
+      pointer-events: auto; min-width: 70px; height: 34px; padding: 0 10px; border-radius: 8px; cursor: pointer;
+      border: 1px solid rgba(174, 233, 255, .28); background: rgba(3, 14, 20, .7);
+      color: #d7ffe7; font: 10px/1 "Share Tech Mono", ui-monospace, monospace;
+      letter-spacing: .9px; text-transform: uppercase;
+    }
+    .solar-map-ui-toggle:hover { background: rgba(16, 45, 58, .78); border-color: rgba(174, 233, 255, .5); }
     .solar-map-close {
       pointer-events: auto; width: 38px; height: 34px; border-radius: 8px; cursor: pointer;
       border: 1px solid rgba(159, 255, 176, .35); background: rgba(4, 18, 12, .72);
@@ -436,11 +473,11 @@ function injectSolarMapStyles(): void {
       background: rgba(2, 12, 18, .52); padding: 6px 9px;
     }
     .solar-map-toolbar {
-      position: absolute; left: 18px; bottom: 18px; z-index: 4; width: min(760px, calc(100vw - 396px));
+      position: absolute; left: 18px; bottom: 18px; z-index: 4; width: min(620px, calc(100vw - 396px));
       border: 1px solid rgba(174, 233, 255, .2); border-radius: 8px;
       background: linear-gradient(180deg, rgba(3, 12, 18, .82), rgba(2, 7, 12, .68));
       backdrop-filter: blur(12px);
-      padding: 12px; color: rgba(215, 255, 231, .76); pointer-events: auto;
+      padding: 10px; color: rgba(215, 255, 231, .76); pointer-events: auto;
       box-shadow: 0 0 46px rgba(20, 72, 96, .18);
     }
     .solar-map-toolbar-head {
@@ -455,7 +492,7 @@ function injectSolarMapStyles(): void {
     }
     .solar-map-inputs b { color: #e9fff3; font-weight: 600; }
     .solar-map-toolbar-body {
-      display: grid; grid-template-columns: minmax(210px, .82fr) minmax(230px, 1.18fr); gap: 12px; align-items: start;
+      display: grid; grid-template-columns: minmax(190px, .74fr) minmax(230px, 1.26fr); gap: 10px; align-items: start;
     }
     .solar-map-actions {
       display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
@@ -492,14 +529,14 @@ function injectSolarMapStyles(): void {
       min-height: 24px; padding: 0 8px; color: rgba(215, 255, 231, .82);
     }
     .solar-map-preview-list {
-      display: grid; gap: 5px; max-height: 128px; overflow: auto; padding-right: 2px;
+      display: grid; gap: 5px; max-height: 104px; overflow: auto; padding-right: 2px;
     }
     .solar-map-contact-head {
       margin: 9px 0 6px; padding-top: 8px; border-top: 1px solid rgba(174, 233, 255, .12);
       color: #f2fff7; font-size: 10px; letter-spacing: 1.7px;
     }
     .solar-map-contact-list {
-      display: grid; gap: 5px; max-height: 92px; overflow: auto; padding-right: 2px;
+      display: grid; gap: 5px; max-height: 66px; overflow: auto; padding-right: 2px;
     }
     .solar-map-contact-empty {
       border: 1px solid rgba(174, 233, 255, .1); border-radius: 6px;
@@ -546,6 +583,11 @@ function injectSolarMapStyles(): void {
     .solar-map-label.region { color: #ffcf8a; }
     .solar-map-label.active { color: #9fffb0; text-shadow: 0 0 8px #000, 0 0 18px rgba(159, 255, 176, .58); }
     .solar-map-label.selected { color: #ffcf8a; text-shadow: 0 0 8px #000, 0 0 18px rgba(255, 195, 109, .55); }
+    .solar-map-ui-hidden .solar-map-panel,
+    .solar-map-ui-hidden .solar-map-toolbar,
+    .solar-map-ui-hidden .solar-map-strip {
+      display: none;
+    }
     @media (max-width: 900px) and (min-width: 721px) {
       .solar-map-panel { right: 12px; top: 74px; width: 320px; max-height: calc(100vh - 118px); }
       .solar-map-toolbar { left: 12px; bottom: 12px; width: min(500px, calc(100vw - 365px)); }
@@ -652,6 +694,7 @@ export class SolarSystemMap {
   private selectedRegion: SolarMapEntity | null = null
   private selectedPreviewId: string | null = null
   private actionStatus = ''
+  private controlsHidden = false
   private readonly layers: SolarMapLayers = { ...DEFAULT_LAYERS }
   private readonly previewRoutes: PreviewRoute[] = []
   private readonly remoteTrails = new Map<string, RemoteTrailPoint[]>()
@@ -677,7 +720,10 @@ export class SolarSystemMap {
           <div class="solar-map-title">SOLAR ATLAS</div>
           <div class="solar-map-sub"></div>
         </div>
-        <button class="solar-map-close" aria-label="Close solar map">x</button>
+        <div class="solar-map-head-actions">
+          <button class="solar-map-ui-toggle" type="button" data-testid="solar-map-ui-toggle" aria-pressed="false">Hide UI</button>
+          <button class="solar-map-close" aria-label="Close solar map">x</button>
+        </div>
       </div>
       <aside class="solar-map-panel" aria-live="polite"></aside>
       <div class="solar-map-toolbar" data-testid="solar-map-toolbar">
@@ -722,11 +768,11 @@ export class SolarSystemMap {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75))
     this.renderer.outputColorSpace = THREE.SRGBColorSpace
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.toneMappingExposure = 1.16
+    this.renderer.toneMappingExposure = 1.06
     this.canvasHost.appendChild(this.renderer.domElement)
     this.composer = new EffectComposer(this.renderer)
     this.composer.addPass(new RenderPass(this.scene, this.camera))
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.78, 0.9, 0.62)
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.58, 0.82, 0.68)
     this.composer.addPass(this.bloomPass)
 
     this.labelRenderer = new CSS2DRenderer()
@@ -760,6 +806,7 @@ export class SolarSystemMap {
     this.raycaster.params.Line.threshold = 0.72
 
     this.root.querySelector('.solar-map-close')!.addEventListener('click', () => this.close())
+    this.root.querySelector('.solar-map-ui-toggle')!.addEventListener('click', () => this.toggleControls())
     this.root.querySelector('.solar-map-toolbar')!.addEventListener('click', (event) => this.onToolbarClick(event))
     this.renderer.domElement.addEventListener('pointerdown', (event) => {
       this.pointerDown.set(event.clientX, event.clientY)
@@ -777,6 +824,8 @@ export class SolarSystemMap {
   open(): void {
     if (this.isOpen) return
     this.root.hidden = false
+    this.controlsHidden = false
+    this.updateControlsVisibility()
     this.selectedId = 'player'
     this.selectedRegion = null
     this.actionStatus = 'Atlas centered on your ship.'
@@ -834,6 +883,19 @@ export class SolarSystemMap {
     this.camera.position.set(0, 24, 46)
     this.controls.target.set(0, 0, 0)
     this.controls.update()
+  }
+
+  private toggleControls(): void {
+    this.controlsHidden = !this.controlsHidden
+    this.updateControlsVisibility()
+  }
+
+  private updateControlsVisibility(): void {
+    this.root.classList.toggle('solar-map-ui-hidden', this.controlsHidden)
+    const button = this.root.querySelector('.solar-map-ui-toggle') as HTMLButtonElement | null
+    if (!button) return
+    button.textContent = this.controlsHidden ? 'Show UI' : 'Hide UI'
+    button.setAttribute('aria-pressed', this.controlsHidden ? 'true' : 'false')
   }
 
   private updateRemoteTrails(now: number): void {
@@ -984,13 +1046,13 @@ export class SolarSystemMap {
     })
     this.mapRoot.add(sun)
     if (this.selectedId === 'sun') this.addLabel('Nearest sun', sun.position, 'selected', 88)
-    const sunLight = new THREE.PointLight(SUN_COLOR, 6.4, 320, 1.22)
+    const sunLight = new THREE.PointLight(SUN_COLOR, 4.9, 320, 1.22)
     sunLight.position.copy(sun.position)
     this.mapRoot.add(sunLight)
     const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: createRadialTexture('rgba(255, 248, 218, .58)', 'rgba(255, 184, 84, .2)', 'rgba(255, 120, 28, 0)'),
+      map: createRadialTexture('rgba(255, 248, 218, .46)', 'rgba(255, 184, 84, .16)', 'rgba(255, 120, 28, 0)'),
       transparent: true,
-      opacity: 0.68,
+      opacity: 0.54,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       depthTest: false,
@@ -1001,9 +1063,9 @@ export class SolarSystemMap {
     sunGlow.renderOrder = 22
     this.mapRoot.add(sunGlow)
     const radialLight = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: createRadialTexture('rgba(255, 222, 160, .21)', 'rgba(255, 158, 66, .065)', 'rgba(255, 180, 84, 0)'),
+      map: createRadialTexture('rgba(255, 222, 160, .16)', 'rgba(255, 158, 66, .05)', 'rgba(255, 180, 84, 0)'),
       transparent: true,
-      opacity: 0.46,
+      opacity: 0.36,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       depthTest: false,
@@ -1060,22 +1122,13 @@ export class SolarSystemMap {
       const orbitId = `orbit.${planet.name}`
       const active = this.isActiveDestination(`planet.${planet.name}`)
       const selected = this.selectedId === orbitId
-      const orbitRadius = Math.hypot(planet.position.x - SUN_POSITION.x, planet.position.z - SUN_POSITION.z)
-      const points: THREE.Vector3[] = []
-      for (let i = 0; i <= 192; i++) {
-        const t = (i / 192) * Math.PI * 2
-        const world = new THREE.Vector3(
-          SUN_POSITION.x + Math.cos(t) * orbitRadius,
-          SUN_POSITION.y + orbitRadius * 0.05 * Math.sin(t * 1.7),
-          SUN_POSITION.z + Math.sin(t) * orbitRadius,
-        )
-        points.push(mapPosition(world, origin))
-      }
-      const color = selected ? 0xffcf8a : active ? 0x9fffb0 : 0x79b7d8
+      const orbitRadius = planetOrbitRadius(planet.position)
+      const points = buildPlanetOrbitPoints(planet.position, origin)
+      const color = selected ? 0xffcf8a : active ? 0x9fffb0 : 0x9bcce6
       const material = new THREE.LineBasicMaterial({
         color,
         transparent: true,
-        opacity: selected ? 0.78 : active ? 0.58 : 0.34,
+        opacity: selected ? 0.9 : active ? 0.68 : 0.48,
         depthWrite: false,
         depthTest: false,
       })
