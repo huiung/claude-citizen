@@ -3,9 +3,10 @@
 // stock ship: base values mirror CARGO_CAPACITY (economy) and TUNING (physics).
 
 import { CARGO_CAPACITY, type PlayerEconomy } from './economy'
+import { MINING_YIELD } from './mining'
 import { TUNING } from './physics'
 
-export type UpgradeTrack = 'cargo' | 'speed' | 'boost'
+export type UpgradeTrack = 'cargo' | 'speed' | 'boost' | 'mining'
 
 /** Per-track upgrade definition. `values[i]` is the stat at tier `i`; `prices[i]`
  *  is the credit cost to advance FROM tier `i` TO tier `i+1`. */
@@ -20,16 +21,20 @@ interface TrackDef {
 // behaves exactly as it does today. Prices scale up super-linearly per tier.
 export const UPGRADE_TRACKS: Record<UpgradeTrack, TrackDef> = {
   cargo: {
-    values: [CARGO_CAPACITY, 35, 50, 75],
-    prices: [600, 1500, 3500],
+    values: [CARGO_CAPACITY, 35, 50, 75, 105, 150],
+    prices: [600, 1500, 3500, 7000, 14000],
   },
   speed: {
-    values: [TUNING.maxSpeed, 100, 125, 160],
-    prices: [800, 2000, 4500],
+    values: [TUNING.maxSpeed, 100, 125, 160, 200, 250],
+    prices: [800, 2000, 4500, 9000, 18000],
   },
   boost: {
-    values: [TUNING.boostMultiplier, 4.5, 5.5, 7],
-    prices: [1000, 2500, 5000],
+    values: [TUNING.boostMultiplier, 4.5, 5.5, 7, 9, 12],
+    prices: [1000, 2500, 5000, 10000, 20000],
+  },
+  mining: {
+    values: [MINING_YIELD, 3, 4.5, 6, 8, 10],
+    prices: [500, 1200, 3000, 6500, 13000],
   },
 }
 
@@ -39,7 +44,7 @@ export interface ShipUpgrades {
 }
 
 export function createUpgrades(): ShipUpgrades {
-  return { tiers: { cargo: 0, speed: 0, boost: 0 } }
+  return { tiers: { cargo: 0, speed: 0, boost: 0, mining: 0 } }
 }
 
 /** Highest tier index reachable on a track (length - 1). */
@@ -64,6 +69,11 @@ export function topSpeed(u: ShipUpgrades): number {
 /** Effective boost multiplier for the current boost tier. */
 export function boostMultiplier(u: ShipUpgrades): number {
   return trackValue(u, 'boost')
+}
+
+/** Effective mining yield (ORE/sec) for the current mining tier. */
+export function miningYield(u: ShipUpgrades): number {
+  return trackValue(u, 'mining')
 }
 
 /** Credits to advance `track` one tier, or null if already maxed. */
@@ -102,7 +112,7 @@ export function loadUpgrades(): ShipUpgrades {
       if (typeof v !== 'number' || !Number.isInteger(v)) return 0
       return Math.max(0, Math.min(maxTier(track), v))
     }
-    return { tiers: { cargo: clamp('cargo'), speed: clamp('speed'), boost: clamp('boost') } }
+    return { tiers: { cargo: clamp('cargo'), speed: clamp('speed'), boost: clamp('boost'), mining: clamp('mining') } }
   } catch {
     return createUpgrades()
   }

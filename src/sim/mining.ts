@@ -87,6 +87,7 @@ export function mineStep(
   dt: number,
   active: boolean,
   capacity: number = CARGO_CAPACITY,
+  yieldPerSec: number = MINING_YIELD,
 ): MineStepResult {
   if (!active || dt <= 0) return NO_OP
 
@@ -94,7 +95,7 @@ export function mineStep(
   if (!asteroid) return NO_OP
 
   // In range, but how much can we actually take?
-  const wanted = MINING_YIELD * dt
+  const wanted = yieldPerSec * dt
   const mined = Math.max(0, Math.min(wanted, asteroid.reserves, cargoFree(econ, capacity)))
 
   asteroid.reserves -= mined

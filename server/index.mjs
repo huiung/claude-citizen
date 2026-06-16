@@ -60,6 +60,7 @@ function sanitizeProgress(p) {
       cargo: Number(p.upgrades?.cargo) || 0,
       speed: Number(p.upgrades?.speed) || 0,
       boost: Number(p.upgrades?.boost) || 0,
+      mining: Number(p.upgrades?.mining) || 0,
     },
     hangar: {
       selected: String(p.hangar?.selected ?? 'hauler').slice(0, 16),

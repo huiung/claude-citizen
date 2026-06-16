@@ -21,7 +21,7 @@ import { cargoUsed, loadEconomy, OUTPOSTS, saveEconomy } from './sim/economy'
 import { createAsteroidField, mineStep } from './sim/mining'
 import { createMarket, step as marketStep } from './sim/market'
 import { generateContracts } from './sim/contracts'
-import { boostMultiplier, cargoCapacity, loadUpgrades, saveUpgrades, topSpeed } from './sim/upgrades'
+import { boostMultiplier, cargoCapacity, loadUpgrades, miningYield, saveUpgrades, topSpeed } from './sim/upgrades'
 import { type Celestial, queryCelestials } from './sim/galaxy'
 import { cancelTravel, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
@@ -769,7 +769,7 @@ function currentProgress(): PlayerProgress {
   return {
     credits: econ.credits,
     cargo: { ORE: econ.cargo.ORE, ALLOY: econ.cargo.ALLOY },
-    upgrades: { cargo: upgrades.tiers.cargo, speed: upgrades.tiers.speed, boost: upgrades.tiers.boost },
+    upgrades: { cargo: upgrades.tiers.cargo, speed: upgrades.tiers.speed, boost: upgrades.tiers.boost, mining: upgrades.tiers.mining },
     hangar: { selected: selectedShipType, owned: [...ownedShips] },
   }
 }
@@ -967,6 +967,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', playerToken, {
     upgrades.tiers.cargo = p.upgrades.cargo
     upgrades.tiers.speed = p.upgrades.speed
     upgrades.tiers.boost = p.upgrades.boost
+    upgrades.tiers.mining = p.upgrades.mining ?? 0
     ownedShips.clear()
     for (const t of p.hangar.owned) if (t in SHIP_STATS) ownedShips.add(t as ShipType)
     ownedShips.add('hauler')
@@ -1415,7 +1416,7 @@ function frame(now: number): void {
     marketStep(market, dt)
 
     // Mining: transfer ORE from the nearest in-range asteroid while the laser is held.
-    const mineResult = mineStep(field, ship.position, econ, dt, miningActive, effCargo())
+    const mineResult = mineStep(field, ship.position, econ, dt, miningActive, effCargo(), miningYield(upgrades))
     if (mineResult.mined > 0 && mineResult.asteroid) {
       if (!minedEver) markOnboard('scc.ob.mined', (v) => { minedEver = v }) // onboarding step 1
       updateWalletHUD()

@@ -4,7 +4,7 @@ import {
 } from '../sim/economy'
 import { currentPrice, type MarketState, recordTrade } from '../sim/market'
 import {
-  boostMultiplier, cargoCapacity, nextPrice, purchase, type ShipUpgrades, topSpeed,
+  boostMultiplier, cargoCapacity, miningYield, nextPrice, purchase, type ShipUpgrades, topSpeed,
   type UpgradeTrack,
 } from '../sim/upgrades'
 import { abandon, accept, completeContract, type Contract } from '../sim/contracts'
@@ -239,6 +239,7 @@ export class StationMenu {
       ['cargo', 'Cargo Hold', `${cargoCapacity(u)} units`],
       ['speed', 'Top Speed', `${topSpeed(u)} m/s`],
       ['boost', 'Boost', `${boostMultiplier(u)}×`],
+      ['mining', 'Mining Yield', `${miningYield(u)}/s`],
     ]
     for (const [track, name, current] of tracks) {
       const price = nextPrice(u, track)

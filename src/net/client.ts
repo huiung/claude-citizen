@@ -14,7 +14,7 @@ export interface PeerState {
 export interface PlayerProgress {
   credits: number
   cargo: { ORE: number; ALLOY: number }
-  upgrades: { cargo: number; speed: number; boost: number }
+  upgrades: { cargo: number; speed: number; boost: number; mining: number }
   hangar: { selected: string; owned: string[] }
 }
 

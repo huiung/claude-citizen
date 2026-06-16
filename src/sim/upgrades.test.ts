@@ -1,20 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import { CARGO_CAPACITY, createEconomy } from './economy'
+import { MINING_YIELD } from './mining'
 import { TUNING } from './physics'
 import {
-  boostMultiplier, cargoCapacity, createUpgrades, maxTier, nextPrice, purchase, topSpeed,
+  boostMultiplier, cargoCapacity, createUpgrades, maxTier, miningYield, nextPrice, purchase, topSpeed,
   UPGRADE_TRACKS, type UpgradeTrack,
 } from './upgrades'
 
-const TRACKS: UpgradeTrack[] = ['cargo', 'speed', 'boost']
+const TRACKS: UpgradeTrack[] = ['cargo', 'speed', 'boost', 'mining']
 
 describe('upgrades', () => {
   it('tier 0 matches the live game constants (stock ship)', () => {
     const u = createUpgrades()
-    expect(u.tiers).toEqual({ cargo: 0, speed: 0, boost: 0 })
+    expect(u.tiers).toEqual({ cargo: 0, speed: 0, boost: 0, mining: 0 })
     expect(cargoCapacity(u)).toBe(CARGO_CAPACITY)
     expect(topSpeed(u)).toBe(TUNING.maxSpeed)
     expect(boostMultiplier(u)).toBe(TUNING.boostMultiplier)
+    expect(miningYield(u)).toBe(MINING_YIELD)
   })
 
   it('purchase success deducts credits and advances the tier', () => {
@@ -102,7 +104,7 @@ describe('upgrades', () => {
     const econ = createEconomy()
     econ.credits = 100000
     purchase(u, econ, 'cargo')
-    expect(u.tiers).toEqual({ cargo: 1, speed: 0, boost: 0 })
+    expect(u.tiers).toEqual({ cargo: 1, speed: 0, boost: 0, mining: 0 })
     expect(topSpeed(u)).toBe(TUNING.maxSpeed)
     expect(boostMultiplier(u)).toBe(TUNING.boostMultiplier)
   })
