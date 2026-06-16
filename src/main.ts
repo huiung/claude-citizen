@@ -314,7 +314,23 @@ function saveHangar(): void {
   } catch { /* ignore */ }
 }
 
-const ship = createShipState(new THREE.Vector3(0, 0, 0))
+// Scatter spawns near the origin so pilots don't all stack on the same point (#1).
+// Well inside the 1600 safe-zone radius, so you never spawn into pirates.
+function randomSpawn(): THREE.Vector3 {
+  const a = Math.random() * Math.PI * 2
+  const r = 200 + Math.random() * 400 // 200–600: visibly different, still well inside the 1600 safe zone
+  return new THREE.Vector3(Math.cos(a) * r, (Math.random() - 0.5) * 100, Math.sin(a) * r)
+}
+const _spawnUp = new THREE.Vector3(0, 1, 0)
+const _spawnMat = new THREE.Matrix4()
+
+const ship = createShipState(randomSpawn())
+/** Aim the ship at the refinery on spawn, so new pilots open on somewhere to go. */
+function faceRefinery(): void {
+  _spawnMat.lookAt(ship.position, REFINERY_POS, _spawnUp)
+  ship.quaternion.setFromRotationMatrix(_spawnMat)
+}
+faceRefinery()
 let shipMesh = buildCraft(selectedShipType, PLAYER_TINT)
 scene.add(shipMesh)
 
@@ -490,7 +506,8 @@ function respawnPlayer(now: number): void {
   spawnExplosion(ship.position, now)
   audio.blip('explosion')
   damageFlash()
-  ship.position.set(0, 0, 0)
+  ship.position.copy(randomSpawn())
+  faceRefinery()
   ship.velocity.set(0, 0, 0)
   playerHealth.hull = playerHealth.max
   econ.credits = Math.max(0, econ.credits - 100)
