@@ -168,6 +168,23 @@ function distanceToSegment(point: THREE.Vector3, a: THREE.Vector3, b: THREE.Vect
   return scratchVector.multiplyScalar(t).add(a).distanceTo(point)
 }
 
+function distanceToScreenSegmentSq(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax
+  const dy = by - ay
+  const lenSq = dx * dx + dy * dy
+  if (lenSq <= 1e-6) {
+    const ox = px - ax
+    const oy = py - ay
+    return ox * ox + oy * oy
+  }
+  const t = THREE.MathUtils.clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0, 1)
+  const sx = ax + dx * t
+  const sy = ay + dy * t
+  const ox = px - sx
+  const oy = py - sy
+  return ox * ox + oy * oy
+}
+
 function atlasSurfaceColor(base: number, surface: string, seed: number, normal: THREE.Vector3, out: THREE.Color): THREE.Color {
   const n = (
     Math.sin(normal.x * 4.1 + seed * 0.01) * 0.38 +
@@ -1487,6 +1504,9 @@ export class SolarSystemMap {
     const rayHit = (hit?.userData.entityRoot as THREE.Object3D | undefined) ?? null
     if (rayHit) return rayHit
 
+    const orbitHit = this.pickOrbitTrack(event, rect)
+    if (orbitHit) return orbitHit
+
     const roots = new Set<THREE.Object3D>()
     let best: THREE.Object3D | null = null
     let bestD2 = 34 * 34
@@ -1505,6 +1525,64 @@ export class SolarSystemMap {
       if (d2 < bestD2) {
         bestD2 = d2
         best = root
+      }
+    }
+    return best
+  }
+
+  private pickOrbitTrack(event: MouseEvent | PointerEvent, rect: DOMRect): THREE.Object3D | null {
+    let best: THREE.Object3D | null = null
+    let bestD2 = 16 * 16
+    const a = new THREE.Vector3()
+    const b = new THREE.Vector3()
+    const seen = new Set<THREE.Object3D>()
+    for (const candidate of this.clickables) {
+      if (!(candidate instanceof THREE.Line)) continue
+      const root = candidate.userData.entityRoot as THREE.Object3D | undefined
+      const entity = root?.userData.entity as SolarMapEntity | undefined
+      if (!root || seen.has(root) || entity?.kind !== 'Orbit track') continue
+      seen.add(root)
+      const position = candidate.geometry.getAttribute('position')
+      if (!position || position.count < 2) continue
+      let prevX = 0
+      let prevY = 0
+      let prevVisible = false
+      for (let i = 0; i < position.count; i++) {
+        a.fromBufferAttribute(position, i)
+        candidate.localToWorld(a)
+        a.project(this.camera)
+        const visible = a.z >= -1 && a.z <= 1
+        const sx = (a.x * 0.5 + 0.5) * rect.width + rect.left
+        const sy = (-a.y * 0.5 + 0.5) * rect.height + rect.top
+        if (visible && prevVisible) {
+          const d2 = distanceToScreenSegmentSq(event.clientX, event.clientY, prevX, prevY, sx, sy)
+          if (d2 < bestD2) {
+            bestD2 = d2
+            best = root
+          }
+        }
+        prevX = sx
+        prevY = sy
+        prevVisible = visible
+      }
+      if (position.count > 2) {
+        a.fromBufferAttribute(position, 0)
+        b.fromBufferAttribute(position, position.count - 1)
+        candidate.localToWorld(a)
+        candidate.localToWorld(b)
+        a.project(this.camera)
+        b.project(this.camera)
+        if (a.z >= -1 && a.z <= 1 && b.z >= -1 && b.z <= 1) {
+          const ax = (a.x * 0.5 + 0.5) * rect.width + rect.left
+          const ay = (-a.y * 0.5 + 0.5) * rect.height + rect.top
+          const bx = (b.x * 0.5 + 0.5) * rect.width + rect.left
+          const by = (-b.y * 0.5 + 0.5) * rect.height + rect.top
+          const d2 = distanceToScreenSegmentSq(event.clientX, event.clientY, ax, ay, bx, by)
+          if (d2 < bestD2) {
+            bestD2 = d2
+            best = root
+          }
+        }
       }
     }
     return best
