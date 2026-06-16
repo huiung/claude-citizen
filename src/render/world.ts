@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { SurfaceKind } from '../sim/solarSystem'
+import { generateCloudTexture, generatePlanetTextures, samplePlanetSurface } from './planetTextures'
 
 /** Deterministic pseudo-random — same world for every visitor, no assets. */
 function mulberry32(seed: number) {
@@ -125,42 +126,13 @@ function makeAtmosphere(radius: number, atmoColor: number, power: number): THREE
 
 export function buildPlanet(): THREE.Group {
   const group = new THREE.Group()
-  const rand = mulberry32(7)
-  const geo = new THREE.IcosahedronGeometry(2200, 4)
-  // Displace vertices for a low-poly terrain look
-  const pos = geo.getAttribute('position') as THREE.BufferAttribute
-  const v = new THREE.Vector3()
-  const colors = new Float32Array(pos.count * 3)
-  const ocean = new THREE.Color(0x1b3d5c)
-  const land = new THREE.Color(0x3c6e47)
-  const peak = new THREE.Color(0x8d8d7a)
-  const c = new THREE.Color()
-  for (let i = 0; i < pos.count; i++) {
-    v.fromBufferAttribute(pos, i)
-    const n = rand()
-    const h = n > 0.62 ? (n - 0.62) * 180 : 0
-    v.setLength(2200 + h)
-    pos.setXYZ(i, v.x, v.y, v.z)
-    if (h === 0) c.copy(ocean)
-    else if (h < 40) c.copy(land)
-    else c.copy(peak)
-    colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-  geo.computeVertexNormals()
-  const planet = new THREE.Mesh(
-    geo,
-    new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.9 }),
-  )
-  group.add(planet)
-
-  // Atmosphere shell
-  const atmo = new THREE.Mesh(
-    new THREE.SphereGeometry(2330, 32, 32),
-    new THREE.MeshBasicMaterial({ color: 0x3a7bd5, transparent: true, opacity: 0.12, side: THREE.BackSide }),
-  )
-  group.add(atmo)
-  group.position.set(-4500, -1200, -7000)
+  // Spawn-side backdrop world — a textured Mars-type planet, kept distinct from the
+  // named Earth far out in the system so the two don't read as duplicates.
+  group.add(makePlanetSurface(2200, 0xc25433, 'mars', 7, 6, 1.2))
+  group.add(makeAtmosphere(2200, 0x9fb4c8, 3.2))
+  // Well off the -z spawn sightline (up and to the side) so it doesn't crowd the named
+  // planets/Sun in the first view — a side landmark, not part of the "planet showcase".
+  group.position.set(12800, 5400, 400)
   return group
 }
 
@@ -290,7 +262,7 @@ export function buildAsteroids(): THREE.Group {
     geo.computeVertexNormals()
     return geo
   })
-  for (let i = 0; i < 140; i++) {
+  for (let i = 0; i < 70; i++) {
     const rock = new THREE.Mesh(baseGeos[i % 3], mat)
     // Scatter in a loose belt around the spawn corridor
     const angle = rand() * Math.PI * 2
@@ -319,68 +291,37 @@ export function buildSun(radius: number, color: number): THREE.Group {
   return group
 }
 
-/** A named-solar-system planet: large flat-shaded body + thin atmosphere (+ rings for Saturn). */
-/** Continuous pseudo-noise on the unit sphere — neighbouring verts get similar values
- *  so flat-shaded faces read as terrain, not static. Range ~[-1, 1]. */
-function surfaceNoise(x: number, y: number, z: number, s: number): number {
-  return (
-    Math.sin(x * 3.1 + s) * Math.cos(y * 2.7 + s * 1.3) * 0.55 +
-    Math.sin(y * 6.3 + s * 2.1) * Math.cos(z * 5.9) * 0.3 +
-    Math.sin(z * 12.7 + s) * Math.cos(x * 11.3) * 0.18 +
-    Math.sin(x * 26.0 + s) * Math.cos(z * 24.0) * 0.11 + // ridges
-    Math.sin(y * 47.0 + s * 1.7) * Math.cos(x * 43.0) * 0.06 // fine detail
-  )
-}
-
-const _sp = new THREE.Color()
-const _spB = new THREE.Color()
-
 /** One surface mesh at a given tessellation + displacement scale — used as an LOD level.
  *  Higher `dispScale` raises mountains/valleys (close-up detail); lower flattens (far away). */
 function makePlanetSurface(
   radius: number, color: number, surface: SurfaceKind, seed: number, detail: number, dispScale: number,
 ): THREE.Mesh {
-  const s = seed * 0.013
   const isGas = surface === 'gas'
-  const geo = new THREE.IcosahedronGeometry(radius, detail)
+  const segments = detail >= 6 ? 96 : 56
+  const geo = new THREE.SphereGeometry(radius, segments, Math.max(24, Math.floor(segments / 2)))
   const pos = geo.getAttribute('position') as THREE.BufferAttribute
   const v = new THREE.Vector3()
-  const colors = new Float32Array(pos.count * 3)
 
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i)
     const nx = v.x / radius, ny = v.y / radius, nz = v.z / radius
-    const raw = surfaceNoise(nx, ny, nz, s) // ~ -1..1
-    const h = THREE.MathUtils.clamp((raw + 1) * 0.5, 0, 1) // 0..1
-    const polar = Math.abs(ny)
-    let disp = 0
-
-    if (surface === 'earth') {
-      if (h < 0.5) { _sp.setRGB(0.1, 0.28, 0.5).lerp(_spB.setRGB(0.16, 0.42, 0.62), h * 2) } // ocean (flat)
-      else { _sp.setRGB(0.23, 0.48, 0.27).lerp(_spB.setRGB(0.5, 0.42, 0.26), (h - 0.5) * 2); disp = (h - 0.5) * radius * 0.1 } // mountainous land
-      if (polar > 0.8) _sp.setRGB(0.9, 0.93, 0.95) // ice caps
-    } else if (surface === 'mars') {
-      _sp.setRGB(0.5, 0.22, 0.13).lerp(_spB.setRGB(0.78, 0.4, 0.24), h)
-      disp = raw * radius * 0.07 // craters + ridges (both directions)
-      if (polar > 0.85) _sp.setRGB(0.85, 0.85, 0.88)
-    } else if (surface === 'rocky') {
-      _sp.setRGB(0.36, 0.34, 0.3).lerp(_spB.setRGB(0.64, 0.6, 0.55), h)
-      disp = raw * radius * 0.06
-    } else if (surface === 'venus') {
-      _sp.setRGB(0.78, 0.6, 0.32).lerp(_spB.setRGB(0.92, 0.78, 0.5), h * 0.7 + 0.15)
-    } else { // gas — horizontal bands
-      const band = Math.sin(ny * 9 + raw * 1.5) * 0.5 + 0.5
-      _sp.set(color).lerp(_spB.setRGB(0.66, 0.54, 0.36), band * 0.6)
-    }
-
+    const sampled = samplePlanetSurface(surface, seed, nx, ny, nz, color, radius)
+    const disp = isGas || surface === 'venus' ? 0 : sampled.height * radius * 0.055
     v.setLength(radius + disp * dispScale)
     pos.setXYZ(i, v.x, v.y, v.z)
-    colors[i * 3] = _sp.r; colors[i * 3 + 1] = _sp.g; colors[i * 3 + 2] = _sp.b
   }
 
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
   geo.computeVertexNormals()
-  return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: isGas ? 0.7 : 0.95 }))
+  const mapSize = radius >= 4000 || isGas ? 1024 : 512
+  const maps = generatePlanetTextures(surface, seed, color, mapSize, radius)
+  const material = new THREE.MeshStandardMaterial({
+    map: maps.colorMap,
+    bumpMap: maps.bumpMap,
+    bumpScale: radius * 0.018,
+    roughness: isGas ? 0.72 : 0.96,
+    metalness: 0,
+  })
+  return new THREE.Mesh(geo, material)
 }
 
 /** A named-solar-system planet: LOD surface (detailed terrain up close, low-poly far) + atmosphere (+ rings).
@@ -404,6 +345,15 @@ export function buildSolarPlanet(
   const atmoColor = surface === 'earth' ? 0x88bbff : surface === 'venus' ? 0xe8c070 : isGas ? 0xd8c0a0 : 0x9fb4c8
   const atmoPower = surface === 'venus' || isGas ? 2.2 : 3.2 // thicker air bleeds further across the disc
   group.add(makeAtmosphere(radius, atmoColor, atmoPower))
+
+  // Earth-type bodies get a translucent cloud shell drifting just above the surface.
+  const clouds = generateCloudTexture(surface, seed, radius >= 4000 ? 1024 : 512, radius)
+  if (clouds) {
+    group.add(new THREE.Mesh(
+      new THREE.SphereGeometry(radius * 1.018, 72, 36),
+      new THREE.MeshBasicMaterial({ map: clouds, transparent: true, opacity: 0.4, depthWrite: false }),
+    ))
+  }
 
   if (hasRings) {
     const ring = new THREE.Mesh(

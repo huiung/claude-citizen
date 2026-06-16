@@ -34,7 +34,7 @@ export const CELL_SIZE = 24000
  * Hand-placed starting area is sacred: no procedural body spawns within this
  * distance of the origin, REFINERY_POS, or COLONY_POS.
  */
-export const EXCLUSION_RADIUS = 12000
+export const EXCLUSION_RADIUS = 26000
 
 /** Anchors whose neighbourhoods stay pristine. */
 const EXCLUSION_ANCHORS: ReadonlyArray<Vector3> = [
@@ -78,7 +78,7 @@ interface TypeSpec {
 const TYPE_SPECS: ReadonlyArray<TypeSpec> = [
   { type: 'planet', weight: 0.10, minRadius: 3000, maxRadius: 20000 },
   { type: 'moon', weight: 0.18, minRadius: 600, maxRadius: 2600 },
-  { type: 'asteroid-cluster', weight: 0.34, minRadius: 200, maxRadius: 1400 },
+  { type: 'asteroid-cluster', weight: 0.22, minRadius: 200, maxRadius: 1400 },
   { type: 'station', weight: 0.14, minRadius: 60, maxRadius: 140 },
   { type: 'derelict', weight: 0.24, minRadius: 20, maxRadius: 90 },
 ]
@@ -118,7 +118,7 @@ function bodiesInCell(cx: number, cy: number, cz: number): Celestial[] {
   const out: Celestial[] = []
   // How many bodies this cell holds. Bias toward 0/1 so the field is sparse.
   const countRoll = unitFloat(hash3(cx, cy, cz, 0x1111))
-  const count = countRoll < 0.55 ? 0 : countRoll < 0.9 ? 1 : MAX_BODIES_PER_CELL
+  const count = countRoll < 0.62 ? 0 : countRoll < 0.92 ? 1 : MAX_BODIES_PER_CELL
 
   const baseX = cx * CELL_SIZE
   const baseY = cy * CELL_SIZE

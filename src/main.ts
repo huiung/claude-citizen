@@ -23,6 +23,7 @@ import { createMarket, step as marketStep } from './sim/market'
 import { generateContracts } from './sim/contracts'
 import { boostMultiplier, cargoCapacity, loadUpgrades, miningYield, saveUpgrades, topSpeed } from './sim/upgrades'
 import { type Celestial, queryCelestials } from './sim/galaxy'
+import { generatePlanetTextures, type PlanetTextureKind } from './render/planetTextures'
 import { cancelTravel, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
   canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
@@ -297,7 +298,7 @@ function streamOre(): void {
 }
 
 // --- Procedural galaxy: stream celestial bodies in/out around the player.
-const STREAM_RADIUS = 80000
+const STREAM_RADIUS = 55000
 const spawnedBodies = new Map<string, THREE.Object3D>()
 let lastStream = -Infinity
 
@@ -311,25 +312,26 @@ function celestialRng(seed: number): () => number {
   }
 }
 
+// Galaxy bodies are the barren backwater — cratered rock/moon worlds only. The vivid,
+// varied surfaces (earth/venus/gas) are reserved for the named solar planets.
+const GALAXY_KINDS: PlanetTextureKind[] = ['moon', 'rocky']
+
 function buildCelestial(c: Celestial): THREE.Object3D {
   const rand = celestialRng(c.seed)
   const group = new THREE.Group()
   if (c.type === 'planet' || c.type === 'moon') {
     const isPlanet = c.type === 'planet'
-    const hue = isPlanet ? rand() : 0.08 + rand() * 0.08
-    const sat = isPlanet ? 0.4 + rand() * 0.3 : 0.08
-    const body = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(c.radius, isPlanet ? 3 : 2),
-      new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(hue, sat, 0.5), flatShading: true, roughness: 0.95 }),
-    )
+    // Celestials carry no surface kind — derive a stable one from the seed, then texture it.
+    const kind: PlanetTextureKind = isPlanet ? GALAXY_KINDS[Math.floor(rand() * GALAXY_KINDS.length)] : 'moon'
+    // Low-saturation greys/browns — barren rock, not vivid worlds.
+    const baseColor = new THREE.Color().setHSL(0.05 + rand() * 0.07, 0.2, 0.42).getHex()
+    const segs = isPlanet ? 48 : 32
+    const geo = new THREE.SphereGeometry(c.radius, segs, Math.max(16, segs >> 1))
+    const maps = generatePlanetTextures(kind, c.seed, baseColor, 256, c.radius)
+    const body = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      map: maps.colorMap, bumpMap: maps.bumpMap, bumpScale: c.radius * 0.025, roughness: 0.96, metalness: 0,
+    }))
     group.add(body)
-    if (isPlanet) {
-      const atmo = new THREE.Mesh(
-        new THREE.SphereGeometry(c.radius * 1.05, 24, 16),
-        new THREE.MeshBasicMaterial({ color: new THREE.Color().setHSL((hue + 0.5) % 1, 0.6, 0.6), transparent: true, opacity: 0.1, side: THREE.BackSide }),
-      )
-      group.add(atmo)
-    }
   } else if (c.type === 'asteroid-cluster') {
     const mat = new THREE.MeshStandardMaterial({ color: 0x6b6258, flatShading: true, roughness: 1 })
     const n = 6 + Math.floor(rand() * 8)
