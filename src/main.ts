@@ -111,6 +111,28 @@ function loadToken(): string {
 }
 const playerToken = loadToken()
 
+// Pilot Code = the anonymous token, surfaced so players can back it up / restore on another device.
+const myCodeEl = document.getElementById('my-code')!
+const copyCodeBtn = document.getElementById('copy-code')!
+const restoreCodeEl = document.getElementById('restore-code') as HTMLInputElement
+const restoreBtn = document.getElementById('restore-btn')!
+const pcStatusEl = document.getElementById('pc-status')!
+myCodeEl.textContent = playerToken
+copyCodeBtn.addEventListener('click', () => {
+  navigator.clipboard?.writeText(playerToken).then(
+    () => { pcStatusEl.textContent = 'Copied — keep it safe to restore on another device.' },
+    () => { pcStatusEl.textContent = 'Copy failed — select the code and copy manually.' },
+  )
+})
+restoreBtn.addEventListener('click', () => {
+  const code = restoreCodeEl.value.trim()
+  if (!code) { pcStatusEl.textContent = 'Paste a Pilot Code first.'; return }
+  if (code === playerToken) { pcStatusEl.textContent = "That's already your current code."; return }
+  localStorage.setItem('scc.token', code)
+  pcStatusEl.textContent = 'Loaded — reconnecting…'
+  setTimeout(() => location.reload(), 400)
+})
+
 // Landing stats (online / registered pilots) from the relay's /stats endpoint.
 const WS_URL = import.meta.env.VITE_WS_URL ?? `ws://${location.hostname}:8080`
 const STATS_URL = WS_URL.replace(/^ws/, 'http') + '/stats'
@@ -1194,7 +1216,7 @@ function launch(): void {
   walletEl.hidden = false
   minimapWrapEl.hidden = false
   leaderboardPanelEl.hidden = true
-  refreshWallet()
+  updateWalletHUD() // HUD only — don't net.saveProgress before onProgress restores, or we'd overwrite saved data
   hullBarEl.style.width = '100%'
   nextSpawnAt = performance.now() + 8000 // first hostiles arrive after ~8s
   audio.init()

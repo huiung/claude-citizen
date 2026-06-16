@@ -203,8 +203,18 @@
     }
     #overlay button:hover { background: #1b5a30; }
     #overlay .foot { font-size: 11px; opacity: .4; }
+    #pilot-code { margin-top: 10px; font-size: 11px; color: #7fc99a; max-width: 380px; }
+    #pilot-code summary { cursor: pointer; opacity: .65; letter-spacing: .3px; }
+    #pilot-code summary:hover { opacity: 1; }
+    #pilot-code .pc-body { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; text-align: left; }
+    #pilot-code .pc-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    #pilot-code code { background: rgba(63,174,95,.14); border: 1px solid rgba(63,174,95,.3); border-radius: 3px; padding: 1px 6px; color: #aef6ff; font-size: 10px; word-break: break-all; }
+    #pilot-code input { background: rgba(0,18,9,.7); border: 1px solid #2f7a45; color: #9fffb0; font-family: inherit; font-size: 11px; padding: 4px 8px; border-radius: 3px; outline: none; flex: 1; min-width: 140px; }
+    #pilot-code button { background: #123c20; color: #9fffb0; border: 1px solid #3fae5f; padding: 4px 10px; font-family: inherit; font-size: 10px; letter-spacing: 1px; cursor: pointer; border-radius: 3px; }
+    #pilot-code button:hover { background: #1b5a30; }
+    #pc-status { font-size: 10px; color: #ffe08a; min-height: 12px; }
     #mobile-notice { display: none; }
-    .is-mobile #nickname, .is-mobile #launch, .is-mobile .foot, .is-mobile #landing-stats, .is-mobile #leaderboard-landing { display: none; }
+    .is-mobile #nickname, .is-mobile #launch, .is-mobile .foot, .is-mobile #landing-stats, .is-mobile #leaderboard-landing, .is-mobile #pilot-code { display: none; }
     .is-mobile #mobile-notice {
       display: block; color: #ffd08a; font-size: 14px; max-width: 360px; line-height: 1.7;
       border: 1px solid rgba(255, 208, 138, .4); border-radius: 6px; padding: 14px 16px;
@@ -296,6 +306,14 @@
       <a href="https://github.com/huiung/claude-citizen" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>Open source on GitHub</a>
       <a href="/wiki.html">📖 Wiki &amp; Guide</a>
     </div>
+    <details id="pilot-code">
+      <summary>⛁ Pilot Code — save progress / play on another device</summary>
+      <div class="pc-body">
+        <div class="pc-row">Your code: <code id="my-code">…</code> <button id="copy-code" type="button">Copy</button></div>
+        <div class="pc-row">Restore: <input id="restore-code" placeholder="paste a Pilot Code" autocomplete="off" /> <button id="restore-btn" type="button">Load</button></div>
+        <div id="pc-status"></div>
+      </div>
+    </details>
   </div>
   <script>
     // Flag touch/mobile devices so the landing shows a "use desktop" notice instead of LAUNCH.
