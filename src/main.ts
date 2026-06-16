@@ -30,6 +30,7 @@ import {
 import { type Pirate, PIRATE_REWARD, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
+import { SolarSystemMap, type SolarMapDestinationResult, type SolarMapNavigationTarget } from './ui/solarSystemMap'
 import { inject as injectAnalytics } from '@vercel/analytics'
 
 injectAnalytics() // Vercel Web Analytics (no-op off Vercel / in dev)
@@ -130,6 +131,11 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.toneMapping = THREE.ACESFilmicToneMapping // filmic highlights — plays well with bloom
 renderer.toneMappingExposure = 1.15
 appEl.appendChild(renderer.domElement)
+
+function requestFlightPointerLock(): void {
+  if (document.pointerLockElement === renderer.domElement) return
+  renderer.domElement.requestPointerLock().catch(() => { /* Pointer lock can be denied in inactive tabs or automation. */ })
+}
 
 const labelRenderer = new CSS2DRenderer()
 labelRenderer.setSize(innerWidth, innerHeight)
@@ -378,16 +384,73 @@ const quantum = createQuantum()
 const _qLook = new THREE.Vector3()
 let jumpTargetName = '' // destination of the current jump (for the HUD)
 let selectedJumpIdx = 0 // index into PLANETS (named solar system) — the quantum destination, cycled with [N]
+interface QuantumDestination {
+  id: string
+  name: string
+  kind: string
+  position: THREE.Vector3
+  radius?: number
+}
+let customJumpDestination: QuantumDestination | null = null
 
 const _navDir = new THREE.Vector3()
-/** Arrival point just OFF the selected planet's surface (never inside it), plus its name + distance. */
-function planetArrival(idx: number): { position: THREE.Vector3; name: string; dist: number } {
-  const p = PLANETS[idx]
-  _navDir.copy(ship.position).sub(p.position)
+function planetDestination(idx: number): QuantumDestination {
+  const p = PLANETS[idx] ?? PLANETS[0]
+  return {
+    id: `planet.${p.name}`,
+    name: p.name,
+    kind: p.hasRings ? 'Ringed planet' : 'Planet',
+    position: p.position.clone(),
+    radius: p.radius,
+  }
+}
+
+function activeQuantumDestination(): QuantumDestination {
+  return customJumpDestination ?? planetDestination(selectedJumpIdx)
+}
+
+function activeDestinationSnapshot(): SolarMapNavigationTarget {
+  const dest = activeQuantumDestination()
+  return {
+    id: dest.id,
+    name: dest.name,
+    kind: dest.kind,
+    worldPosition: dest.position.clone(),
+    radius: dest.radius,
+  }
+}
+
+/** Arrival point just OFF the selected target's surface (never inside it), plus its name + distance. */
+function destinationArrival(dest = activeQuantumDestination()): { position: THREE.Vector3; name: string; dist: number } {
+  _navDir.copy(ship.position).sub(dest.position)
   if (_navDir.lengthSq() < 1) _navDir.set(0, 0, 1)
   _navDir.normalize()
-  const position = p.position.clone().addScaledVector(_navDir, p.radius * 1.5)
-  return { position, name: p.name, dist: ship.position.distanceTo(position) }
+  const standoff = dest.radius ? Math.max(dest.radius * 1.5, 650) : 0
+  const position = dest.position.clone().addScaledVector(_navDir, standoff)
+  return { position, name: dest.name, dist: ship.position.distanceTo(position) }
+}
+
+function setQuantumDestinationFromAtlas(target: SolarMapNavigationTarget): SolarMapDestinationResult {
+  if (target.id === 'player' || target.id === 'sun' || target.id.startsWith('peer.')) {
+    return { ok: false, reason: 'moving or reference-only target' }
+  }
+  const planetIdx = PLANETS.findIndex((p) => target.id === `planet.${p.name}` || target.name === p.name)
+  if (planetIdx >= 0) {
+    selectedJumpIdx = planetIdx
+    customJumpDestination = null
+    return { ok: true }
+  }
+  if (target.worldPosition.distanceTo(ship.position) < QUANTUM_TUNING.minTravelDistance) {
+    return { ok: false, reason: 'target too close for quantum' }
+  }
+  customJumpDestination = {
+    id: target.id,
+    name: target.name,
+    kind: target.kind,
+    position: target.worldPosition.clone(),
+    radius: target.radius,
+  }
+  return { ok: true }
 }
 
 /** Index of the closest named planet — seeds the selection so the first jump is sensible. */
@@ -592,8 +655,44 @@ const stationMenu = new StationMenu({
 })
 document.body.appendChild(stationMenu.root)
 
+// --- Remote ships
+interface RemoteShip { mesh: THREE.Group; peer: PeerState }
+const remotes = new Map<string, RemoteShip>()
+const PALETTE = [0xc75d5d, 0x5d8ac7, 0xc7a85d, 0x9b5dc7, 0x5dc7b8, 0xc75da6]
+
+const solarMap = new SolarSystemMap({
+  getSnapshot: () => ({
+    playerPosition: ship.position.clone(),
+    playerQuaternion: ship.quaternion.clone(),
+    nearbyCelestials: queryCelestials(ship.position, 90000),
+    remotes: [...remotes.values()].map(({ mesh, peer }) => {
+      const velocity = new THREE.Vector3()
+      if (peer.prev && peer.receivedAt > peer.prev.receivedAt) {
+        const dt = (peer.receivedAt - peer.prev.receivedAt) / 1000
+        if (dt > 0) velocity.fromArray(peer.p).sub(new THREE.Vector3().fromArray(peer.prev.p)).multiplyScalar(1 / dt)
+      }
+      return {
+        id: peer.id,
+        name: peer.name,
+        color: PALETTE[peer.color % PALETTE.length],
+        position: mesh.position.clone(),
+        velocity,
+        ageMs: Math.max(0, performance.now() - peer.receivedAt),
+      }
+    }),
+    selectedDestinationName: activeQuantumDestination().name,
+    activeDestination: activeDestinationSnapshot(),
+  }),
+  onClose: () => {
+    if (running && !docked && !chatOpen) requestFlightPointerLock()
+  },
+  onSetDestination: setQuantumDestinationFromAtlas,
+})
+document.body.appendChild(solarMap.root)
+
 function dock(id: string): void {
   docked = true
+  solarMap.close()
   miningActive = false
   leaderboardPanelEl.hidden = true // don't strand the leaderboard open behind the station menu
   dockPromptEl.hidden = true
@@ -629,7 +728,7 @@ function dock(id: string): void {
 function undock(): void {
   stationMenu.close()
   docked = false
-  renderer.domElement.requestPointerLock()
+  requestFlightPointerLock()
 }
 
 // --- Input
@@ -640,6 +739,21 @@ let assist = true
 
 addEventListener('keydown', (e) => {
   if (chatOpen) return // chat input owns the keyboard while open
+  if (solarMap.isOpen) return // map owns M/Escape via its capture listener
+  if (e.code === 'KeyM' && running) {
+    e.preventDefault()
+    keys.clear()
+    miningActive = false
+    weaponActive = false
+    mineEl.hidden = true
+    beam.visible = false
+    impact.visible = false
+    leaderboardPanelEl.hidden = true
+    audio.setMining(false, false)
+    if (document.pointerLockElement) document.exitPointerLock()
+    solarMap.open()
+    return
+  }
   if (e.code === 'Enter' && running && !docked) { openChat(); return }
   if (e.code === 'Space') e.preventDefault()
   if (e.repeat) return
@@ -650,6 +764,7 @@ addEventListener('keydown', (e) => {
   }
   if (e.code === 'Space' && running && !docked && dockable) dock(dockable)
   if (e.code === 'KeyN' && running && !docked && quantum.phase === 'idle') {
+    customJumpDestination = null
     selectedJumpIdx = (selectedJumpIdx + 1) % PLANETS.length // cycle the quantum destination
     audio.blip('dock')
   }
@@ -660,8 +775,12 @@ addEventListener('keydown', (e) => {
   }
   if (e.code === 'KeyJ' && running && !docked) {
     if (quantum.phase === 'idle') {
-      const dest = planetArrival(selectedJumpIdx)
-      startTravel(quantum, dest.position); jumpTargetName = dest.name; audio.blip('dock')
+      const dest = destinationArrival()
+      const started = startTravel(quantum, dest.position)
+      if (started.ok) {
+        jumpTargetName = dest.name
+        audio.blip('dock')
+      }
     } else {
       cancelTravel(quantum)
     }
@@ -705,11 +824,6 @@ function readInput(): ControlInput {
     assist,
   }
 }
-
-// --- Remote ships
-interface RemoteShip { mesh: THREE.Group; peer: PeerState }
-const remotes = new Map<string, RemoteShip>()
-const PALETTE = [0xc75d5d, 0x5d8ac7, 0xc7a85d, 0x9b5dc7, 0x5dc7b8, 0xc75da6]
 
 const net = new NetClient(nicknameEl.value || 'PILOT', playerToken, {
   onProgress(p) {
@@ -800,7 +914,7 @@ function closeChat(): void {
   chatLogEl.classList.remove('open')
   chatInputEl.hidden = true
   chatInputEl.blur()
-  if (running && !docked) renderer.domElement.requestPointerLock()
+  if (running && !docked) requestFlightPointerLock()
 }
 
 chatInputEl.addEventListener('keydown', (e) => {
@@ -992,16 +1106,17 @@ function launch(): void {
   nextSpawnAt = performance.now() + 8000 // first hostiles arrive after ~8s
   audio.init()
   audio.resume()
-  renderer.domElement.requestPointerLock()
+  requestFlightPointerLock()
   running = true
   selectedJumpIdx = nearestPlanetIdx() // start aimed at the closest planet
+  customJumpDestination = null
   setPlayerCraft(selectedShipType) // apply hull (and load its GLB model) on launch
 }
 launchEl.addEventListener('click', launch)
 nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') launch() })
 renderer.domElement.addEventListener('click', () => {
   if (running && document.pointerLockElement !== renderer.domElement) {
-    renderer.domElement.requestPointerLock()
+    requestFlightPointerLock()
   }
 })
 
@@ -1100,8 +1215,8 @@ function frame(now: number): void {
   } else if (running && !docked) {
     // Idle: small nav hint under the minimap (no big banner).
     quantumEl.hidden = true
-    const dest = planetArrival(selectedJumpIdx)
-    navHintEl.textContent = `[N] ▶ ${dest.name} · ${(dest.dist / 1000).toFixed(1)} km   ·   [J] jump`
+    const dest = destinationArrival()
+    navHintEl.textContent = `[N] pick planet | ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km   |   [J] jump`
     const input = readInput()
     stepShip(ship, input, dt, { maxSpeed: effSpeed(), boostMultiplier: effBoost() })
     resolvePlanetCollisions()
