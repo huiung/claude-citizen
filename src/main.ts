@@ -1248,6 +1248,10 @@ function frame(now: number): void {
   const dt = Math.min((now - last) / 1000, 0.05)
   last = now
 
+  // The Solar Atlas owns the screen and runs its own render loop while open —
+  // skip the game's sim/render so two WebGL contexts don't fight for the GPU.
+  if (solarMap.isOpen) return
+
   station.rotation.z += dt * 0.05
   colony.rotation.y += dt * 0.03
   starfield.position.copy(ship.position) // keep the star backdrop centered on the player
