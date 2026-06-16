@@ -27,6 +27,8 @@ export interface NetEvents {
   onProgress(progress: PlayerProgress): void
   /** A chat line arrived (including our own, echoed by the server). */
   onChat(name: string, text: string): void
+  /** This Pilot Code signed in elsewhere — the server closed us and we won't reconnect. */
+  onKicked?(): void
 }
 
 const SEND_HZ = 10
@@ -39,6 +41,7 @@ export class NetClient {
   private active = false // false = viewer (presence only), true = in-game pilot
   private reconnectDelay = 2000 // backoff between reconnect attempts (ms)
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private kicked = false // signed in elsewhere — stop reconnecting
 
   constructor(private name: string, private token: string, private events: NetEvents) {}
 
@@ -73,7 +76,7 @@ export class NetClient {
       this.peers.clear()
       this.online = 1
       this.events.onStatus(false, 1)
-      this.scheduleReconnect() // auto-recover from dropped tabs / wifi blips / discarded backgrounds
+      if (!this.kicked) this.scheduleReconnect() // auto-recover — unless we were signed in elsewhere
     }
     this.ws.onerror = () => this.ws?.close()
     this.ws.onmessage = (ev) => this.handle(JSON.parse(ev.data as string))
@@ -81,6 +84,11 @@ export class NetClient {
 
   private handle(msg: any): void {
     switch (msg.t) {
+      case 'kicked':
+        this.kicked = true // stop auto-reconnect; the code is live on another device
+        this.events.onKicked?.()
+        this.ws?.close()
+        break
       case 'welcome':
         for (const peer of msg.peers) this.addPeer(peer)
         this.online = msg.peers.length + 1

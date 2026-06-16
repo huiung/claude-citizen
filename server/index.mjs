@@ -110,6 +110,15 @@ wss.on('connection', (ws) => {
         }
         clients.set(ws, client)
       }
+      // Single session per token — kick any other live pilot signed in on the same code.
+      if (client.token) {
+        for (const [ws2, c2] of clients) {
+          if (ws2 !== ws && c2.active && c2.token === client.token) {
+            try { ws2.send(JSON.stringify({ t: 'kicked' })) } catch { /* already gone */ }
+            ws2.close()
+          }
+        }
+      }
       // Only active pilots are peers (have ships).
       const peers = [...clients.values()].filter((c) => c.active && c !== client).map(({ token: _t, active: _a, ...rest }) => rest)
       ws.send(JSON.stringify({ t: 'welcome', id: client.id, peers }))

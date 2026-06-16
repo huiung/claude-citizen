@@ -69,6 +69,7 @@ const objectiveEl = document.getElementById('objective')!
 // Onboarding: show a "next objective" only to brand-new pilots. localStorage gate (this device
 // hasn't onboarded) is the fast path; a returning token with saved progress also disables it.
 let onboardingActive = !localStorage.getItem('scc.onboarded')
+let sessionKicked = false // signed in elsewhere — freeze the objective HUD on the warning
 // Onboarding progress is persisted so a refresh keeps your step (and graduating sticks),
 // even without a relay connection.
 let minedEver = localStorage.getItem('scc.ob.mined') === '1'
@@ -958,6 +959,13 @@ const net = new NetClient(nicknameEl.value || 'PILOT', playerToken, {
   onChat(name, text) {
     addChatLine(name, text)
   },
+  onKicked() {
+    // Same Pilot Code launched elsewhere — this tab is now read-only to avoid save conflicts.
+    sessionKicked = true
+    netEl.textContent = 'SECTOR LINK: SIGNED IN ELSEWHERE'
+    objectiveEl.textContent = '⚠ This Pilot Code is now active in another tab/device. Refresh to play here.'
+    objectiveEl.hidden = false
+  },
 })
 net.connect() // connect on page load as a viewer (presence) — counts toward "online" on the landing
 
@@ -1512,9 +1520,12 @@ function frame(now: number): void {
   boostFlare.scale.set(1, 1 + boostKick * 1.2 + camThrust * 0.4, 1) // stretches with thrust too
 
   // Onboarding objective — new pilots get a "next step" until they hunt their first pirate.
-  const obj = running && !docked ? currentObjective() : null
-  objectiveEl.hidden = !obj
-  if (obj) objectiveEl.textContent = `▸ ${obj}`
+  // (Frozen if kicked: the objective slot shows the "signed in elsewhere" warning instead.)
+  if (!sessionKicked) {
+    const obj = running && !docked ? currentObjective() : null
+    objectiveEl.hidden = !obj
+    if (obj) objectiveEl.textContent = `▸ ${obj}`
+  }
 
   composer.render()
   labelRenderer.render(scene, camera)
