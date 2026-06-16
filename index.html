@@ -71,6 +71,19 @@
       font-size: 13px; line-height: 1.7; text-shadow: 0 0 6px rgba(80, 255, 120, .4);
     }
     #wallet b { color: #ffe08a; }
+    #rank-line { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; color: #aee9ff; }
+    #rank-name { color: #aee9ff; font-weight: 600; letter-spacing: .5px; }
+    #rank-track { display: inline-block; width: 70px; height: 5px; border-radius: 3px; overflow: hidden; background: rgba(110,200,255,.15); border: 1px solid rgba(110,200,255,.3); }
+    #rank-bar { display: block; height: 100%; width: 0%; background: #6fe8ff; transition: width .3s ease-out; }
+    #rank-next { opacity: .55; font-size: 10px; }
+    #promotion {
+      position: fixed; left: 50%; top: 24%; transform: translateX(-50%); pointer-events: none; z-index: 7;
+      font-size: 18px; letter-spacing: 3px; color: #ffe08a; text-align: center;
+      background: rgba(22, 16, 2, .6); border: 1px solid rgba(255, 224, 138, .55);
+      padding: 10px 26px; border-radius: 5px; text-shadow: 0 0 12px rgba(255, 224, 138, .6);
+      transition: opacity .5s; opacity: 1;
+    }
+    #promotion[hidden] { display: none; }
     #hull-line { margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 12px; }
     #hull-track {
       display: inline-block; width: 130px; height: 9px; border-radius: 4px; overflow: hidden;
@@ -252,7 +265,13 @@
   <div id="wallet" hidden>
     <div><b id="credits">500</b> cr</div>
     <div>CARGO <span id="cargo">0/20</span></div>
+    <div id="rank-line">
+      <span id="rank-name">Cadet</span>
+      <span id="rank-track"><i id="rank-bar"></i></span>
+      <span id="rank-next"></span>
+    </div>
   </div>
+  <div id="promotion" hidden></div>
   <div id="dock-prompt" hidden>▸ PRESS SPACE TO DOCK</div>
   <div id="mine-prompt" hidden>⛏ MINING ORE — hold to extract</div>
   <div id="leaderboard-panel" hidden>

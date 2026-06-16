@@ -8,10 +8,11 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { createShipState, stepShip, type ControlInput } from './sim/physics'
 import { buildCraft, loadCraftModelForType, loadPirateModel } from './render/shipyard'
 import { SHIP_STATS, type ShipType } from './sim/shipTypes'
+import { nextRank, rankForCredits, rankProgress } from './sim/ranks'
 import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
   buildCapitalShip, buildDustField, buildLootCrate, buildNebula, buildSolarPlanet, buildStarfield, buildStation,
-  buildSun, buildWarpField, COLONY_POS, MINEABLE_SITES, REFINERY_POS, updateDustField, updateWarpField,
+  buildSun, buildWarpField, COLONY_POS, REFINERY_POS, updateDustField, updateWarpField,
 } from './render/world'
 import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS } from './sim/solarSystem'
 import { NetClient, type PeerState, type PlayerProgress } from './net/client'
@@ -58,6 +59,22 @@ const onlineEl = document.getElementById('online')!
 const walletEl = document.getElementById('wallet')!
 const creditsEl = document.getElementById('credits')!
 const cargoEl = document.getElementById('cargo')!
+const rankNameEl = document.getElementById('rank-name')!
+const rankBarEl = document.getElementById('rank-bar')!
+const rankNextEl = document.getElementById('rank-next')!
+const promotionEl = document.getElementById('promotion')!
+let lastRankIndex = -1 // -1 until first HUD update, so we don't announce a "promotion" on load
+let promoTimer: ReturnType<typeof setTimeout> | undefined
+function showPromotion(name: string): void {
+  promotionEl.textContent = `⭐ PROMOTED — ${name}`
+  promotionEl.hidden = false
+  promotionEl.style.opacity = '1'
+  clearTimeout(promoTimer)
+  promoTimer = setTimeout(() => {
+    promotionEl.style.opacity = '0'
+    setTimeout(() => { promotionEl.hidden = true }, 500)
+  }, 3200)
+}
 const dockPromptEl = document.getElementById('dock-prompt')!
 const mineEl = document.getElementById('mine-prompt')!
 const hullBarEl = document.getElementById('hull-bar')!
@@ -148,10 +165,11 @@ function escapeHtml(s: string): string {
 }
 function renderLeaderboard(listEl: HTMLElement, rows: Array<{ name: string; credits: number }>): void {
   if (!rows.length) { listEl.innerHTML = '<li class="lb-empty">no pilots yet — be the first</li>'; return }
-  listEl.innerHTML = rows.map((r, i) =>
-    `<li><span class="rank">${i + 1}</span><span class="nm">${escapeHtml(String(r.name))}</span>`
-    + `<span class="cr">${(Number(r.credits) || 0).toLocaleString()} cr</span></li>`,
-  ).join('')
+  listEl.innerHTML = rows.map((r, i) => {
+    const cr = Number(r.credits) || 0
+    return `<li><span class="rank">${i + 1}</span><span class="nm">${escapeHtml(String(r.name))}</span>`
+      + `<span class="cr">[${rankForCredits(cr).name}] ${cr.toLocaleString()} cr</span></li>`
+  }).join('')
 }
 function fetchLeaderboard(listEl: HTMLElement): void {
   fetch(LEADERBOARD_URL).then((r) => r.json())
@@ -243,14 +261,39 @@ for (const planet of PLANETS) {
 }
 buildLights(scene)
 
-// Mineable asteroids — sim field + render meshes share MINEABLE_SITES positions.
-const field = createAsteroidField(MINEABLE_SITES)
+// Mineable ore — a dynamic pool that follows the player: depleted or distant rocks are
+// removed and fresh veins respawn nearby, so no single spot is an infinite mine.
+const field = createAsteroidField([])
 const rockMeshes = new Map<string, { mesh: THREE.Group; initial: number }>()
-for (const site of MINEABLE_SITES) {
+const ORE_TARGET = 7   // rocks kept near the player
+const ORE_NEAR = 200   // closest a fresh vein spawns
+const ORE_FAR = 850    // farthest
+const ORE_CULL = 1200  // remove rocks beyond this from the player
+let oreSeq = 0
+let lastOreStream = 0
+const _oreDir = new THREE.Vector3()
+function spawnOreSite(): void {
+  const a = Math.random() * Math.PI * 2
+  const r = ORE_NEAR + Math.random() * (ORE_FAR - ORE_NEAR)
+  _oreDir.set(Math.cos(a) * r, (Math.random() - 0.5) * 120, Math.sin(a) * r)
+  const id = `ore-${oreSeq++}`
+  const reserves = 280 + Math.floor(Math.random() * 320)
+  const pos = ship.position.clone().add(_oreDir)
+  field.asteroids.push({ id, position: pos, reserves })
   const mesh = buildMineableAsteroid()
-  mesh.position.copy(site.position)
+  mesh.position.copy(pos)
   scene.add(mesh)
-  rockMeshes.set(site.id, { mesh, initial: site.reserves })
+  rockMeshes.set(id, { mesh, initial: reserves })
+}
+function streamOre(): void {
+  for (let i = field.asteroids.length - 1; i >= 0; i--) {
+    const ast = field.asteroids[i]
+    if (ast.reserves > 0 && ast.position.distanceTo(ship.position) <= ORE_CULL) continue
+    const rm = rockMeshes.get(ast.id)
+    if (rm) { scene.remove(rm.mesh); disposeObject(rm.mesh); rockMeshes.delete(ast.id) }
+    field.asteroids.splice(i, 1)
+  }
+  while (field.asteroids.length < ORE_TARGET) spawnOreSite()
 }
 
 // --- Procedural galaxy: stream celestial bodies in/out around the player.
@@ -712,6 +755,14 @@ function setPlayerCraft(type: ShipType): void {
 function updateWalletHUD(): void {
   creditsEl.textContent = String(Math.floor(econ.credits))
   cargoEl.textContent = `${Math.floor(cargoUsed(econ))}/${effCargo()}`
+  // Rank: name + progress to next, with a one-shot promotion banner when it climbs.
+  const rank = rankForCredits(econ.credits)
+  rankNameEl.textContent = rank.name
+  rankBarEl.style.width = `${Math.round(rankProgress(econ.credits) * 100)}%`
+  const nxt = nextRank(rank)
+  rankNextEl.textContent = nxt ? `→ ${nxt.name} (${nxt.min.toLocaleString()})` : 'MAX'
+  if (lastRankIndex >= 0 && rank.index > lastRankIndex) showPromotion(rank.name)
+  lastRankIndex = rank.index
 }
 
 function currentProgress(): PlayerProgress {
@@ -1386,6 +1437,9 @@ function frame(now: number): void {
     updateMiningVFX(miningActive && mineResult.inRange, mineResult.asteroid?.position ?? null, now)
     audio.setMining(miningActive, mineResult.inRange)
     mineEl.hidden = !(miningActive && mineResult.inRange)
+
+    // Keep the ore pool flowing around the player: cull depleted/distant veins, respawn fresh ones.
+    if (now - lastOreStream > 400) { streamOre(); lastOreStream = now }
 
     dockable = dockableTarget(ship.position, ship.velocity.length(), dockTargets)
     dockPromptEl.hidden = dockable === null
