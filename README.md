@@ -43,7 +43,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Pirates:** hostiles hunt you in the sector — shoot back, watch your hull, collect the bounty
 - **An endless procedural galaxy:** fly any direction and planets, moons, stations, and derelicts keep appearing — some planets are vast
 - **A named solar system:** Sun + Mercury through Saturn at a compressed scale, each with a procedurally textured surface (oceans/continents, gas bands, ice caps) — and they're solid, so you fly *around* them, not through
-- **Quantum travel:** pick a destination with `[N]`, charge the drive, and jump to any planet in the system — warp streaks, a wide-FOV cruise, and a named arrival
+- **Quantum travel:** pick a destination with `[N]` or open the **Solar Atlas** with `[M]` and click a planet, charge the drive, and jump to any planet in the system — warp streaks, a wide-FOV cruise, and a named arrival
 - **A cinematic sky:** bloom glow, fresnel planet atmospheres, a procedural nebula backdrop, slowly rotating worlds, and parallax dust that streams past for a sense of speed
 - **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor (detailed 3D models), each trading cargo/speed/toughness
 - **A capital ship:** a procedural dreadnought ~120× your fighter, its hull aglow with hundreds of windows — fly its length for the scale
@@ -71,6 +71,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | Left-click (hold) | Fire mining laser at a nearby asteroid |
 | Right-click (hold) | Fire weapon at hostiles |
 | Space | Dock (when slow + near an outpost) — trade, upgrade, buy ships, take contracts |
+| M | Open the Solar Atlas (system map) — click a planet to set your quantum destination |
 | N | Cycle the quantum destination (Mercury → Saturn) |
 | J | Quantum jump to the selected planet |
 | L | Toggle the leaderboard |
