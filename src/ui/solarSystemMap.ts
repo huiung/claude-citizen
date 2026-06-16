@@ -1130,7 +1130,7 @@ export class SolarSystemMap {
         transparent: true,
         opacity: selected ? 0.9 : active ? 0.68 : 0.48,
         depthWrite: false,
-        depthTest: false,
+        depthTest: true,
       })
       const orbit = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(points), material)
       orbit.renderOrder = selected ? 15 : active ? 12 : 8
@@ -1404,6 +1404,7 @@ export class SolarSystemMap {
     marker.add(core, ring)
     this.makeSelectable(marker, this.selectedRegion)
     this.mapRoot.add(marker)
+    if (!this.selectedPreviewId) this.addLabel(this.selectedRegion.name, marker.position, 'region selected', 78)
   }
 
   private addSelectionBeacon(): void {
@@ -1413,7 +1414,6 @@ export class SolarSystemMap {
     const pos = mapPosition(focus.worldPosition, this.snapshot.playerPosition)
     const radius = visualRadius(focus.radius ?? 900, 0.95, 5.2) + 0.6
     this.addTargetRing(pos, radius, focus.targetable ? 0xffc36d : 0xaee9ff, 0.44)
-    this.addLabel(focus.name, pos, focus.targetable ? 'selected' : 'peer selected', 84)
   }
 
   private addLabel(text: string, pos: THREE.Vector3, variant: string, priority: number): void {
