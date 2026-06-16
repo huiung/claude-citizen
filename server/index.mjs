@@ -7,6 +7,10 @@ import { WebSocketServer } from 'ws'
 
 const PORT = process.env.PORT ?? 8080
 const STORE_FILE = process.env.STORE_FILE ?? './progress.json'
+// Area-of-interest: position updates only relay to pilots within this range. Cuts the
+// O(N^2) state broadcast to O(N*k) as players spread out across the sector.
+const AOI_RADIUS = 3000
+const AOI_RADIUS2 = AOI_RADIUS * AOI_RADIUS
 
 let nextColor = 0
 const clients = new Map() // ws -> { id, name, color, p, q, token }
@@ -124,7 +128,14 @@ wss.on('connection', (ws) => {
     if (msg.t === 'state' && client.active && Array.isArray(msg.p) && Array.isArray(msg.q)) {
       client.p = msg.p.slice(0, 3).map(Number)
       client.q = msg.q.slice(0, 4).map(Number)
-      broadcast(ws, { t: 'peer-state', id: client.id, p: client.p, q: client.q })
+      // Relay only to active pilots within AOI_RADIUS (distant pilots aren't visible anyway).
+      const out = JSON.stringify({ t: 'peer-state', id: client.id, p: client.p, q: client.q })
+      const [px, py, pz] = client.p
+      for (const [ws2, c2] of clients) {
+        if (ws2 === ws || !c2.active || ws2.readyState !== ws2.OPEN) continue
+        const dx = c2.p[0] - px, dy = c2.p[1] - py, dz = c2.p[2] - pz
+        if (dx * dx + dy * dy + dz * dz <= AOI_RADIUS2) ws2.send(out)
+      }
       return
     }
 
