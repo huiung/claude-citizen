@@ -36,9 +36,9 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 
 - 6DOF spaceflight in your browser — coupled (flight assist) and decoupled (full Newton) modes
 - A refinery, a mining colony, planets, an asteroid belt — the world is procedurally generated (ships & sound effects are hand-made or CC0)
-- **Mine ORE** from asteroids with a mining laser — free cargo if you're willing to work for it
+- **Mine ORE** from asteroids with a mining laser — ore veins deplete and fresh ones respawn around you, so you prospect and move on instead of parking on one rock forever
 - **A living economy:** dock to trade ore and alloy; prices react to your trades and drift back over time
-- **Upgrade your craft:** cargo hold, top speed, boost — credits well spent
+- **Upgrade your craft:** cargo hold, top speed, boost, and mining yield — five tiers each, a credit sink that scales with your rank
 - **Delivery contracts:** accept haul missions, deliver to the destination outpost for the reward
 - **Pirates:** hostiles hunt you in the sector — shoot back, watch your hull, collect the bounty
 - **An endless procedural galaxy:** fly any direction and planets, moons, stations, and derelicts keep appearing — some planets are vast
@@ -50,10 +50,11 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Game feel:** a chase camera that carries G-force weight, a boost ignition punch (FOV kick + exhaust flare + whoosh), and an air-rush layer that swells with speed
 - **Combat HUD:** target brackets + range, off-screen threat arrows (know where you're being shot from), and a lead indicator so you can actually land hits on pirates
 - **A leaderboard:** top pilots by credits — on the landing screen and in-game (`[L]`)
+- **Pilot ranks:** climb six credit-based ranks (Cadet → Admiral) — a HUD progress track, a promotion banner when you level up, and rank tags on the leaderboard
 - Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
-- **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours
-- 131 tests, because "built with AI" shouldn't mean "built badly"
+- **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours. Grab a **Pilot Code** to restore your pilot on another device (one live session per code)
+- 138 tests, because "built with AI" shouldn't mean "built badly"
 
 ## Controls
 
