@@ -41,6 +41,7 @@ interface SolarMapEntity extends SolarMapNavigationTarget {
   ageMs?: number
   note?: string
   targetable: boolean
+  chartable?: boolean
 }
 
 interface PreviewRoute {
@@ -57,6 +58,25 @@ interface LabelBox {
   y: number
   width: number
   height: number
+}
+
+type SolarMapLayerKey = 'orbits' | 'routes' | 'labels' | 'backdrop' | 'contacts'
+type SolarMapLayers = Record<SolarMapLayerKey, boolean>
+
+const LAYER_DEFS: ReadonlyArray<{ key: SolarMapLayerKey; label: string }> = [
+  { key: 'orbits', label: 'Orbits' },
+  { key: 'routes', label: 'Routes' },
+  { key: 'labels', label: 'Labels' },
+  { key: 'backdrop', label: 'Backdrop' },
+  { key: 'contacts', label: 'Pilots' },
+]
+
+const DEFAULT_LAYERS: SolarMapLayers = {
+  orbits: true,
+  routes: true,
+  labels: true,
+  backdrop: true,
+  contacts: true,
 }
 
 const POSITION_SCALE = 1 / 2500
@@ -362,7 +382,7 @@ function injectSolarMapStyles(): void {
     }
     .solar-map-sub { margin-top: 5px; font-size: 11px; color: rgba(215, 255, 231, .72); letter-spacing: .8px; }
     .solar-map-close {
-      pointer-events: auto; width: 38px; height: 34px; border-radius: 4px; cursor: pointer;
+      pointer-events: auto; width: 38px; height: 34px; border-radius: 8px; cursor: pointer;
       border: 1px solid rgba(159, 255, 176, .35); background: rgba(4, 18, 12, .72);
       color: #d7ffe7; font: 18px/1 "Share Tech Mono", ui-monospace, monospace;
     }
@@ -370,7 +390,7 @@ function injectSolarMapStyles(): void {
     .solar-map-panel {
       position: absolute; right: 18px; top: 76px; width: 330px; max-width: calc(100vw - 36px); z-index: 3;
       max-height: calc(100vh - 228px); overflow: auto;
-      border: 1px solid rgba(174, 233, 255, .2); border-radius: 7px;
+      border: 1px solid rgba(174, 233, 255, .2); border-radius: 8px;
       background: linear-gradient(180deg, rgba(3, 12, 18, .82), rgba(2, 7, 12, .68));
       box-shadow: 0 0 48px rgba(20, 72, 96, .22);
       padding: 13px 14px; backdrop-filter: blur(12px);
@@ -400,7 +420,7 @@ function injectSolarMapStyles(): void {
     }
     .solar-map-toolbar {
       position: absolute; left: 18px; bottom: 18px; z-index: 4; width: min(760px, calc(100vw - 396px));
-      border: 1px solid rgba(174, 233, 255, .2); border-radius: 7px;
+      border: 1px solid rgba(174, 233, 255, .2); border-radius: 8px;
       background: linear-gradient(180deg, rgba(3, 12, 18, .82), rgba(2, 7, 12, .68));
       backdrop-filter: blur(12px);
       padding: 12px; color: rgba(215, 255, 231, .76); pointer-events: auto;
@@ -424,12 +444,26 @@ function injectSolarMapStyles(): void {
       display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px;
     }
     .solar-map-toolbar button {
-      min-height: 30px; border-radius: 4px; border: 1px solid rgba(159, 255, 176, .22);
+      min-height: 30px; border-radius: 6px; border: 1px solid rgba(159, 255, 176, .22);
       background: rgba(4, 18, 20, .76); color: #d7ffe7; font: 10px/1.1 "Share Tech Mono", ui-monospace, monospace;
       letter-spacing: .9px; cursor: pointer; text-transform: uppercase;
     }
     .solar-map-toolbar button:hover:not(:disabled) { border-color: rgba(174, 233, 255, .55); background: rgba(18, 48, 58, .78); }
     .solar-map-toolbar button:disabled { opacity: .42; cursor: default; }
+    .solar-map-layer-controls {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
+      padding-top: 8px; border-top: 1px solid rgba(174, 233, 255, .12);
+    }
+    .solar-map-layer-controls button {
+      min-height: 25px; padding: 0 9px; flex: 1 1 auto; min-width: 72px;
+      color: rgba(215, 255, 231, .66); border-color: rgba(174, 233, 255, .18);
+      background: rgba(2, 10, 16, .55);
+    }
+    .solar-map-layer-controls button[aria-pressed="true"] {
+      color: #f2fff7; border-color: rgba(159, 255, 176, .46);
+      background: linear-gradient(180deg, rgba(26, 72, 56, .72), rgba(5, 24, 24, .72));
+      box-shadow: inset 0 0 12px rgba(159, 255, 176, .09);
+    }
     .solar-map-status {
       min-height: 15px; margin-top: 8px; color: rgba(174, 233, 255, .78); font-size: 10px; letter-spacing: .7px;
     }
@@ -451,12 +485,12 @@ function injectSolarMapStyles(): void {
       display: grid; gap: 5px; max-height: 92px; overflow: auto; padding-right: 2px;
     }
     .solar-map-contact-empty {
-      border: 1px solid rgba(174, 233, 255, .1); border-radius: 5px;
+      border: 1px solid rgba(174, 233, 255, .1); border-radius: 6px;
       padding: 8px 10px; color: rgba(215, 255, 231, .48); font-size: 10px; letter-spacing: .7px;
     }
     .solar-map-contact-row {
       display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 7px; align-items: center;
-      min-height: 28px; border: 1px solid rgba(174, 233, 255, .13); border-radius: 5px;
+      min-height: 28px; border: 1px solid rgba(174, 233, 255, .13); border-radius: 6px;
       background: rgba(2, 12, 18, .38); padding: 5px 6px;
     }
     .solar-map-contact-row.selected { border-color: rgba(174, 233, 255, .5); background: rgba(13, 36, 46, .42); }
@@ -469,12 +503,12 @@ function injectSolarMapStyles(): void {
       min-height: 24px; min-width: 44px; padding: 0 8px; font-size: 9px;
     }
     .solar-map-preview-empty {
-      border: 1px solid rgba(174, 233, 255, .12); border-radius: 5px;
+      border: 1px solid rgba(174, 233, 255, .12); border-radius: 6px;
       padding: 10px; color: rgba(215, 255, 231, .52); font-size: 10px; letter-spacing: .7px;
     }
     .solar-map-preview-row {
       display: grid; grid-template-columns: 10px minmax(0, 1fr) auto auto auto; gap: 7px; align-items: center;
-      min-height: 30px; border: 1px solid rgba(174, 233, 255, .13); border-radius: 5px;
+      min-height: 30px; border: 1px solid rgba(174, 233, 255, .13); border-radius: 6px;
       background: rgba(2, 12, 18, .46); padding: 5px 6px;
     }
     .solar-map-preview-row.selected { border-color: rgba(255, 195, 109, .54); background: rgba(42, 25, 10, .36); }
@@ -568,6 +602,7 @@ export class SolarSystemMap {
   private readonly inspectorEl: HTMLElement
   private readonly stripEl: HTMLElement
   private readonly actionsEl: HTMLElement
+  private readonly layerControlsEl: HTMLElement
   private readonly previewListEl: HTMLElement
   private readonly contactsListEl: HTMLElement
   private readonly actionStatusEl: HTMLElement
@@ -600,6 +635,7 @@ export class SolarSystemMap {
   private selectedRegion: SolarMapEntity | null = null
   private selectedPreviewId: string | null = null
   private actionStatus = ''
+  private readonly layers: SolarMapLayers = { ...DEFAULT_LAYERS }
   private readonly previewRoutes: PreviewRoute[] = []
   private readonly remoteTrails = new Map<string, RemoteTrailPoint[]>()
 
@@ -639,6 +675,7 @@ export class SolarSystemMap {
         <div class="solar-map-toolbar-body">
           <div>
             <div class="solar-map-actions"></div>
+            <div class="solar-map-layer-controls" data-testid="solar-map-layer-controls"></div>
             <div class="solar-map-status" aria-live="polite"></div>
           </div>
           <div class="solar-map-preview">
@@ -659,6 +696,7 @@ export class SolarSystemMap {
     this.inspectorEl = this.root.querySelector('.solar-map-panel')!
     this.stripEl = this.root.querySelector('.solar-map-strip')!
     this.actionsEl = this.root.querySelector('.solar-map-actions')!
+    this.layerControlsEl = this.root.querySelector('.solar-map-layer-controls')!
     this.previewListEl = this.root.querySelector('.solar-map-preview-list')!
     this.contactsListEl = this.root.querySelector('.solar-map-contact-list')!
     this.actionStatusEl = this.root.querySelector('.solar-map-status')!
@@ -702,7 +740,7 @@ export class SolarSystemMap {
     this.controls.target.set(0, 0, 0)
 
     this.raycaster.params.Points.threshold = 0.45
-    this.raycaster.params.Line.threshold = 0.2
+    this.raycaster.params.Line.threshold = 0.72
 
     this.root.querySelector('.solar-map-close')!.addEventListener('click', () => this.close())
     this.root.querySelector('.solar-map-toolbar')!.addEventListener('click', (event) => this.onToolbarClick(event))
@@ -842,11 +880,11 @@ export class SolarSystemMap {
     this.hovered = null
     this.selected = null
 
-    this.addStarBackdrop()
-    this.addRoutes()
+    if (this.layers.backdrop) this.addStarBackdrop()
+    if (this.layers.routes) this.addRoutes()
     this.addSolarSystem()
     this.addNearbyCelestials()
-    this.addRemotes()
+    if (this.layers.contacts) this.addRemotes()
     this.addPlayerMarker()
     this.addSelectedRegionMarker()
     this.addSelectionBeacon()
@@ -888,7 +926,7 @@ export class SolarSystemMap {
     this.addNebulaCloud(new THREE.Vector3(-86, 34, -224), 118, 64, 'rgba(80, 168, 210, .34)', 'rgba(50, 104, 138, .13)')
     this.addNebulaCloud(new THREE.Vector3(122, -24, -252), 154, 84, 'rgba(138, 92, 154, .25)', 'rgba(36, 70, 116, .11)')
     this.addNebulaCloud(new THREE.Vector3(-18, -76, -238), 190, 96, 'rgba(180, 122, 64, .18)', 'rgba(52, 82, 112, .08)')
-    this.addGalacticBand()
+    this.addNebulaCloud(new THREE.Vector3(18, -30, -268), 260, 104, 'rgba(122, 178, 214, .12)', 'rgba(78, 112, 148, .055)')
   }
 
   private addNebulaCloud(position: THREE.Vector3, width: number, height: number, inner: string, mid: string): void {
@@ -905,42 +943,6 @@ export class SolarSystemMap {
     sprite.scale.set(width, height, 1)
     sprite.renderOrder = -22
     this.mapRoot.add(sprite)
-  }
-
-  private addGalacticBand(): void {
-    const count = 560
-    const positions = new Float32Array(count * 3)
-    const colors = new Float32Array(count * 3)
-    for (let i = 0; i < count; i++) {
-      const t = (i / Math.max(1, count - 1)) * 2 - 1
-      const spread = (seededUnit(i, 10) - 0.5) * 64
-      const depth = 184 + seededUnit(i, 11) * 64
-      positions[i * 3] = t * 238
-      positions[i * 3 + 1] = Math.sin(t * 2.4) * 24 + spread * 0.2
-      positions[i * 3 + 2] = -depth + Math.cos(t * 1.6) * 30 + spread
-      scratchColor.setHSL(0.54 + seededUnit(i, 12) * 0.1, 0.28, 0.28 + seededUnit(i, 13) * 0.22)
-      colors[i * 3] = scratchColor.r
-      colors[i * 3 + 1] = scratchColor.g
-      colors[i * 3 + 2] = scratchColor.b
-    }
-    const geo = new THREE.BufferGeometry()
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-    const band = new THREE.Points(
-      geo,
-      new THREE.PointsMaterial({
-        size: 3.2,
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.13,
-        depthWrite: false,
-        depthTest: false,
-        blending: THREE.AdditiveBlending,
-      }),
-    )
-    band.rotation.z = -0.16
-    band.renderOrder = -19
-    this.mapRoot.add(band)
   }
 
   private addSolarSystem(): void {
@@ -995,6 +997,8 @@ export class SolarSystemMap {
     radialLight.renderOrder = 21
     this.mapRoot.add(radialLight)
 
+    if (this.layers.orbits) this.addOrbitTracks(origin)
+
     const nearestPlanet = PLANETS
       .map((planet) => ({ planet, d: planet.position.distanceToSquared(origin) }))
       .sort((a, b) => a.d - b.d)[0]?.planet.name
@@ -1031,6 +1035,48 @@ export class SolarSystemMap {
       }
       if (active) this.addTargetRing(planetPos, radius * 1.95, 0x9fffb0, 0.92)
       if (planet.hasRings) this.addPlanetRings(planetPos, radius)
+    }
+  }
+
+  private addOrbitTracks(origin: THREE.Vector3): void {
+    for (const planet of PLANETS) {
+      const orbitId = `orbit.${planet.name}`
+      const active = this.isActiveDestination(`planet.${planet.name}`)
+      const selected = this.selectedId === orbitId
+      const orbitRadius = Math.hypot(planet.position.x - SUN_POSITION.x, planet.position.z - SUN_POSITION.z)
+      const points: THREE.Vector3[] = []
+      for (let i = 0; i <= 192; i++) {
+        const t = (i / 192) * Math.PI * 2
+        const world = new THREE.Vector3(
+          SUN_POSITION.x + Math.cos(t) * orbitRadius,
+          SUN_POSITION.y + orbitRadius * 0.05 * Math.sin(t * 1.7),
+          SUN_POSITION.z + Math.sin(t) * orbitRadius,
+        )
+        points.push(mapPosition(world, origin))
+      }
+      const color = selected ? 0xffcf8a : active ? 0x9fffb0 : 0x79b7d8
+      const material = new THREE.LineBasicMaterial({
+        color,
+        transparent: true,
+        opacity: selected ? 0.78 : active ? 0.58 : 0.34,
+        depthWrite: false,
+        depthTest: false,
+      })
+      const orbit = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(points), material)
+      orbit.renderOrder = selected ? 15 : active ? 12 : 8
+      this.makeSelectable(orbit, {
+        id: orbitId,
+        name: `${planet.name} orbit`,
+        kind: 'Orbit track',
+        worldPosition: planet.position.clone(),
+        distance: origin.distanceTo(planet.position),
+        radius: orbitRadius,
+        targetable: false,
+        chartable: false,
+        note: `Selectable orbital reference track for ${planet.name}. Use it to read the planet's path around the sun; select the planet marker itself to chart or set a destination.`,
+      })
+      this.mapRoot.add(orbit)
+      if (selected) this.addLabel(`${planet.name} orbit`, mapPosition(planet.position, origin), 'selected', 82)
     }
   }
 
@@ -1301,6 +1347,7 @@ export class SolarSystemMap {
   }
 
   private addLabel(text: string, pos: THREE.Vector3, variant: string, priority: number): void {
+    if (!this.layers.labels) return
     if (this.labelBoxes.length >= MAX_ATLAS_LABELS && priority < 80) return
     const width = THREE.MathUtils.clamp(text.length * 6.4 + 20, 44, 178)
     const height = 18
@@ -1347,8 +1394,7 @@ export class SolarSystemMap {
     if (this.selectedId === entity.id) this.selected = object
     object.traverse((child) => {
       child.userData.entityRoot = object
-      const mesh = child as THREE.Mesh
-      if (mesh.isMesh) this.clickables.push(child)
+      if (child instanceof THREE.Mesh || child instanceof THREE.Line || child instanceof THREE.Points) this.clickables.push(child)
     })
   }
 
@@ -1389,6 +1435,11 @@ export class SolarSystemMap {
       case 'focus-remote':
         if (routeId) this.focusRemote(routeId)
         break
+      case 'toggle-layer': {
+        const layer = button.dataset.layer as SolarMapLayerKey | undefined
+        if (layer && layer in this.layers) this.toggleLayer(layer)
+        break
+      }
     }
   }
 
@@ -1485,6 +1536,13 @@ export class SolarSystemMap {
     if (this.hovered === next) return
     this.hovered = next
     this.renderer.domElement.style.cursor = next ? 'pointer' : 'grab'
+  }
+
+  private toggleLayer(layer: SolarMapLayerKey): void {
+    this.layers[layer] = !this.layers[layer]
+    const label = LAYER_DEFS.find((def) => def.key === layer)?.label ?? layer
+    this.actionStatus = `${label} layer ${this.layers[layer] ? 'shown' : 'hidden'}.`
+    this.refresh(false)
   }
 
   private resetToSelf(): void {
@@ -1857,13 +1915,14 @@ export class SolarSystemMap {
       <div class="solar-map-note">${escapeHtml(focus.note ?? 'Click a marker or empty space to inspect local navigation context.')}</div>
     `
     this.renderActionButtons(focus)
+    this.renderLayerControls()
     this.renderPreviewRoutes()
     this.renderContactList()
   }
 
   private renderActionButtons(focus?: SolarMapEntity): void {
     const selected = focus ?? this.currentFocusEntity()
-    const canChart = !!selected && selected.id !== 'player'
+    const canChart = !!selected && selected.id !== 'player' && selected.chartable !== false
     const canSet = !!selected?.targetable
     const selectedPreview = this.selectedPreviewId ? this.previewRoutes.find((route) => route.id === this.selectedPreviewId) : null
     this.actionsEl.innerHTML = `
@@ -1874,6 +1933,12 @@ export class SolarSystemMap {
       <button data-action="clear-route" data-testid="solar-map-clear-route" ${selectedPreview ? '' : 'disabled'}>Remove Selected</button>
     `
     this.actionStatusEl.textContent = this.actionStatus
+  }
+
+  private renderLayerControls(): void {
+    this.layerControlsEl.innerHTML = LAYER_DEFS.map(({ key, label }) => `
+      <button data-action="toggle-layer" data-layer="${key}" data-testid="solar-map-layer-${key}" aria-pressed="${this.layers[key] ? 'true' : 'false'}">${label}</button>
+    `).join('')
   }
 
   private renderPreviewRoutes(): void {
@@ -1908,6 +1973,10 @@ export class SolarSystemMap {
   }
 
   private renderContactList(): void {
+    if (!this.layers.contacts) {
+      this.contactsListEl.innerHTML = '<div class="solar-map-contact-empty">Pilot layer hidden.</div>'
+      return
+    }
     if (!this.snapshot?.remotes.length) {
       this.contactsListEl.innerHTML = '<div class="solar-map-contact-empty">No pilot contacts.</div>'
       return
