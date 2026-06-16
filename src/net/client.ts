@@ -37,8 +37,19 @@ export class NetClient {
   private lastSend = 0
   private online = 1
   private active = false // false = viewer (presence only), true = in-game pilot
+  private reconnectDelay = 2000 // backoff between reconnect attempts (ms)
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(private name: string, private token: string, private events: NetEvents) {}
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer) return
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null
+      this.connect()
+    }, this.reconnectDelay)
+    this.reconnectDelay = Math.min(this.reconnectDelay * 1.5, 30000) // back off, cap at 30s
+  }
 
   connect(): void {
     const url = import.meta.env.VITE_WS_URL
@@ -50,6 +61,7 @@ export class NetClient {
       return
     }
     this.ws.onopen = () => {
+      this.reconnectDelay = 2000 // connected — reset backoff
       // Viewer presence by default; a full 'join' once the player launches.
       this.ws?.send(JSON.stringify(this.active
         ? { t: 'join', name: this.name, token: this.token }
@@ -59,7 +71,9 @@ export class NetClient {
     this.ws.onclose = () => {
       this.peers.forEach((_, id) => this.events.onPeerLeave(id))
       this.peers.clear()
+      this.online = 1
       this.events.onStatus(false, 1)
+      this.scheduleReconnect() // auto-recover from dropped tabs / wifi blips / discarded backgrounds
     }
     this.ws.onerror = () => this.ws?.close()
     this.ws.onmessage = (ev) => this.handle(JSON.parse(ev.data as string))
