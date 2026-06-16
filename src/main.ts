@@ -24,6 +24,7 @@ import { generateContracts } from './sim/contracts'
 import { boostMultiplier, cargoCapacity, loadUpgrades, miningYield, saveUpgrades, topSpeed } from './sim/upgrades'
 import { type Celestial, queryCelestials } from './sim/galaxy'
 import { generatePlanetTextures, type PlanetTextureKind } from './render/planetTextures'
+import { makeAsteroidMaterial } from './render/asteroidTextures'
 import { cancelTravel, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
   canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
@@ -333,7 +334,7 @@ function buildCelestial(c: Celestial): THREE.Object3D {
     }))
     group.add(body)
   } else if (c.type === 'asteroid-cluster') {
-    const mat = new THREE.MeshStandardMaterial({ color: 0x6b6258, flatShading: true, roughness: 1 })
+    const mat = makeAsteroidMaterial(c.seed, 0x6b6258, 256)
     const n = 6 + Math.floor(rand() * 8)
     for (let i = 0; i < n; i++) {
       const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(c.radius * (0.1 + rand() * 0.22), 0), mat)

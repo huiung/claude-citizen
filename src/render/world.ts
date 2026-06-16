@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { SurfaceKind } from '../sim/solarSystem'
 import { generateCloudTexture, generatePlanetTextures, samplePlanetSurface } from './planetTextures'
+import { makeAsteroidMaterial, makeOreMaterial } from './asteroidTextures'
 
 /** Deterministic pseudo-random — same world for every visitor, no assets. */
 function mulberry32(seed: number) {
@@ -151,27 +152,46 @@ export const MINEABLE_SITES: ReadonlyArray<{ id: string; position: THREE.Vector3
 export function buildMineableAsteroid(): THREE.Group {
   const group = new THREE.Group()
   const rand = mulberry32(99)
-  const rockMat = new THREE.MeshStandardMaterial({ color: 0x5a5048, flatShading: true, roughness: 1 })
-  const geo = new THREE.IcosahedronGeometry(20, 1)
+  const rockMat = makeAsteroidMaterial(99, 0x5a5048, 256)
+  const geo = new THREE.IcosahedronGeometry(20, 3)
   const pos = geo.getAttribute('position') as THREE.BufferAttribute
   const v = new THREE.Vector3()
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i)
-    v.multiplyScalar(0.7 + rand() * 0.6)
+    const d = v.clone().normalize()
+    const n = (
+      Math.sin(d.x * 4.7 + 1.7) * Math.cos(d.y * 3.9) * 0.18 +
+      Math.sin(d.y * 8.3 + 0.4) * Math.cos(d.z * 7.1) * 0.1 +
+      Math.sin(d.z * 13.7 + d.x * 5.9) * 0.06
+    )
+    v.multiplyScalar(0.92 + n)
     pos.setXYZ(i, v.x, v.y, v.z)
   }
   geo.computeVertexNormals()
   group.add(new THREE.Mesh(geo, rockMat))
 
   // Glowing ORE veins so pilots can spot a mineable rock at a glance.
-  const veinMat = new THREE.MeshBasicMaterial({ color: 0x4fd0e0 })
-  for (let i = 0; i < 7; i++) {
-    const vein = new THREE.Mesh(new THREE.IcosahedronGeometry(2 + rand() * 1.5, 0), veinMat)
+  const veinMat = makeOreMaterial(4099, 0x4fd0e0)
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0x76f4ff,
+    transparent: true,
+    opacity: 0.18,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  })
+  for (let i = 0; i < 9; i++) {
+    const vein = new THREE.Mesh(new THREE.CapsuleGeometry(0.7 + rand() * 0.35, 5 + rand() * 5, 3, 7), veinMat)
     const a = rand() * Math.PI * 2
     const b = rand() * Math.PI
     const r = 15 + rand() * 6
-    vein.position.set(r * Math.sin(b) * Math.cos(a), r * Math.cos(b), r * Math.sin(b) * Math.sin(a))
+    const normal = new THREE.Vector3(Math.sin(b) * Math.cos(a), Math.cos(b), Math.sin(b) * Math.sin(a))
+    vein.position.copy(normal).multiplyScalar(r)
+    vein.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal)
+    vein.rotateX((rand() - 0.5) * 1.2)
     group.add(vein)
+    const glow = new THREE.Mesh(new THREE.SphereGeometry(2.4 + rand() * 1.5, 8, 6), glowMat)
+    glow.position.copy(vein.position)
+    group.add(glow)
   }
   return group
 }
@@ -249,7 +269,11 @@ export function buildColony(): THREE.Group {
 export function buildAsteroids(): THREE.Group {
   const group = new THREE.Group()
   const rand = mulberry32(1337)
-  const mat = new THREE.MeshStandardMaterial({ color: 0x6b6258, flatShading: true, roughness: 1 })
+  const mats = [
+    makeAsteroidMaterial(1337, 0x6b6258, 256),
+    makeAsteroidMaterial(1441, 0x5d5952, 256),
+    makeAsteroidMaterial(1559, 0x74685d, 256),
+  ]
   const baseGeos = [0, 1, 2].map(() => {
     const geo = new THREE.IcosahedronGeometry(1, 1)
     const pos = geo.getAttribute('position') as THREE.BufferAttribute
@@ -263,7 +287,7 @@ export function buildAsteroids(): THREE.Group {
     return geo
   })
   for (let i = 0; i < 70; i++) {
-    const rock = new THREE.Mesh(baseGeos[i % 3], mat)
+    const rock = new THREE.Mesh(baseGeos[i % 3], mats[i % 3])
     // Scatter in a loose belt around the spawn corridor
     const angle = rand() * Math.PI * 2
     const radius = 250 + rand() * 900
