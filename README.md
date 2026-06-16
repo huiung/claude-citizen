@@ -101,7 +101,7 @@ driving [Claude Code](https://claude.com/claude-code). One human sets direction,
 and tunes the flight feel. The AI does the typing.
 
 The dev log lives in [FABLE.md](./FABLE.md) — what got built, what the human did,
-what the model did. Commits carry a `Co-Authored-By: Claude Fable 5` trailer. Receipts, not claims.
+what the model did. Receipts, not claims.
 
 ## Contributing
 
