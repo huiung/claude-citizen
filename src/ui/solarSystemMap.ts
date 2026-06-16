@@ -659,6 +659,8 @@ export class SolarSystemMap {
   private readonly pointer = new THREE.Vector2()
   private readonly pointerDown = new THREE.Vector2()
   private readonly pickWorld = new THREE.Vector3()
+  private readonly lockedFocusOffset = new THREE.Vector3()
+  private readonly lockedFocusLocal = new THREE.Vector3()
   private readonly freeCamKeys = new Set<string>()
   private readonly freeCamMove = new THREE.Vector3()
   private readonly freeCamForward = new THREE.Vector3()
@@ -680,6 +682,7 @@ export class SolarSystemMap {
   private selectedId = 'player'
   private selectedRegion: SolarMapEntity | null = null
   private selectedPreviewId: string | null = null
+  private lockedFocusId: string | null = 'player'
   private actionStatus = ''
   private controlsHidden = false
   private freeCamEnabled = false
@@ -793,6 +796,7 @@ export class SolarSystemMap {
     this.controls.dampingFactor = 0.08
     this.controls.minDistance = 5
     this.controls.maxDistance = 165
+    this.controls.enablePan = false
     this.controls.target.set(0, 0, 0)
 
     this.raycaster.params.Points.threshold = 0.45
@@ -830,6 +834,8 @@ export class SolarSystemMap {
     this.updateControlsVisibility()
     this.selectedId = 'player'
     this.selectedRegion = null
+    this.selectedPreviewId = null
+    this.lockedFocusId = 'player'
     this.actionStatus = 'Atlas centered on your ship.'
     this.clock.start()
     this.resize()
@@ -884,11 +890,13 @@ export class SolarSystemMap {
     this.syncPreviewRoutes(this.lastRefresh)
     this.rebuildScene()
     if (forceCamera) this.resetCamera()
+    else this.updateLockedFocusTarget()
     this.renderSummary()
   }
 
   private resetCamera(): void {
     this.setFreeCamera(false)
+    this.lockedFocusId = 'player'
     this.camera.position.set(0, 24, 46)
     this.controls.target.set(0, 0, 0)
     this.controls.update()
@@ -915,6 +923,7 @@ export class SolarSystemMap {
     this.controls.enabled = !enabled
     this.renderer.domElement.style.cursor = enabled ? 'crosshair' : 'grab'
     if (enabled) {
+      this.lockedFocusId = null
       this.syncFreeCameraAngles()
       this.actionStatus = 'Free camera: WASD fly, drag mouse to look, Shift fast.'
       this.renderSummary()
@@ -1247,21 +1256,25 @@ export class SolarSystemMap {
   private addRoutes(): void {
     if (!this.snapshot) return
     const active = this.activeDestination()
-    if (active) this.addRoute(active, 'active', 0x9fffb0, false, true)
+    if (active) this.addRoute(this.snapshot.playerPosition, active, 'active', 0x9fffb0, false, true)
+    let legStart = this.snapshot.playerPosition
     for (const route of this.previewRoutes) {
-      if (route.target.id === active?.id) continue
-      this.addRoute(route.target, 'preview', route.color, route.stale, this.selectedPreviewId === route.id)
+      if (route.target.id !== active?.id) {
+        this.addRoute(legStart, route.target, 'preview', route.color, route.stale, this.selectedPreviewId === route.id)
+      }
+      legStart = route.target.worldPosition
     }
   }
 
-  private addRoute(target: SolarMapNavigationTarget, mode: 'active' | 'preview', color: number, stale: boolean, selected: boolean): void {
+  private addRoute(startWorld: THREE.Vector3, target: SolarMapNavigationTarget, mode: 'active' | 'preview', color: number, stale: boolean, selected: boolean): void {
     if (!this.snapshot) return
+    const start = mapPosition(startWorld, this.snapshot.playerPosition)
     const end = mapPosition(target.worldPosition, this.snapshot.playerPosition)
-    if (end.lengthSq() < 0.01) return
-    const mid = end.clone().multiplyScalar(0.5)
+    if (start.distanceToSquared(end) < 0.01) return
+    const mid = start.clone().add(end).multiplyScalar(0.5)
     const previewBias = selected ? -1.02 : -0.72
-    mid.y += Math.max(3, end.length() * 0.14) * (mode === 'active' ? 1 : previewBias)
-    const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(), mid, end)
+    mid.y += Math.max(3, start.distanceTo(end) * 0.14) * (mode === 'active' ? 1 : previewBias)
+    const curve = new THREE.QuadraticBezierCurve3(start, mid, end)
     const points = curve.getPoints(72)
     const material = mode === 'active'
       ? new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.88 })
@@ -1278,7 +1291,8 @@ export class SolarSystemMap {
     endBeacon.renderOrder = mode === 'active' ? 24 : selected ? 23 : 22
     this.mapRoot.add(endBeacon)
     const activeNamedPlanet = mode === 'active' && target.id.startsWith('planet.')
-    if (!activeNamedPlanet && (mode === 'active' || selected)) this.addLabel(target.name, end, mode === 'active' ? 'active' : 'selected', mode === 'active' ? 86 : 74)
+    const selectedRenderedTarget = selected && !stale && !target.id.startsWith('region.')
+    if (!activeNamedPlanet && !selectedRenderedTarget && (mode === 'active' || selected)) this.addLabel(target.name, end, mode === 'active' ? 'active' : 'selected', mode === 'active' ? 86 : 74)
   }
 
   private addNearbyCelestials(): void {
@@ -1530,7 +1544,7 @@ export class SolarSystemMap {
         if (this.selectedPreviewId) this.removePreviewRoute(this.selectedPreviewId)
         break
       case 'select-preview':
-        if (routeId) this.selectPreviewRoute(routeId, false)
+        if (routeId) this.selectPreviewRoute(routeId, true)
         break
       case 'focus-preview':
         if (routeId) this.selectPreviewRoute(routeId, true)
@@ -1680,8 +1694,42 @@ export class SolarSystemMap {
     this.focusEntity(focus, true)
   }
 
+  private lockedFocusEntity(): SolarMapEntity | null {
+    if (!this.snapshot || !this.lockedFocusId) return null
+    if (this.selectedRegion?.id === this.lockedFocusId) return this.selectedRegion
+    const selectedEntity = this.selected?.userData.entity as SolarMapEntity | undefined
+    if (selectedEntity?.id === this.lockedFocusId) return selectedEntity
+    const preview = this.previewRoutes.find((route) => route.id === this.lockedFocusId || route.target.id === this.lockedFocusId)
+    if (preview) {
+      return this.entityFromNavigationTarget(
+        preview.target,
+        preview.stale ? 'Preview path is based on the last known contact position.' : 'Selected preview path target. It is not the active quantum destination.',
+      )
+    }
+    return this.collectKnownEntities(true).find((entity) => entity.id === this.lockedFocusId) ?? null
+  }
+
+  private updateLockedFocusTarget(): void {
+    if (this.freeCamEnabled || !this.snapshot || !this.lockedFocusId) return
+    const focus = this.lockedFocusEntity()
+    if (!focus) {
+      this.lockedFocusId = null
+      return
+    }
+    this.lockedFocusLocal.copy(mapPosition(focus.worldPosition, this.snapshot.playerPosition))
+    this.mapRoot.updateMatrixWorld(true)
+    const world = this.mapRoot.localToWorld(this.lockedFocusLocal.clone())
+    this.lockedFocusOffset.copy(this.camera.position).sub(this.controls.target)
+    if (this.lockedFocusOffset.lengthSq() < 1) this.lockedFocusOffset.set(0, 16, 34)
+    this.controls.target.copy(world)
+    this.camera.position.copy(world).add(this.lockedFocusOffset)
+    this.controls.update()
+  }
+
   private focusEntity(focus: SolarMapEntity, announce: boolean): void {
     if (!this.snapshot) return
+    this.setFreeCamera(false)
+    this.lockedFocusId = focus.id
     const local = mapPosition(focus.worldPosition, this.snapshot.playerPosition)
     this.mapRoot.updateMatrixWorld(true)
     const world = this.mapRoot.localToWorld(local.clone())
@@ -1692,7 +1740,6 @@ export class SolarSystemMap {
     this.controls.target.copy(world)
     this.camera.position.copy(world).addScaledVector(direction, distance)
     this.controls.update()
-    if (this.freeCamEnabled) this.syncFreeCameraAngles()
     if (announce) {
       this.actionStatus = `Focused ${focus.name}.`
       this.renderSummary()
@@ -1976,15 +2023,19 @@ export class SolarSystemMap {
 
   private routeProximity(entity: SolarMapEntity): string {
     if (!this.snapshot) return 'none'
-    const routes = [
-      this.activeDestination() ? { label: 'active', target: this.activeDestination()! } : null,
-      ...this.previewRoutes.map((route, index) => ({ label: `preview ${index + 1}`, target: route.target })),
-    ].filter((route): route is { label: string; target: SolarMapNavigationTarget } => route !== null)
+    const routes: Array<{ label: string; start: THREE.Vector3; end: THREE.Vector3 }> = []
+    const active = this.activeDestination()
+    if (active) routes.push({ label: 'active', start: this.snapshot.playerPosition, end: active.worldPosition })
+    let legStart = this.snapshot.playerPosition
+    this.previewRoutes.forEach((route, index) => {
+      routes.push({ label: `preview leg ${index + 1}`, start: legStart, end: route.target.worldPosition })
+      legStart = route.target.worldPosition
+    })
     if (!routes.length) return 'no route'
     const nearest = routes
       .map((route) => ({
         label: route.label,
-        distance: distanceToSegment(entity.worldPosition, this.snapshot!.playerPosition, route.target.worldPosition),
+        distance: distanceToSegment(entity.worldPosition, route.start, route.end),
       }))
       .sort((a, b) => a.distance - b.distance)[0]
     return `${formatDistance(nearest.distance)} from ${nearest.label}`
@@ -2068,15 +2119,16 @@ export class SolarSystemMap {
       this.previewListEl.innerHTML = '<div class="solar-map-preview-empty">No preview paths charted.</div>'
       return
     }
-    const origin = this.snapshot?.playerPosition
+    let legStart = this.snapshot?.playerPosition
     this.previewListEl.innerHTML = this.previewRoutes.map((route, index) => {
-      const distance = origin ? origin.distanceTo(route.target.worldPosition) : 0
+      const distance = legStart ? legStart.distanceTo(route.target.worldPosition) : 0
       const selected = route.id === this.selectedPreviewId
       const meta = [
         route.stale ? 'last known' : route.target.kind,
+        `leg ${index + 1}`,
         formatDistance(distance),
-        `path ${index + 1}`,
       ].join(' | ')
+      legStart = route.target.worldPosition
       return `
         <div class="solar-map-preview-row ${selected ? 'selected' : ''} ${route.stale ? 'stale' : ''}" data-testid="solar-map-preview-row" data-route-id="${escapeHtml(route.id)}">
           <span class="solar-map-route-swatch" style="color:${colorToCss(route.color)}; background:${colorToCss(route.color)}"></span>
