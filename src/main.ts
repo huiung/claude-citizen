@@ -134,7 +134,9 @@ appEl.appendChild(renderer.domElement)
 
 function requestFlightPointerLock(): void {
   if (document.pointerLockElement === renderer.domElement) return
-  renderer.domElement.requestPointerLock().catch(() => { /* Pointer lock can be denied in inactive tabs or automation. */ })
+  if (typeof renderer.domElement.requestPointerLock !== 'function') return
+  const lockRequest = renderer.domElement.requestPointerLock()
+  if (lockRequest instanceof Promise) lockRequest.catch(() => { /* Pointer lock can be denied in inactive tabs or automation. */ })
 }
 
 const labelRenderer = new CSS2DRenderer()
