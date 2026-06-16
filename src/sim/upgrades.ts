@@ -25,7 +25,7 @@ export const UPGRADE_TRACKS: Record<UpgradeTrack, TrackDef> = {
     prices: [600, 1500, 3500, 7000, 14000],
   },
   speed: {
-    values: [TUNING.maxSpeed, 100, 125, 160, 200, 250],
+    values: [TUNING.maxSpeed, 115, 140, 175, 215, 265],
     prices: [800, 2000, 4500, 9000, 18000],
   },
   boost: {

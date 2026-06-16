@@ -2,7 +2,7 @@ import { Quaternion, Vector3 } from 'three'
 
 // Tuning constants — the entire game feel lives here.
 export const TUNING = {
-  maxSpeed: 80,          // m/s, coupled mode commanded speed
+  maxSpeed: 95,          // m/s, coupled mode commanded speed
   boostMultiplier: 3.5,
   accelResponse: 1.6,    // 1/s, how fast velocity converges to command (coupled)
   decoupledThrust: 45,   // m/s², raw acceleration in decoupled mode
