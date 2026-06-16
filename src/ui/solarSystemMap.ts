@@ -195,23 +195,6 @@ function distanceToSegment(point: THREE.Vector3, a: THREE.Vector3, b: THREE.Vect
   return scratchVector.multiplyScalar(t).add(a).distanceTo(point)
 }
 
-function distanceToScreenSegmentSq(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
-  const dx = bx - ax
-  const dy = by - ay
-  const lenSq = dx * dx + dy * dy
-  if (lenSq <= 1e-6) {
-    const ox = px - ax
-    const oy = py - ay
-    return ox * ox + oy * oy
-  }
-  const t = THREE.MathUtils.clamp(((px - ax) * dx + (py - ay) * dy) / lenSq, 0, 1)
-  const sx = ax + dx * t
-  const sy = ay + dy * t
-  const ox = px - sx
-  const oy = py - sy
-  return ox * ox + oy * oy
-}
-
 function atlasSurfaceColor(base: number, surface: string, seed: number, normal: THREE.Vector3, out: THREE.Color): THREE.Color {
   const n = (
     Math.sin(normal.x * 4.1 + seed * 0.01) * 0.38 +
@@ -676,6 +659,10 @@ export class SolarSystemMap {
   private readonly pointer = new THREE.Vector2()
   private readonly pointerDown = new THREE.Vector2()
   private readonly pickWorld = new THREE.Vector3()
+  private readonly freeCamKeys = new Set<string>()
+  private readonly freeCamMove = new THREE.Vector3()
+  private readonly freeCamForward = new THREE.Vector3()
+  private readonly freeCamRight = new THREE.Vector3()
   private readonly clock = new THREE.Clock()
   private readonly mapRoot = new THREE.Group()
   private readonly clickables: THREE.Object3D[] = []
@@ -695,6 +682,11 @@ export class SolarSystemMap {
   private selectedPreviewId: string | null = null
   private actionStatus = ''
   private controlsHidden = false
+  private freeCamEnabled = false
+  private freeCamLooking = false
+  private freeCamLookMoved = false
+  private freeCamYaw = 0
+  private freeCamPitch = 0
   private readonly layers: SolarMapLayers = { ...DEFAULT_LAYERS }
   private readonly previewRoutes: PreviewRoute[] = []
   private readonly remoteTrails = new Map<string, RemoteTrailPoint[]>()
@@ -732,6 +724,7 @@ export class SolarSystemMap {
           <div class="solar-map-inputs">
             <span><b>Drag</b> rotate</span>
             <span><b>Scroll</b> zoom</span>
+            <span><b>WASD</b> fly</span>
             <span><b>M/Esc</b> close</span>
           </div>
         </div>
@@ -810,11 +803,19 @@ export class SolarSystemMap {
     this.root.querySelector('.solar-map-toolbar')!.addEventListener('click', (event) => this.onToolbarClick(event))
     this.renderer.domElement.addEventListener('pointerdown', (event) => {
       this.pointerDown.set(event.clientX, event.clientY)
+      if (this.freeCamEnabled && event.button === 0) {
+        this.freeCamLooking = true
+        this.freeCamLookMoved = false
+      }
     })
     this.renderer.domElement.addEventListener('pointerup', (event) => this.onPointerUp(event))
     this.renderer.domElement.addEventListener('pointermove', (event) => this.onPointerMove(event))
-    this.renderer.domElement.addEventListener('pointerleave', () => this.setHovered(null))
+    this.renderer.domElement.addEventListener('pointerleave', () => {
+      this.freeCamLooking = false
+      this.setHovered(null)
+    })
     document.addEventListener('keydown', (event) => this.onKeyDown(event), true)
+    document.addEventListener('keyup', (event) => this.onKeyUp(event), true)
   }
 
   get isOpen(): boolean {
@@ -825,6 +826,7 @@ export class SolarSystemMap {
     if (this.isOpen) return
     this.root.hidden = false
     this.controlsHidden = false
+    this.setFreeCamera(false)
     this.updateControlsVisibility()
     this.selectedId = 'player'
     this.selectedRegion = null
@@ -842,6 +844,10 @@ export class SolarSystemMap {
     removeEventListener('resize', this.resize)
     if (this.raf) cancelAnimationFrame(this.raf)
     this.raf = 0
+    this.freeCamKeys.clear()
+    this.freeCamLooking = false
+    this.freeCamLookMoved = false
+    this.setFreeCamera(false)
     this.setHovered(null)
     this.onClose()
   }
@@ -860,10 +866,12 @@ export class SolarSystemMap {
   private readonly loop = (): void => {
     if (!this.isOpen) return
     this.raf = requestAnimationFrame(this.loop)
+    const delta = Math.min(this.clock.getDelta(), 0.05)
     const now = performance.now()
     if (now - this.lastRefresh > 1200) this.refresh(false)
-    this.controls.update()
-    const elapsed = this.clock.getElapsedTime()
+    if (this.freeCamEnabled) this.updateFreeCamera(delta)
+    else this.controls.update()
+    const elapsed = this.clock.elapsedTime
     for (const material of this.animatedMaterials) material.uniforms.time.value = elapsed
     this.composer.render()
     this.labelRenderer.render(this.scene, this.camera)
@@ -880,6 +888,7 @@ export class SolarSystemMap {
   }
 
   private resetCamera(): void {
+    this.setFreeCamera(false)
     this.camera.position.set(0, 24, 46)
     this.controls.target.set(0, 0, 0)
     this.controls.update()
@@ -896,6 +905,70 @@ export class SolarSystemMap {
     if (!button) return
     button.textContent = this.controlsHidden ? 'Show UI' : 'Hide UI'
     button.setAttribute('aria-pressed', this.controlsHidden ? 'true' : 'false')
+  }
+
+  private setFreeCamera(enabled: boolean): void {
+    if (this.freeCamEnabled === enabled) return
+    this.freeCamEnabled = enabled
+    this.freeCamLooking = false
+    this.freeCamLookMoved = false
+    this.controls.enabled = !enabled
+    this.renderer.domElement.style.cursor = enabled ? 'crosshair' : 'grab'
+    if (enabled) {
+      this.syncFreeCameraAngles()
+      this.actionStatus = 'Free camera: WASD fly, drag mouse to look, Shift fast.'
+      this.renderSummary()
+    } else {
+      this.freeCamKeys.clear()
+      this.controls.enabled = true
+      this.setHovered(null)
+    }
+  }
+
+  private syncFreeCameraAngles(): void {
+    const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ')
+    this.freeCamPitch = THREE.MathUtils.clamp(euler.x, -1.45, 1.45)
+    this.freeCamYaw = euler.y
+  }
+
+  private updateFreeCamera(delta: number): void {
+    this.freeCamMove.set(0, 0, 0)
+    this.camera.getWorldDirection(this.freeCamForward).normalize()
+    this.freeCamRight.crossVectors(this.freeCamForward, this.camera.up).normalize()
+    if (this.freeCamKeys.has('KeyW')) this.freeCamMove.add(this.freeCamForward)
+    if (this.freeCamKeys.has('KeyS')) this.freeCamMove.sub(this.freeCamForward)
+    if (this.freeCamKeys.has('KeyD')) this.freeCamMove.add(this.freeCamRight)
+    if (this.freeCamKeys.has('KeyA')) this.freeCamMove.sub(this.freeCamRight)
+    if (this.freeCamKeys.has('KeyE') || this.freeCamKeys.has('Space')) this.freeCamMove.y += 1
+    if (this.freeCamKeys.has('KeyQ')) this.freeCamMove.y -= 1
+    if (this.freeCamMove.lengthSq() > 0) {
+      const fast = this.freeCamKeys.has('ShiftLeft') || this.freeCamKeys.has('ShiftRight')
+      const slow = this.freeCamKeys.has('ControlLeft') || this.freeCamKeys.has('ControlRight')
+      const speed = fast ? 78 : slow ? 14 : 34
+      this.camera.position.addScaledVector(this.freeCamMove.normalize(), speed * delta)
+    }
+    this.camera.getWorldDirection(this.freeCamForward).normalize()
+    this.controls.target.copy(this.camera.position).addScaledVector(this.freeCamForward, 40)
+  }
+
+  private updateFreeCameraLook(dx: number, dy: number): void {
+    this.freeCamYaw -= dx * 0.0024
+    this.freeCamPitch = THREE.MathUtils.clamp(this.freeCamPitch - dy * 0.0024, -1.45, 1.45)
+    this.camera.quaternion.setFromEuler(new THREE.Euler(this.freeCamPitch, this.freeCamYaw, 0, 'YXZ'))
+  }
+
+  private isFreeCameraMoveKey(code: string): boolean {
+    return code === 'KeyW' || code === 'KeyA' || code === 'KeyS' || code === 'KeyD'
+  }
+
+  private isFreeCameraExtraKey(code: string): boolean {
+    return code === 'KeyQ'
+      || code === 'KeyE'
+      || code === 'Space'
+      || code === 'ShiftLeft'
+      || code === 'ShiftRight'
+      || code === 'ControlLeft'
+      || code === 'ControlRight'
   }
 
   private updateRemoteTrails(now: number): void {
@@ -966,7 +1039,6 @@ export class SolarSystemMap {
     if (this.layers.contacts) this.addRemotes()
     this.addPlayerMarker()
     this.addSelectedRegionMarker()
-    this.addSelectionBeacon()
   }
 
   private addStarBackdrop(): void {
@@ -1112,41 +1184,27 @@ export class SolarSystemMap {
         if (active && labelPos.distanceTo(sun.position) < sunRadius * 5.2) labelPos.add(new THREE.Vector3(radius * 4.4 + 7, radius * 2.2 + 3, 0))
         this.addLabel(planet.name, labelPos, active ? 'active' : selected ? 'selected' : 'muted', active ? 85 : selected ? 80 : 45)
       }
-      if (active) this.addTargetRing(planetPos, radius * 1.95, 0x9fffb0, 0.92)
       if (planet.hasRings) this.addPlanetRings(planetPos, radius)
     }
   }
 
   private addOrbitTracks(origin: THREE.Vector3): void {
     for (const planet of PLANETS) {
-      const orbitId = `orbit.${planet.name}`
       const active = this.isActiveDestination(`planet.${planet.name}`)
-      const selected = this.selectedId === orbitId
       const orbitRadius = planetOrbitRadius(planet.position)
       const points = buildPlanetOrbitPoints(planet.position, origin)
-      const color = selected ? 0xffcf8a : active ? 0x9fffb0 : 0x9bcce6
+      const color = active ? 0x9fffb0 : 0x9bcce6
       const material = new THREE.LineBasicMaterial({
         color,
         transparent: true,
-        opacity: selected ? 0.9 : active ? 0.68 : 0.48,
+        opacity: active ? 0.68 : 0.48,
         depthWrite: false,
         depthTest: true,
       })
       const orbit = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(points), material)
-      orbit.renderOrder = selected ? 15 : active ? 12 : 8
-      this.makeSelectable(orbit, {
-        id: orbitId,
-        name: `${planet.name} orbit`,
-        kind: 'Orbit track',
-        worldPosition: planet.position.clone(),
-        distance: origin.distanceTo(planet.position),
-        radius: orbitRadius,
-        targetable: false,
-        chartable: false,
-        note: `Selectable orbital reference track for ${planet.name}. Use it to read the planet's path around the sun; select the planet marker itself to chart or set a destination.`,
-      })
+      orbit.renderOrder = active ? 12 : 8
+      orbit.userData.orbitRadius = orbitRadius
       this.mapRoot.add(orbit)
-      if (selected) this.addLabel(`${planet.name} orbit`, mapPosition(planet.position, origin), 'selected', 82)
     }
   }
 
@@ -1186,16 +1244,6 @@ export class SolarSystemMap {
     this.mapRoot.add(outer)
   }
 
-  private addTargetRing(position: THREE.Vector3, radius: number, color: number, opacity: number): void {
-    const targetRing = new THREE.Mesh(
-      new THREE.TorusGeometry(radius, 0.025, 8, 88),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity, depthWrite: false }),
-    )
-    targetRing.position.copy(position)
-    targetRing.rotation.x = Math.PI / 2
-    this.mapRoot.add(targetRing)
-  }
-
   private addRoutes(): void {
     if (!this.snapshot) return
     const active = this.activeDestination()
@@ -1223,11 +1271,11 @@ export class SolarSystemMap {
     route.renderOrder = mode === 'active' ? 20 : selected ? 19 : 18
     this.mapRoot.add(route)
     const endBeacon = new THREE.Mesh(
-      new THREE.TorusGeometry(mode === 'active' ? 0.95 : selected ? 0.74 : 0.58, mode === 'active' ? 0.032 : 0.024, 8, 58),
-      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: stale ? 0.32 : mode === 'active' ? 0.9 : selected ? 0.76 : 0.48, depthWrite: false }),
+      new THREE.OctahedronGeometry(mode === 'active' ? 0.72 : selected ? 0.58 : 0.46, 0),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: stale ? 0.34 : mode === 'active' ? 0.94 : selected ? 0.82 : 0.55, depthWrite: false }),
     )
     endBeacon.position.copy(end)
-    endBeacon.lookAt(new THREE.Vector3())
+    endBeacon.renderOrder = mode === 'active' ? 24 : selected ? 23 : 22
     this.mapRoot.add(endBeacon)
     const activeNamedPlanet = mode === 'active' && target.id.startsWith('planet.')
     if (!activeNamedPlanet && (mode === 'active' || selected)) this.addLabel(target.name, end, mode === 'active' ? 'active' : 'selected', mode === 'active' ? 86 : 74)
@@ -1407,15 +1455,6 @@ export class SolarSystemMap {
     if (!this.selectedPreviewId) this.addLabel(this.selectedRegion.name, marker.position, 'region selected', 78)
   }
 
-  private addSelectionBeacon(): void {
-    if (!this.snapshot) return
-    const focus = this.currentFocusEntity()
-    if (!focus || focus.id === 'player') return
-    const pos = mapPosition(focus.worldPosition, this.snapshot.playerPosition)
-    const radius = visualRadius(focus.radius ?? 900, 0.95, 5.2) + 0.6
-    this.addTargetRing(pos, radius, focus.targetable ? 0xffc36d : 0xaee9ff, 0.44)
-  }
-
   private addLabel(text: string, pos: THREE.Vector3, variant: string, priority: number): void {
     if (!this.layers.labels) return
     if (this.labelBoxes.length >= MAX_ATLAS_LABELS && priority < 80) return
@@ -1515,14 +1554,24 @@ export class SolarSystemMap {
 
   private onPointerMove(event: PointerEvent): void {
     if (!this.isOpen) return
+    if (this.freeCamEnabled && this.freeCamLooking && (event.buttons & 1) === 1) {
+      this.updateFreeCameraLook(event.movementX, event.movementY)
+      this.freeCamLookMoved = true
+      this.setHovered(null)
+      return
+    }
     const hit = this.pick(event)
     this.setHovered(hit)
   }
 
   private onPointerUp(event: PointerEvent): void {
     if (!this.isOpen) return
+    const wasFreeCamLooking = this.freeCamLooking
+    const didFreeCamLookMove = this.freeCamLookMoved
+    this.freeCamLooking = false
+    this.freeCamLookMoved = false
     if (event.button !== 0) return
-    if (this.pointerDown.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 7) return
+    if (this.pointerDown.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 7 || (wasFreeCamLooking && didFreeCamLookMove)) return
     const hit = this.pick(event)
     if (hit) {
       this.selected = hit
@@ -1557,9 +1606,6 @@ export class SolarSystemMap {
     const rayHit = (hit?.userData.entityRoot as THREE.Object3D | undefined) ?? null
     if (rayHit) return rayHit
 
-    const orbitHit = this.pickOrbitTrack(event, rect)
-    if (orbitHit) return orbitHit
-
     const roots = new Set<THREE.Object3D>()
     let best: THREE.Object3D | null = null
     let bestD2 = 34 * 34
@@ -1578,64 +1624,6 @@ export class SolarSystemMap {
       if (d2 < bestD2) {
         bestD2 = d2
         best = root
-      }
-    }
-    return best
-  }
-
-  private pickOrbitTrack(event: MouseEvent | PointerEvent, rect: DOMRect): THREE.Object3D | null {
-    let best: THREE.Object3D | null = null
-    let bestD2 = 16 * 16
-    const a = new THREE.Vector3()
-    const b = new THREE.Vector3()
-    const seen = new Set<THREE.Object3D>()
-    for (const candidate of this.clickables) {
-      if (!(candidate instanceof THREE.Line)) continue
-      const root = candidate.userData.entityRoot as THREE.Object3D | undefined
-      const entity = root?.userData.entity as SolarMapEntity | undefined
-      if (!root || seen.has(root) || entity?.kind !== 'Orbit track') continue
-      seen.add(root)
-      const position = candidate.geometry.getAttribute('position')
-      if (!position || position.count < 2) continue
-      let prevX = 0
-      let prevY = 0
-      let prevVisible = false
-      for (let i = 0; i < position.count; i++) {
-        a.fromBufferAttribute(position, i)
-        candidate.localToWorld(a)
-        a.project(this.camera)
-        const visible = a.z >= -1 && a.z <= 1
-        const sx = (a.x * 0.5 + 0.5) * rect.width + rect.left
-        const sy = (-a.y * 0.5 + 0.5) * rect.height + rect.top
-        if (visible && prevVisible) {
-          const d2 = distanceToScreenSegmentSq(event.clientX, event.clientY, prevX, prevY, sx, sy)
-          if (d2 < bestD2) {
-            bestD2 = d2
-            best = root
-          }
-        }
-        prevX = sx
-        prevY = sy
-        prevVisible = visible
-      }
-      if (position.count > 2) {
-        a.fromBufferAttribute(position, 0)
-        b.fromBufferAttribute(position, position.count - 1)
-        candidate.localToWorld(a)
-        candidate.localToWorld(b)
-        a.project(this.camera)
-        b.project(this.camera)
-        if (a.z >= -1 && a.z <= 1 && b.z >= -1 && b.z <= 1) {
-          const ax = (a.x * 0.5 + 0.5) * rect.width + rect.left
-          const ay = (-a.y * 0.5 + 0.5) * rect.height + rect.top
-          const bx = (b.x * 0.5 + 0.5) * rect.width + rect.left
-          const by = (-b.y * 0.5 + 0.5) * rect.height + rect.top
-          const d2 = distanceToScreenSegmentSq(event.clientX, event.clientY, ax, ay, bx, by)
-          if (d2 < bestD2) {
-            bestD2 = d2
-            best = root
-          }
-        }
       }
     }
     return best
@@ -1666,7 +1654,7 @@ export class SolarSystemMap {
   private setHovered(next: THREE.Object3D | null): void {
     if (this.hovered === next) return
     this.hovered = next
-    this.renderer.domElement.style.cursor = next ? 'pointer' : 'grab'
+    this.renderer.domElement.style.cursor = next ? 'pointer' : this.freeCamEnabled ? 'crosshair' : 'grab'
   }
 
   private toggleLayer(layer: SolarMapLayerKey): void {
@@ -1704,6 +1692,7 @@ export class SolarSystemMap {
     this.controls.target.copy(world)
     this.camera.position.copy(world).addScaledVector(direction, distance)
     this.controls.update()
+    if (this.freeCamEnabled) this.syncFreeCameraAngles()
     if (announce) {
       this.actionStatus = `Focused ${focus.name}.`
       this.renderSummary()
@@ -2143,6 +2132,22 @@ export class SolarSystemMap {
       event.preventDefault()
       event.stopPropagation()
       this.close()
+      return
+    }
+    if (this.isFreeCameraMoveKey(event.code) || (this.freeCamEnabled && this.isFreeCameraExtraKey(event.code))) {
+      event.preventDefault()
+      event.stopPropagation()
+      this.freeCamKeys.add(event.code)
+      if (!this.freeCamEnabled && this.isFreeCameraMoveKey(event.code)) this.setFreeCamera(true)
+    }
+  }
+
+  private onKeyUp(event: KeyboardEvent): void {
+    if (!this.isOpen) return
+    if (this.isFreeCameraMoveKey(event.code) || this.isFreeCameraExtraKey(event.code) || this.freeCamKeys.has(event.code)) {
+      event.preventDefault()
+      event.stopPropagation()
+      this.freeCamKeys.delete(event.code)
     }
   }
 }
