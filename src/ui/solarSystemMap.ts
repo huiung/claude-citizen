@@ -424,6 +424,25 @@ function injectSolarMapStyles(): void {
       color: #d7ffe7; font: 18px/1 "Share Tech Mono", ui-monospace, monospace;
     }
     .solar-map-close:hover { background: rgba(24, 70, 42, .78); }
+    #solar-map * {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(174, 233, 255, .36) rgba(2, 10, 16, .22);
+    }
+    #solar-map *::-webkit-scrollbar {
+      width: 7px; height: 7px;
+    }
+    #solar-map *::-webkit-scrollbar-track {
+      background: rgba(2, 10, 16, .22);
+      border-radius: 999px;
+    }
+    #solar-map *::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, rgba(174, 233, 255, .48), rgba(159, 255, 176, .28));
+      border: 1px solid rgba(4, 18, 20, .72);
+      border-radius: 999px;
+    }
+    #solar-map *::-webkit-scrollbar-thumb:hover {
+      background: linear-gradient(180deg, rgba(215, 255, 231, .62), rgba(174, 233, 255, .4));
+    }
     .solar-map-panel {
       position: absolute; right: 18px; top: 76px; width: 330px; max-width: calc(100vw - 36px); z-index: 3;
       max-height: calc(100vh - 228px); overflow: auto;
@@ -487,9 +506,34 @@ function injectSolarMapStyles(): void {
     }
     .solar-map-toolbar button:hover:not(:disabled) { border-color: rgba(174, 233, 255, .55); background: rgba(18, 48, 58, .78); }
     .solar-map-toolbar button:disabled { opacity: .42; cursor: default; }
+    .solar-map-nav-section {
+      margin-top: 7px;
+    }
+    .solar-map-nav-section summary {
+      list-style: none; min-height: 26px; cursor: pointer; user-select: none;
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      border: 1px solid rgba(174, 233, 255, .14); border-radius: 6px;
+      background: rgba(2, 10, 16, .48); padding: 0 8px;
+      color: #f2fff7; font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase;
+    }
+    .solar-map-nav-section summary::-webkit-details-marker { display: none; }
+    .solar-map-nav-section summary::before {
+      content: '+'; width: 12px; color: rgba(174, 233, 255, .72); font-size: 12px;
+    }
+    .solar-map-nav-section[open] summary::before {
+      content: '-';
+    }
+    .solar-map-section-title {
+      flex: 1 1 auto; min-width: 0;
+    }
+    .solar-map-section-meta {
+      color: rgba(174, 233, 255, .62); font-size: 9px; letter-spacing: .7px; text-transform: none;
+    }
+    .solar-map-section-body {
+      margin-top: 6px;
+    }
     .solar-map-layer-controls {
-      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;
-      padding-top: 8px; border-top: 1px solid rgba(174, 233, 255, .12);
+      display: flex; flex-wrap: wrap; gap: 6px;
     }
     .solar-map-layer-controls button {
       min-height: 25px; padding: 0 9px; flex: 1 1 auto; min-width: 72px;
@@ -504,22 +548,17 @@ function injectSolarMapStyles(): void {
     .solar-map-status {
       min-height: 15px; margin-top: 8px; color: rgba(174, 233, 255, .78); font-size: 10px; letter-spacing: .7px;
     }
-    .solar-map-preview-head {
-      display: flex; align-items: center; justify-content: space-between; gap: 10px;
-      color: #f2fff7; font-size: 10px; letter-spacing: 1.7px; margin-bottom: 7px;
+    .solar-map-preview-command {
+      display: flex; justify-content: flex-end; margin-bottom: 6px;
     }
-    .solar-map-preview-head button {
+    .solar-map-preview-command button {
       min-height: 24px; padding: 0 8px; color: rgba(215, 255, 231, .82);
     }
     .solar-map-preview-list {
-      display: grid; gap: 5px; max-height: 104px; overflow: auto; padding-right: 2px;
-    }
-    .solar-map-contact-head {
-      margin: 9px 0 6px; padding-top: 8px; border-top: 1px solid rgba(174, 233, 255, .12);
-      color: #f2fff7; font-size: 10px; letter-spacing: 1.7px;
+      display: grid; gap: 5px; max-height: 96px; overflow: auto; padding-right: 3px;
     }
     .solar-map-contact-list {
-      display: grid; gap: 5px; max-height: 66px; overflow: auto; padding-right: 2px;
+      display: grid; gap: 5px; max-height: 62px; overflow: auto; padding-right: 3px;
     }
     .solar-map-contact-empty {
       border: 1px solid rgba(174, 233, 255, .1); border-radius: 6px;
@@ -734,17 +773,26 @@ export class SolarSystemMap {
         <div class="solar-map-toolbar-body">
           <div>
             <div class="solar-map-actions"></div>
-            <div class="solar-map-layer-controls" data-testid="solar-map-layer-controls"></div>
+            <details class="solar-map-nav-section solar-map-layer-section">
+              <summary><span class="solar-map-section-title">Layers</span><span class="solar-map-section-meta">visual filters</span></summary>
+              <div class="solar-map-section-body solar-map-layer-controls" data-testid="solar-map-layer-controls"></div>
+            </details>
             <div class="solar-map-status" aria-live="polite"></div>
           </div>
           <div class="solar-map-preview">
-            <div class="solar-map-preview-head">
-              <span>PREVIEW PATHS</span>
-              <button data-action="clear-previews" data-testid="solar-map-clear-previews">Clear All</button>
-            </div>
-            <div class="solar-map-preview-list" data-testid="solar-map-preview-list"></div>
-            <div class="solar-map-contact-head">PILOTS</div>
-            <div class="solar-map-contact-list" data-testid="solar-map-contact-list"></div>
+            <details class="solar-map-nav-section solar-map-preview-section" open>
+              <summary><span class="solar-map-section-title">Preview Paths</span><span class="solar-map-section-meta" data-testid="solar-map-preview-count">empty</span></summary>
+              <div class="solar-map-section-body">
+                <div class="solar-map-preview-command">
+                  <button data-action="clear-previews" data-testid="solar-map-clear-previews">Clear All</button>
+                </div>
+                <div class="solar-map-preview-list" data-testid="solar-map-preview-list"></div>
+              </div>
+            </details>
+            <details class="solar-map-nav-section solar-map-contact-section">
+              <summary><span class="solar-map-section-title">Pilots</span><span class="solar-map-section-meta" data-testid="solar-map-contact-count">0 live</span></summary>
+              <div class="solar-map-section-body solar-map-contact-list" data-testid="solar-map-contact-list"></div>
+            </details>
           </div>
         </div>
       </div>
@@ -2114,6 +2162,8 @@ export class SolarSystemMap {
 
   private renderPreviewRoutes(): void {
     const clearButton = this.root.querySelector('[data-action="clear-previews"]') as HTMLButtonElement | null
+    const countEl = this.root.querySelector('[data-testid="solar-map-preview-count"]') as HTMLElement | null
+    if (countEl) countEl.textContent = this.previewRoutes.length ? `${this.previewRoutes.length} leg${this.previewRoutes.length === 1 ? '' : 's'}` : 'empty'
     if (clearButton) clearButton.disabled = this.previewRoutes.length === 0
     if (!this.previewRoutes.length) {
       this.previewListEl.innerHTML = '<div class="solar-map-preview-empty">No preview paths charted.</div>'
@@ -2145,10 +2195,13 @@ export class SolarSystemMap {
   }
 
   private renderContactList(): void {
+    const countEl = this.root.querySelector('[data-testid="solar-map-contact-count"]') as HTMLElement | null
     if (!this.layers.contacts) {
+      if (countEl) countEl.textContent = 'hidden'
       this.contactsListEl.innerHTML = '<div class="solar-map-contact-empty">Pilot layer hidden.</div>'
       return
     }
+    if (countEl) countEl.textContent = `${this.snapshot?.remotes.length ?? 0} live`
     if (!this.snapshot?.remotes.length) {
       this.contactsListEl.innerHTML = '<div class="solar-map-contact-empty">No pilot contacts.</div>'
       return
