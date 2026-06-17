@@ -4,6 +4,10 @@
 import { readFileSync, writeFileSync } from 'fs'
 import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
+import {
+  verifySignature, createChallengeStore, createSessionStore,
+  resolveClaim, issueChallenge,
+} from './auth.mjs'
 
 const PORT = process.env.PORT ?? 8080
 const STORE_FILE = process.env.STORE_FILE ?? './progress.json'
@@ -13,7 +17,14 @@ const AOI_RADIUS = 3000
 const AOI_RADIUS2 = AOI_RADIUS * AOI_RADIUS
 
 let nextColor = 0
-const clients = new Map() // ws -> { id, name, color, p, q, token }
+const clients = new Map() // ws -> { id, name, color, p, q, token, active, authed, pubkey }
+
+/** If a hello/join carried a valid sessionId, restore the verified pubkey onto the client. */
+function applySession(client, sessionId) {
+  if (!sessionId) return
+  const pubkey = sessions.resolve(String(sessionId).slice(0, 64))
+  if (pubkey) { client.authed = true; client.pubkey = pubkey }
+}
 
 // HTTP server: a /stats endpoint for the landing page + the WebSocket upgrade.
 const httpServer = createServer((req, res) => {
@@ -38,6 +49,15 @@ const httpServer = createServer((req, res) => {
   res.end('star-citizen-caliber relay')
 })
 const wss = new WebSocketServer({ server: httpServer })
+
+// Wallet auth: short-lived nonce challenges + verified-session lookup (in-memory).
+const challenges = createChallengeStore()
+const sessions = createSessionStore()
+
+/** The progress key for a client: verified pubkey if authed, else the raw token. */
+function identityKey(client) {
+  return client.authed && client.pubkey ? client.pubkey : client.token
+}
 
 // --- Token-keyed progress store (anonymous, no accounts)
 let store = {}
@@ -89,11 +109,15 @@ wss.on('connection', (ws) => {
     // a peer (no ship, never broadcast). Promoted to an active pilot on 'join' (LAUNCH).
     if (msg.t === 'hello' && !clients.has(ws)) {
       const token = typeof msg.token === 'string' ? msg.token.slice(0, 64) : null
-      clients.set(ws, {
+      const client = {
         id: Math.random().toString(36).slice(2, 10),
-        name: null, color: -1, p: [0, 0, 0], q: [0, 0, 0, 1], token, active: false,
-      })
-      if (token && !(token in store)) { store[token] = null; flush() } // seen → counts as registered
+        name: null, color: -1, p: [0, 0, 0], q: [0, 0, 0, 1], token,
+        active: false, authed: false, pubkey: null,
+      }
+      applySession(client, msg.sessionId)
+      clients.set(ws, client)
+      const key = identityKey(client)
+      if (key && !(key in store)) { store[key] = null; flush() } // seen → counts as registered
       console.log(`[hello] viewer — ${clients.size} online`)
       return
     }
@@ -111,25 +135,28 @@ wss.on('connection', (ws) => {
         client = {
           id: Math.random().toString(36).slice(2, 10),
           name: String(msg.name ?? 'PILOT').slice(0, 16),
-          color: nextColor++, p: [0, 0, 0], q: [0, 0, 0, 1], token, active: true,
+          color: nextColor++, p: [0, 0, 0], q: [0, 0, 0, 1], token,
+          active: true, authed: false, pubkey: null,
         }
         clients.set(ws, client)
       }
-      // Single session per token — kick any other live pilot signed in on the same code.
-      if (client.token) {
+      if (!client.authed) applySession(client, msg.sessionId)
+      const key = identityKey(client)
+      // Single live session per identity — kick any other live pilot on the same key.
+      if (key) {
         for (const [ws2, c2] of clients) {
-          if (ws2 !== ws && c2.active && c2.token === client.token) {
+          if (ws2 !== ws && c2.active && identityKey(c2) === key) {
             try { ws2.send(JSON.stringify({ t: 'kicked' })) } catch { /* already gone */ }
             ws2.close()
           }
         }
       }
       // Only active pilots are peers (have ships).
-      const peers = [...clients.values()].filter((c) => c.active && c !== client).map(({ token: _t, active: _a, ...rest }) => rest)
+      const peers = [...clients.values()].filter((c) => c.active && c !== client).map(({ token: _t, active: _a, authed: _au, pubkey: _pk, ...rest }) => rest)
       ws.send(JSON.stringify({ t: 'welcome', id: client.id, peers }))
-      if (client.token) {
-        if (store[client.token]) ws.send(JSON.stringify({ t: 'progress', data: store[client.token] }))
-        else if (!(client.token in store)) { store[client.token] = null; flush() }
+      if (key) {
+        if (store[key]) ws.send(JSON.stringify({ t: 'progress', data: store[key] }))
+        else if (!(key in store)) { store[key] = null; flush() }
       }
       broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q })
       console.log(`[join] ${client.name} (${client.id})${client.token ? ' +token' : ''} — ${clients.size} online`)
@@ -138,6 +165,38 @@ wss.on('connection', (ws) => {
 
     const client = clients.get(ws)
     if (!client) return
+
+    if (msg.t === 'auth-challenge') {
+      if (client.authed) return // already verified — don't re-challenge a live identity
+      const pubkey = typeof msg.pubkey === 'string' ? msg.pubkey.slice(0, 64) : null
+      if (!pubkey) return
+      const { message } = issueChallenge(challenges, pubkey, Date.now())
+      ws.send(JSON.stringify({ t: 'challenge', message }))
+      return
+    }
+
+    if (msg.t === 'auth') {
+      if (client.authed) { ws.send(JSON.stringify({ t: 'auth-error' })); return } // no identity swap on a live connection
+      const pubkey = typeof msg.pubkey === 'string' ? msg.pubkey.slice(0, 64) : null
+      const signature = typeof msg.signature === 'string' ? msg.signature.slice(0, 128) : null
+      const anonToken = typeof msg.anonToken === 'string' ? msg.anonToken.slice(0, 64) : null
+      if (!pubkey || !signature) { ws.send(JSON.stringify({ t: 'auth-error' })); return }
+
+      const ch = challenges.consume(pubkey, Date.now())
+      if (!ch || !verifySignature(ch.message, signature, pubkey)) {
+        ws.send(JSON.stringify({ t: 'auth-error' }))
+        return
+      }
+      // Verified. Bind this connection to the pubkey and run the claim.
+      client.authed = true
+      client.pubkey = pubkey
+      resolveClaim(store, pubkey, anonToken)
+      flush()
+      const sessionId = sessions.create(pubkey)
+      ws.send(JSON.stringify({ t: 'auth-ok', pubkey, sessionId }))
+      if (store[pubkey]) ws.send(JSON.stringify({ t: 'progress', data: store[pubkey] }))
+      return
+    }
 
     if (msg.t === 'state' && client.active && Array.isArray(msg.p) && Array.isArray(msg.q)) {
       client.p = msg.p.slice(0, 3).map(Number)
@@ -153,9 +212,11 @@ wss.on('connection', (ws) => {
       return
     }
 
-    if (msg.t === 'save' && client.token) {
+    if (msg.t === 'save') {
+      const key = identityKey(client)
+      if (!key) return
       const clean = sanitizeProgress(msg.progress)
-      if (clean) { clean.name = client.name; store[client.token] = clean; flush() } // stamp callsign for the leaderboard
+      if (clean) { clean.name = client.name; store[key] = clean; flush() } // stamp callsign for the leaderboard
       return
     }
 
