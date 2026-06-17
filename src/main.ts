@@ -266,11 +266,15 @@ buildLights(scene)
 // Mineable ore — a dynamic pool that follows the player: depleted or distant rocks are
 // removed and fresh veins respawn nearby, so no single spot is an infinite mine.
 const field = createAsteroidField([])
-const rockMeshes = new Map<string, { mesh: THREE.Group; initial: number }>()
+const rockMeshes = new Map<string, { mesh: THREE.Group; initial: number; rare: boolean }>()
 const ORE_TARGET = 7   // rocks kept near the player
 const ORE_NEAR = 200   // closest a fresh vein spawns
 const ORE_FAR = 850    // farthest
 const ORE_CULL = 1200  // remove rocks beyond this from the player
+// Deep space: effects (rare veins, danger) ramp with distance from origin, peaking at DEEP_REF.
+const DEEP_REF = 60000
+const ORE_RARE_BONUS = 150 // bonus credits per unit mined from a rare (gold) vein
+function deepFactor(): number { return Math.min(1, ship.position.length() / DEEP_REF) }
 let oreSeq = 0
 let lastOreStream = 0
 const _oreDir = new THREE.Vector3()
@@ -279,13 +283,17 @@ function spawnOreSite(): void {
   const r = ORE_NEAR + Math.random() * (ORE_FAR - ORE_NEAR)
   _oreDir.set(Math.cos(a) * r, (Math.random() - 0.5) * 120, Math.sin(a) * r)
   const id = `ore-${oreSeq++}`
-  const reserves = 10 + Math.floor(Math.random() * 13) // a fraction of a hold — fill up across a few veins, not one
+  // Deeper space mixes in rare gold veins — richer reserves + a credit jackpot when mined.
+  const rare = Math.random() < deepFactor() * 0.55
+  const reserves = rare
+    ? 24 + Math.floor(Math.random() * 20) // richer
+    : 10 + Math.floor(Math.random() * 13)
   const pos = ship.position.clone().add(_oreDir)
   field.asteroids.push({ id, position: pos, reserves })
-  const mesh = buildMineableAsteroid()
+  const mesh = buildMineableAsteroid(rare)
   mesh.position.copy(pos)
   scene.add(mesh)
-  rockMeshes.set(id, { mesh, initial: reserves })
+  rockMeshes.set(id, { mesh, initial: reserves, rare })
 }
 function streamOre(): void {
   for (let i = field.asteroids.length - 1; i >= 0; i--) {
@@ -635,10 +643,12 @@ function damageFlash(): void {
 }
 
 function spawnPirateWave(now: number): void {
-  if (pirates.length >= MAX_PIRATES) return
+  const depth = deepFactor()
+  if (pirates.length >= MAX_PIRATES + Math.round(depth * 2)) return // up to +2 more in deep space
   if (inSafeZone(ship.position)) return
   const pos = spawnPositionAround(ship.position, 600, pirateSpawnCount++)
-  const pirate = spawnPirate(`pir-${pirateSpawnCount}`, pos)
+  // Deeper space: tankier pirates worth a bigger bounty (risk scales with reward).
+  const pirate = spawnPirate(`pir-${pirateSpawnCount}`, pos, 1 + depth * 1.6, Math.round(PIRATE_REWARD * (1 + depth * 2)))
   pirates.push(pirate)
   const mesh = buildCraft('interceptor', 0xc0392b)
   mesh.position.copy(pos)
@@ -1425,17 +1435,18 @@ function frame(now: number): void {
     const mineResult = mineStep(field, ship.position, econ, dt, miningActive, effCargo(), miningYield(upgrades))
     if (mineResult.mined > 0 && mineResult.asteroid) {
       if (!minedEver) markOnboard('scc.ob.mined', (v) => { minedEver = v }) // onboarding step 1
-      updateWalletHUD()
       const rm = rockMeshes.get(mineResult.asteroid.id)
+      if (rm?.rare) gainCredits(econ, mineResult.mined * ORE_RARE_BONUS) // rare vein jackpot, on top of the ORE
+      updateWalletHUD()
       if (rm) {
         const ratio = Math.max(0, mineResult.asteroid.reserves / rm.initial)
         rm.mesh.scale.setScalar(0.3 + 0.7 * ratio)
         if (mineResult.asteroid.reserves <= 0) rm.mesh.visible = false
       }
-      // Accumulate mined ORE into periodic floating "+N ORE" cues.
+      // Accumulate mined ORE into periodic floating "+N ORE" cues (gold for a rare vein).
       oreAccum += mineResult.mined
       if (now - lastFloat > 500 && oreAccum >= 1) {
-        spawnFloat(`+${Math.floor(oreAccum)} ORE`, mineResult.asteroid.position, now)
+        spawnFloat(`+${Math.floor(oreAccum)} ORE`, mineResult.asteroid.position, now, rm?.rare ? '#ffd24d' : undefined)
         oreAccum -= Math.floor(oreAccum)
         lastFloat = now
       }
@@ -1512,7 +1523,7 @@ function frame(now: number): void {
         const p = pirates[i]
         spawnExplosion(p.position, now)
         audio.blip('explosion')
-        gainCredits(econ, PIRATE_REWARD)
+        gainCredits(econ, p.reward)
         finishOnboarding() // graduates the onboarding objective
         refreshWallet()
         spawnLoot(p.position) // drop a loot crate where it died

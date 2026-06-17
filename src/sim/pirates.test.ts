@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Vector3 } from 'three'
 import { isDead } from './combat'
 import {
-  PIRATE_ENGAGE_RANGE, PIRATE_HULL, PIRATE_STANDOFF, spawnPirate, spawnPositionAround, stepPirate,
+  PIRATE_ENGAGE_RANGE, PIRATE_HULL, PIRATE_REWARD, PIRATE_STANDOFF, spawnPirate, spawnPositionAround, stepPirate,
 } from './pirates'
 
 describe('spawnPirate', () => {
@@ -11,6 +11,18 @@ describe('spawnPirate', () => {
     expect(p.health.hull).toBe(PIRATE_HULL)
     expect(isDead(p.health)).toBe(false)
     expect(p.weapon.cooldown).toBe(0)
+  })
+
+  it('defaults to base hull and reward', () => {
+    const p = spawnPirate('p1', new Vector3())
+    expect(p.health.hull).toBe(PIRATE_HULL)
+    expect(p.reward).toBe(PIRATE_REWARD)
+  })
+
+  it('scales hull and reward for deep-space spawns', () => {
+    const deep = spawnPirate('p2', new Vector3(), 2, 600)
+    expect(deep.health.hull).toBe(Math.round(PIRATE_HULL * 2))
+    expect(deep.reward).toBe(600)
   })
 })
 

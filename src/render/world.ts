@@ -148,11 +148,12 @@ export const MINEABLE_SITES: ReadonlyArray<{ id: string; position: THREE.Vector3
   { id: 'rock-3', position: new THREE.Vector3(160, -20, -240), reserves: 300 },
 ]
 
-/** A large, visually distinct mineable rock with glowing ORE veins. Caller positions/scales it. */
-export function buildMineableAsteroid(): THREE.Group {
+/** A large, visually distinct mineable rock with glowing ORE veins. Caller positions/scales it.
+ *  `rare` swaps the cyan veins for a gold glow — a high-value deep-space jackpot vein. */
+export function buildMineableAsteroid(rare = false): THREE.Group {
   const group = new THREE.Group()
-  const rand = mulberry32(99)
-  const rockMat = makeAsteroidMaterial(99, 0x5a5048, 256)
+  const rand = mulberry32(rare ? 137 : 99)
+  const rockMat = makeAsteroidMaterial(rare ? 137 : 99, rare ? 0x6b5a3a : 0x5a5048, 256)
   const geo = new THREE.IcosahedronGeometry(20, 3)
   const pos = geo.getAttribute('position') as THREE.BufferAttribute
   const v = new THREE.Vector3()
@@ -170,12 +171,12 @@ export function buildMineableAsteroid(): THREE.Group {
   geo.computeVertexNormals()
   group.add(new THREE.Mesh(geo, rockMat))
 
-  // Glowing ORE veins so pilots can spot a mineable rock at a glance.
-  const veinMat = makeOreMaterial(4099, 0x4fd0e0)
+  // Glowing ORE veins so pilots can spot a mineable rock at a glance — gold if it's a rare vein.
+  const veinMat = makeOreMaterial(rare ? 4137 : 4099, rare ? 0xffc24d : 0x4fd0e0)
   const glowMat = new THREE.MeshBasicMaterial({
-    color: 0x76f4ff,
+    color: rare ? 0xffd870 : 0x76f4ff,
     transparent: true,
-    opacity: 0.18,
+    opacity: rare ? 0.26 : 0.18,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   })

@@ -21,15 +21,19 @@ export interface Pirate {
   velocity: Vector3
   health: Health
   weapon: Weapon
+  /** Credits paid for killing this pirate (richer the deeper it spawned). */
+  reward: number
 }
 
-export function spawnPirate(id: string, position: Vector3): Pirate {
+/** `hullMul` toughens deep-space pirates; `reward` overrides the kill payout. */
+export function spawnPirate(id: string, position: Vector3, hullMul = 1, reward = PIRATE_REWARD): Pirate {
   return {
     id,
     position: position.clone(),
     velocity: new Vector3(),
-    health: createHealth(PIRATE_HULL),
+    health: createHealth(Math.round(PIRATE_HULL * hullMul)),
     weapon: createWeapon(PIRATE_FIRE_INTERVAL),
+    reward,
   }
 }
 
