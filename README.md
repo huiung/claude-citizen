@@ -45,16 +45,16 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **A named solar system:** Sun + Mercury through Saturn at a compressed scale, each with a procedurally textured surface (oceans/continents, gas bands, ice caps) — and they're solid, so you fly *around* them, not through
 - **Quantum travel:** pick a destination with `[N]` or open the **Solar Atlas** with `[M]` and click a planet, charge the drive, and jump to any planet in the system — warp streaks, a wide-FOV cruise, and a named arrival
 - **A cinematic sky:** bloom glow, fresnel planet atmospheres, a procedural nebula backdrop, slowly rotating worlds, and parallax dust that streams past for a sense of speed
-- **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor (detailed 3D models), each trading cargo/speed/toughness
+- **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor (detailed 3D models), each trading cargo/speed/toughness, unlocked as you climb the ranks
 - **A capital ship:** a procedural dreadnought ~120× your fighter, its hull aglow with hundreds of windows — fly its length for the scale
 - **Game feel:** a chase camera that carries G-force weight, a boost ignition punch (FOV kick + exhaust flare + whoosh), and an air-rush layer that swells with speed
 - **Combat HUD:** target brackets + range, off-screen threat arrows (know where you're being shot from), and a lead indicator so you can actually land hits on pirates
 - **A leaderboard:** top pilots by credits — on the landing screen and in-game (`[L]`)
-- **Pilot ranks:** climb six credit-based ranks (Cadet → Admiral) — a HUD progress track, a promotion banner when you level up, and rank tags on the leaderboard
+- **Pilot ranks:** six tiers (Cadet → Admiral) earned by *lifetime* credits, so spending never demotes you — each rank brings a growing **earnings bonus** (+0% → +50% on every payout) and **unlocks new ships**, so there's always a reason to keep flying. HUD progress track, promotion banner, and rank tags on the leaderboard
 - Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
 - **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours. Grab a **Pilot Code** to restore your pilot on another device (one live session per code)
-- 138 tests, because "built with AI" shouldn't mean "built badly"
+- 145 tests, because "built with AI" shouldn't mean "built badly"
 
 ## Controls
 
