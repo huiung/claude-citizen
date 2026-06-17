@@ -915,7 +915,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyN' && running && !docked && quantum.phase === 'idle') {
     customJumpDestination = null
     selectedJumpIdx = (selectedJumpIdx + 1) % PLANETS.length // cycle the quantum destination
-    audio.blip('dock')
+    audio.blip('nav')
   }
   if (e.code === 'KeyL' && running && !docked) {
     const willShow = leaderboardPanelEl.hidden
@@ -928,7 +928,7 @@ addEventListener('keydown', (e) => {
       const started = startTravel(quantum, dest.position)
       if (started.ok) {
         jumpTargetName = dest.name
-        audio.blip('dock')
+        audio.blip('nav')
       }
     } else {
       cancelTravel(quantum)
@@ -1416,7 +1416,7 @@ function frame(now: number): void {
       ? `QUANTUM SPOOLING → ${jumpTargetName}…`
       : `QUANTUM TRAVEL → ${jumpTargetName} · ${Math.round(qr.progress * 100)}%`
     navHintEl.textContent = ''
-    audio.setThrust(qr.phase === 'traveling' ? 1 : 0.2, qr.phase === 'traveling', qr.phase === 'traveling' ? 1.4 : 0)
+    audio.setThrust(qr.phase === 'traveling' ? 0.75 : 0.2, qr.phase === 'traveling', qr.phase === 'traveling' ? 0.95 : 0)
     net.sendState(
       [ship.position.x, ship.position.y, ship.position.z],
       [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],

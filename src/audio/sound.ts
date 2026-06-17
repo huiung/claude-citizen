@@ -51,7 +51,7 @@ export function miningToGain(active: boolean, inRange: boolean): number {
 }
 
 /** One-shot UI / combat cue kinds. */
-export type BlipKind = 'dock' | 'trade' | 'error' | 'fire' | 'hit' | 'explosion' | 'boost'
+export type BlipKind = 'dock' | 'trade' | 'error' | 'fire' | 'hit' | 'explosion' | 'boost' | 'nav'
 
 interface AssetBlipSpec {
   /** Public URLs for short one-shot variants. */
@@ -87,6 +87,8 @@ export const BLIP_SPECS: Record<BlipKind, BlipSpec> = {
   explosion: { from: 160, to: 40, peak: 0.24, dur: 0.5, type: 'sawtooth' },
   // rising whoosh on boost ignition
   boost: { from: 180, to: 560, peak: 0.14, dur: 0.28, type: 'sawtooth' },
+  // soft, quiet UI tick — cycling the quantum destination / spooling a jump
+  nav: { from: 540, to: 600, peak: 0.06, dur: 0.07, type: 'sine' },
 }
 
 /** CC0 Kenney sci-fi sounds for short event cues. Continuous audio stays procedural. */
