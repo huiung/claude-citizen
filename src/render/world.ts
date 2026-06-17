@@ -125,15 +125,16 @@ function makeAtmosphere(radius: number, atmoColor: number, power: number): THREE
   return new THREE.Mesh(new THREE.SphereGeometry(radius * 1.06, 48, 32), mat)
 }
 
+// Spawn-side backdrop world — a textured Mars-type planet, up and to the side of the -z
+// sightline so it doesn't crowd the named planets. Exported so collision + the atmosphere
+// veil treat it like any other planet.
+export const SPAWN_PLANET = { position: new THREE.Vector3(12800, 5400, 400), radius: 2200, surface: 'mars' as SurfaceKind }
+
 export function buildPlanet(): THREE.Group {
   const group = new THREE.Group()
-  // Spawn-side backdrop world — a textured Mars-type planet, kept distinct from the
-  // named Earth far out in the system so the two don't read as duplicates.
-  group.add(makePlanetSurface(2200, 0xc25433, 'mars', 7, 6, 1.2))
-  group.add(makeAtmosphere(2200, 0x9fb4c8, 3.2))
-  // Well off the -z spawn sightline (up and to the side) so it doesn't crowd the named
-  // planets/Sun in the first view — a side landmark, not part of the "planet showcase".
-  group.position.set(12800, 5400, 400)
+  group.add(makePlanetSurface(SPAWN_PLANET.radius, 0xc25433, SPAWN_PLANET.surface, 7, 6, 1.2))
+  group.add(makeAtmosphere(SPAWN_PLANET.radius, 0x9fb4c8, 3.2))
+  group.position.copy(SPAWN_PLANET.position)
   return group
 }
 

@@ -12,7 +12,7 @@ import { nextRank, rankForCredits, rankProgress } from './sim/ranks'
 import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
   buildCapitalShip, buildDustField, buildLootCrate, buildNebula, buildSolarPlanet, buildStarfield, buildStation,
-  buildSun, buildWarpField, COLONY_POS, REFINERY_POS, updateDustField, updateWarpField,
+  buildSun, buildWarpField, COLONY_POS, REFINERY_POS, SPAWN_PLANET, updateDustField, updateWarpField,
 } from './render/world'
 import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS } from './sim/solarSystem'
 import { NetClient, type PeerState, type PlayerProgress } from './net/client'
@@ -67,6 +67,7 @@ const rankNextEl = document.getElementById('rank-next')!
 const promotionEl = document.getElementById('promotion')!
 const depthLabelEl = document.getElementById('depth-label')!
 const depthBarEl = document.getElementById('depth-bar')!
+const atmoVeilEl = document.getElementById('atmo-veil')!
 let lastRankIndex = -1 // -1 until first HUD update, so we don't announce a "promotion" on load
 let promoTimer: ReturnType<typeof setTimeout> | undefined
 function showPromotion(name: string): void {
@@ -614,7 +615,7 @@ function resolvePlanetCollisions(): void {
     }
   }
   hit(SUN_POSITION.x, SUN_POSITION.y, SUN_POSITION.z, SUN_RADIUS)
-  for (const p of PLANETS) hit(p.position.x, p.position.y, p.position.z, p.radius)
+  for (const p of [...PLANETS, SPAWN_PLANET]) hit(p.position.x, p.position.y, p.position.z, p.radius)
 }
 
 const boltGeo = new THREE.SphereGeometry(0.45, 6, 6)
@@ -1328,6 +1329,32 @@ let last = performance.now()
 
 // --- Minimap (top-down radar, north-up, player-centered)
 const MAP_RANGE = 4500 // world units from player to minimap edge
+function atmoColorFor(surface: string): string {
+  return surface === 'earth' ? '#88bbff'
+    : surface === 'venus' ? '#e8c070'
+    : surface === 'mars' ? '#d98a5a'
+    : surface === 'gas' ? '#d8c0a0'
+    : '#9fb4c8'
+}
+
+// Atmospheric-entry veil: the closer you get to a planet's surface, the more the screen
+// edges glow with that planet's air color — a sense of descending into the atmosphere.
+function updateAtmoVeil(): void {
+  let prox = 0
+  let surface = 'rocky'
+  for (const p of [...PLANETS, SPAWN_PLANET]) {
+    const d = ship.position.distanceTo(p.position)
+    const pr = 1 - Math.min(1, Math.max(0, (d - p.radius * 1.06) / (p.radius * 1.6)))
+    if (pr > prox) { prox = pr; surface = p.surface }
+  }
+  if (prox > 0.01) {
+    atmoVeilEl.style.opacity = String(Math.min(0.7, prox * 0.7))
+    atmoVeilEl.style.boxShadow = `inset 0 0 ${Math.round(120 + prox * 130)}px ${Math.round(20 + prox * 60)}px ${atmoColorFor(surface)}`
+  } else {
+    atmoVeilEl.style.opacity = '0'
+  }
+}
+
 function updateDepthHUD(): void {
   const df = deepFactor()
   let label: string, color: string
@@ -1560,6 +1587,7 @@ function frame(now: number): void {
     updateCamera(dt)
     drawMinimap()
     updateDepthHUD()
+    updateAtmoVeil()
   } else {
     // Menu background: slow orbit around the station
     const t = now * 0.0001
