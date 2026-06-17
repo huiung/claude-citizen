@@ -1,7 +1,7 @@
 // Delivery contracts — pure logic, no rendering, no DOM. Tested in contracts.test.ts.
 // Haul missions: deliver N units of a commodity from one outpost to another for credits.
 
-import { COMMODITIES, type CommodityId, type Outpost, type PlayerEconomy } from './economy'
+import { COMMODITIES, type CommodityId, gainCredits, type Outpost, type PlayerEconomy } from './economy'
 
 export type ContractStatus = 'offered' | 'accepted' | 'completed' | 'abandoned'
 
@@ -114,7 +114,7 @@ export function completeContract(
     return { ok: false, reason: 'insufficient-cargo' }
   }
   econ.cargo[contract.commodity] -= contract.qty
-  econ.credits += contract.reward
+  gainCredits(econ, contract.reward)
   contract.status = 'completed'
   return { ok: true, reward: contract.reward }
 }

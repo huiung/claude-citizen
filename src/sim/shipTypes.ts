@@ -70,6 +70,15 @@ export const SHIP_STATS: Record<ShipType, ShipStat> = {
 /** All hull types in catalog order. */
 export const SHIP_TYPES: ShipType[] = ['hauler', 'fighter', 'miner', 'interceptor']
 
+/** Minimum rank index (see ranks.ts RANKS) required to buy each hull. Hauler is the
+ *  stock ship (Cadet); the rest unlock as you climb, so rank gates the lineup. */
+export const SHIP_RANK_REQ: Record<ShipType, number> = {
+  hauler: 0,      // Cadet
+  fighter: 1,     // Ensign
+  miner: 2,       // Pilot
+  interceptor: 3, // Ace
+}
+
 /** Stat block for a hull. */
 export function shipStats(type: ShipType): ShipStat {
   return SHIP_STATS[type]

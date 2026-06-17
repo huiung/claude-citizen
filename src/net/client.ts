@@ -13,6 +13,7 @@ export interface PeerState {
 /** The small progress blob the server persists per anonymous token. */
 export interface PlayerProgress {
   credits: number
+  earned: number
   cargo: { ORE: number; ALLOY: number }
   upgrades: { cargo: number; speed: number; boost: number; mining: number }
   hangar: { selected: string; owned: string[] }

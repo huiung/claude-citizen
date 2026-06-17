@@ -17,7 +17,7 @@ import {
 import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS } from './sim/solarSystem'
 import { NetClient, type PeerState, type PlayerProgress } from './net/client'
 import { dockableTarget, type DockTarget } from './sim/docking'
-import { cargoUsed, loadEconomy, OUTPOSTS, saveEconomy } from './sim/economy'
+import { cargoUsed, gainCredits, loadEconomy, OUTPOSTS, saveEconomy } from './sim/economy'
 import { createAsteroidField, mineStep } from './sim/mining'
 import { createMarket, step as marketStep } from './sim/market'
 import { generateContracts } from './sim/contracts'
@@ -165,10 +165,10 @@ let statsTimer: ReturnType<typeof setInterval> | undefined
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c)
 }
-function renderLeaderboard(listEl: HTMLElement, rows: Array<{ name: string; credits: number }>): void {
+function renderLeaderboard(listEl: HTMLElement, rows: Array<{ name: string; earned: number }>): void {
   if (!rows.length) { listEl.innerHTML = '<li class="lb-empty">no pilots yet — be the first</li>'; return }
   listEl.innerHTML = rows.map((r, i) => {
-    const cr = Number(r.credits) || 0
+    const cr = Number(r.earned) || 0
     return `<li><span class="rank">${i + 1}</span><span class="nm">${escapeHtml(String(r.name))}</span>`
       + `<span class="cr">[${rankForCredits(cr).name}] ${cr.toLocaleString()} cr</span></li>`
   }).join('')
@@ -759,9 +759,9 @@ function updateWalletHUD(): void {
   creditsEl.textContent = String(Math.floor(econ.credits))
   cargoEl.textContent = `${Math.floor(cargoUsed(econ))}/${effCargo()}`
   // Rank: name + progress to next, with a one-shot promotion banner when it climbs.
-  const rank = rankForCredits(econ.credits)
-  rankNameEl.textContent = rank.name
-  rankBarEl.style.width = `${Math.round(rankProgress(econ.credits) * 100)}%`
+  const rank = rankForCredits(econ.earned)
+  rankNameEl.textContent = rank.bonus > 0 ? `${rank.name} +${Math.round(rank.bonus * 100)}%` : rank.name
+  rankBarEl.style.width = `${Math.round(rankProgress(econ.earned) * 100)}%`
   const nxt = nextRank(rank)
   rankNextEl.textContent = nxt ? `→ ${nxt.name} (${nxt.min.toLocaleString()})` : 'MAX'
   if (lastRankIndex >= 0 && rank.index > lastRankIndex) showPromotion(rank.name)
@@ -771,6 +771,7 @@ function updateWalletHUD(): void {
 function currentProgress(): PlayerProgress {
   return {
     credits: econ.credits,
+    earned: econ.earned,
     cargo: { ORE: econ.cargo.ORE, ALLOY: econ.cargo.ALLOY },
     upgrades: { cargo: upgrades.tiers.cargo, speed: upgrades.tiers.speed, boost: upgrades.tiers.boost, mining: upgrades.tiers.mining },
     hangar: { selected: selectedShipType, owned: [...ownedShips] },
@@ -965,6 +966,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', playerToken, {
   onProgress(p) {
     // Server is the source of truth — adopt saved progress when it arrives.
     econ.credits = p.credits
+    econ.earned = p.earned ?? p.credits // migration: pre-earned saves seed lifetime from balance
     econ.cargo.ORE = p.cargo.ORE
     econ.cargo.ALLOY = p.cargo.ALLOY
     upgrades.tiers.cargo = p.upgrades.cargo
@@ -1157,7 +1159,7 @@ function updateLootCrates(now: number, dt: number): void {
     loot.mesh.rotation.x += 0.8 * dt
     const d = loot.mesh.position.distanceTo(ship.position)
     if (d < LOOT_PICKUP) {
-      econ.credits += loot.value
+      gainCredits(econ, loot.value)
       refreshWallet()
       spawnFloat(`+${loot.value} cr`, loot.mesh.position, now, loot.rare ? '#ffd24d' : '#ffe08a')
       audio.blip('trade')
@@ -1510,7 +1512,7 @@ function frame(now: number): void {
         const p = pirates[i]
         spawnExplosion(p.position, now)
         audio.blip('explosion')
-        econ.credits += PIRATE_REWARD
+        gainCredits(econ, PIRATE_REWARD)
         finishOnboarding() // graduates the onboarding objective
         refreshWallet()
         spawnLoot(p.position) // drop a loot crate where it died

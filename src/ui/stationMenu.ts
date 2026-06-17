@@ -8,7 +8,8 @@ import {
   type UpgradeTrack,
 } from '../sim/upgrades'
 import { abandon, accept, completeContract, type Contract } from '../sim/contracts'
-import { SHIP_STATS, SHIP_TYPES, type ShipType } from '../sim/shipTypes'
+import { SHIP_RANK_REQ, SHIP_STATS, SHIP_TYPES, type ShipType } from '../sim/shipTypes'
+import { rankForCredits, RANKS } from '../sim/ranks'
 import type { GameAudio } from '../audio/sound'
 
 const COMMODITY_ORDER: CommodityId[] = ['ORE', 'ALLOY']
@@ -285,12 +286,15 @@ export class StationMenu {
 
   private renderShipyard(): void {
     const current = this.ctx.selectedShip()
+    const rankIdx = rankForCredits(this.ctx.econ.earned).index
     for (const type of SHIP_TYPES) {
       const s = SHIP_STATS[type]
       const owned = this.ctx.ownedShips.has(type)
       const isCurrent = type === current
+      const reqIdx = SHIP_RANK_REQ[type]
+      const locked = !owned && rankIdx < reqIdx
       const stats = `cargo ${s.cargo} · spd ${s.topSpeed} · hull ${s.hull}`
-      const right = isCurrent ? 'IN USE' : owned ? 'OWNED' : `${this.ctx.shipPrices[type]} cr`
+      const right = isCurrent ? 'IN USE' : owned ? 'OWNED' : locked ? `🔒 ${RANKS[reqIdx].name}` : `${this.ctx.shipPrices[type]} cr`
       const row = this.rowEl(s.role, stats, right)
       const actions = row.querySelector('.s-actions')!
       if (isCurrent) {
@@ -304,6 +308,11 @@ export class StationMenu {
           this.onChange()
           this.render()
         }))
+      } else if (locked) {
+        const span = document.createElement('span')
+        span.className = 'maxed'
+        span.textContent = `${RANKS[reqIdx].name} rank`
+        actions.appendChild(span)
       } else {
         const price = this.ctx.shipPrices[type]
         actions.appendChild(this.btn('Buy', 'buy', price > this.ctx.econ.credits, () => {

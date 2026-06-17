@@ -24,11 +24,12 @@ const httpServer = createServer((req, res) => {
   }
   if (req.url === '/leaderboard') {
     // Top pilots by credits — every activity (mining, bounties, contracts) settles into credits.
+    const score = (e) => (typeof e.earned === 'number' ? e.earned : (e.credits || 0))
     const top = Object.values(store)
       .filter((e) => e && typeof e.credits === 'number')
-      .sort((a, b) => b.credits - a.credits)
+      .sort((a, b) => score(b) - score(a))
       .slice(0, 10)
-      .map((e) => ({ name: e.name ?? 'PILOT', credits: e.credits }))
+      .map((e) => ({ name: e.name ?? 'PILOT', earned: score(e) }))
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
     res.end(JSON.stringify(top))
     return
@@ -53,8 +54,11 @@ function flush() {
 /** Accept only the small, known progress shape — never trust the client blindly. */
 function sanitizeProgress(p) {
   if (!p || typeof p !== 'object') return null
+  const credits = Number(p.credits) || 0
   return {
-    credits: Number(p.credits) || 0,
+    credits,
+    // Lifetime earnings drive rank; older saves without it seed from current balance.
+    earned: typeof p.earned === 'number' && p.earned >= 0 ? Number(p.earned) : credits,
     cargo: { ORE: Number(p.cargo?.ORE) || 0, ALLOY: Number(p.cargo?.ALLOY) || 0 },
     upgrades: {
       cargo: Number(p.upgrades?.cargo) || 0,

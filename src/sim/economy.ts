@@ -1,5 +1,7 @@
 // Trade economy — pure logic, no rendering, no DOM. Tested in economy.test.ts.
 
+import { rankBonus } from './ranks'
+
 export type CommodityId = 'ORE' | 'ALLOY'
 
 export interface Commodity {
@@ -31,12 +33,24 @@ export const STARTING_CREDITS = 500
 export const CARGO_CAPACITY = 20
 
 export interface PlayerEconomy {
+  /** Spendable balance. Goes down when you buy upgrades/ships. */
   credits: number
+  /** Lifetime credits earned — only ever increases. Drives rank (so spending never demotes you). */
+  earned: number
   cargo: Record<CommodityId, number>
 }
 
 export function createEconomy(): PlayerEconomy {
-  return { credits: STARTING_CREDITS, cargo: { ORE: 0, ALLOY: 0 } }
+  return { credits: STARTING_CREDITS, earned: 0, cargo: { ORE: 0, ALLOY: 0 } }
+}
+
+/** Credit a reward: bumps spendable balance AND lifetime earned. Use for every payout
+ *  (sales, contracts, bounties, loot) so rank tracks total earnings, not current balance. */
+export function gainCredits(econ: PlayerEconomy, amount: number): void {
+  // Rank scales every payout — higher rank, faster earning (the core "keep playing" hook).
+  const total = amount > 0 ? Math.round(amount * (1 + rankBonus(econ.earned))) : amount
+  econ.credits += total
+  if (total > 0) econ.earned += total
 }
 
 export function cargoUsed(econ: PlayerEconomy): number {
@@ -70,7 +84,7 @@ export function buy(
 export function sell(econ: PlayerEconomy, outpost: Outpost, commodity: CommodityId, qty: number): TradeResult {
   if (!Number.isInteger(qty) || qty <= 0) return { ok: false, reason: 'bad-qty' }
   if (qty > econ.cargo[commodity]) return { ok: false, reason: 'no-stock' }
-  econ.credits += outpost.prices[commodity] * qty
+  gainCredits(econ, outpost.prices[commodity] * qty)
   econ.cargo[commodity] -= qty
   return { ok: true }
 }
@@ -85,6 +99,8 @@ export function loadEconomy(): PlayerEconomy {
     if (typeof parsed?.credits !== 'number' || typeof parsed?.cargo !== 'object') return createEconomy()
     return {
       credits: parsed.credits,
+      // Migration: pre-earned saves start lifetime earnings at their current balance.
+      earned: typeof parsed.earned === 'number' ? parsed.earned : parsed.credits,
       cargo: { ORE: parsed.cargo.ORE ?? 0, ALLOY: parsed.cargo.ALLOY ?? 0 },
     }
   } catch {

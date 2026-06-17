@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextRank, rankForCredits, RANKS, rankProgress } from './ranks'
+import { nextRank, rankBonus, rankForCredits, RANKS, rankProgress } from './ranks'
 
 describe('rankForCredits', () => {
   it('floors at Cadet for zero / negative', () => {
@@ -33,5 +33,16 @@ describe('rankProgress', () => {
   })
   it('is 1 when maxed (Admiral)', () => {
     expect(rankProgress(500_000)).toBe(1)
+  })
+})
+
+describe('rankBonus', () => {
+  it('is 0 at Cadet and climbs to 0.5 at Admiral', () => {
+    expect(rankBonus(0)).toBe(0)
+    expect(rankBonus(5_000)).toBeCloseTo(0.16) // Pilot
+    expect(rankBonus(250_000)).toBe(0.5) // Admiral
+  })
+  it('matches the rank held at the given earnings', () => {
+    for (const r of RANKS) expect(rankBonus(r.min)).toBe(r.bonus)
   })
 })

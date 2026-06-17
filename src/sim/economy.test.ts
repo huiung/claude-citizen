@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  buy, CARGO_CAPACITY, cargoFree, cargoUsed, createEconomy, OUTPOSTS, sell, STARTING_CREDITS,
+  buy, CARGO_CAPACITY, cargoFree, cargoUsed, createEconomy, gainCredits, OUTPOSTS, sell, STARTING_CREDITS,
 } from './economy'
 
 describe('economy', () => {
@@ -74,5 +74,30 @@ describe('economy', () => {
     expect(cargoFree(econ)).toBe(CARGO_CAPACITY - 12)
     const r = buy(econ, OUTPOSTS.refinery, 'ALLOY', 12) // only 8 free
     expect(r.ok).toBe(false)
+  })
+})
+
+describe('gainCredits + lifetime earned', () => {
+  it('credits a payout to both balance and lifetime earned', () => {
+    const econ = createEconomy()
+    gainCredits(econ, 100)
+    expect(econ.credits).toBe(STARTING_CREDITS + 100)
+    expect(econ.earned).toBe(100)
+  })
+
+  it('spending lowers balance but never lifetime earned (rank stays)', () => {
+    const econ = createEconomy()
+    gainCredits(econ, 1000)
+    econ.credits -= 800 // e.g. buy an upgrade
+    expect(econ.credits).toBe(STARTING_CREDITS + 1000 - 800)
+    expect(econ.earned).toBe(1000)
+  })
+
+  it('scales a payout by the current rank bonus', () => {
+    const econ = createEconomy()
+    econ.earned = 5_000 // Pilot, +16%
+    gainCredits(econ, 1000)
+    expect(econ.earned).toBe(5_000 + 1160) // round(1000 * 1.16)
+    expect(econ.credits).toBe(STARTING_CREDITS + 1160)
   })
 })

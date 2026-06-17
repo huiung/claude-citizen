@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CARGO_CAPACITY } from './economy'
 import { TUNING } from './physics'
-import { SHIP_STATS, SHIP_TYPES, shipStats, type ShipType } from './shipTypes'
+import { SHIP_RANK_REQ, SHIP_STATS, SHIP_TYPES, shipStats, type ShipType } from './shipTypes'
 
 describe('shipTypes catalog', () => {
   it('lists all four hull types in catalog order', () => {
@@ -84,5 +84,19 @@ describe('shipTypes catalog', () => {
     }
     const keys = SHIP_TYPES.map(key)
     expect(new Set(keys).size).toBe(keys.length)
+  })
+
+  it('has a rank requirement for every hull, with hauler unlocked at the start', () => {
+    for (const t of SHIP_TYPES) {
+      expect(Number.isInteger(SHIP_RANK_REQ[t])).toBe(true)
+      expect(SHIP_RANK_REQ[t]).toBeGreaterThanOrEqual(0)
+    }
+    expect(SHIP_RANK_REQ.hauler).toBe(0) // stock ship, no gate
+  })
+
+  it('gates higher-tier hulls behind higher ranks', () => {
+    expect(SHIP_RANK_REQ.fighter).toBeGreaterThan(SHIP_RANK_REQ.hauler)
+    expect(SHIP_RANK_REQ.miner).toBeGreaterThan(SHIP_RANK_REQ.fighter)
+    expect(SHIP_RANK_REQ.interceptor).toBeGreaterThan(SHIP_RANK_REQ.miner)
   })
 })
