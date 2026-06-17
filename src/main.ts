@@ -1369,6 +1369,7 @@ function frame(now: number): void {
   nebula.position.copy(ship.position) // nebula skydome rides with the player too
   for (const g of planetGroups) g.rotation.y += dt * (g.userData.spin as number) // living, rotating worlds
   capital.rotation.y += dt * 0.0015 // capital ship drifts almost imperceptibly
+  ;(sun.userData.sunMat as THREE.ShaderMaterial).uniforms.uTime.value = now * 0.001 // boil the star surface
   if (running) {
     streamCelestials(now)
     for (const lod of planetLODs) lod.update(camera) // swap planet detail by distance

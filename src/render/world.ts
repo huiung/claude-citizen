@@ -306,12 +306,65 @@ export function buildAsteroids(): THREE.Group {
 /** Giant glowing star. Pair with a PointLight at the same position in main. */
 export function buildSun(radius: number, color: number): THREE.Group {
   const group = new THREE.Group()
-  group.add(new THREE.Mesh(new THREE.IcosahedronGeometry(radius, 4), new THREE.MeshBasicMaterial({ color })))
-  // corona
+
+  // Living star surface: animated 3D value-noise granulation, pushed into HDR so the
+  // existing bloom pass catches the bright cells. Time is driven from the frame loop.
+  const sunMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 } },
+    vertexShader: `
+      varying vec3 vPos;
+      void main() {
+        vPos = position;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      varying vec3 vPos;
+      float hash(vec3 p) {
+        p = fract(p * 0.3183099 + 0.1);
+        p *= 17.0;
+        return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+      }
+      float noise(vec3 x) {
+        vec3 i = floor(x); vec3 f = fract(x);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(hash(i + vec3(0,0,0)), hash(i + vec3(1,0,0)), f.x),
+                       mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
+                       mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
+      }
+      float fbm(vec3 p) {
+        float v = 0.0; float a = 0.5;
+        for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.0; a *= 0.5; }
+        return v;
+      }
+      void main() {
+        vec3 p = normalize(vPos);
+        float n = fbm(p * 3.5 + vec3(uTime * 0.072));
+        float n2 = fbm(p * 9.0 - vec3(uTime * 0.12));
+        float h = n * 0.65 + n2 * 0.35;
+        vec3 col = mix(vec3(0.6, 0.12, 0.02), vec3(1.0, 0.45, 0.05), smoothstep(0.25, 0.55, h));
+        col = mix(col, vec3(1.0, 0.85, 0.4), smoothstep(0.55, 0.82, h));
+        col += vec3(1.0, 0.7, 0.3) * pow(max(h, 0.0), 4.0) * 0.8; // hot flecks
+        col *= 1.4; // HDR push so bloom catches the bright granules (kept modest so the core doesn't blow out)
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  })
+  group.add(new THREE.Mesh(new THREE.IcosahedronGeometry(radius, 5), sunMat))
+
+  // Two additive corona shells — warm inner halo + faint wide outer bleed.
   group.add(new THREE.Mesh(
-    new THREE.SphereGeometry(radius * 1.22, 32, 32),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.16, side: THREE.BackSide }),
+    new THREE.SphereGeometry(radius * 1.18, 32, 32),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }),
   ))
+  group.add(new THREE.Mesh(
+    new THREE.SphereGeometry(radius * 1.5, 32, 32),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.08, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+  ))
+
+  group.userData.sunMat = sunMat
   return group
 }
 
