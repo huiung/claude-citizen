@@ -1,8 +1,8 @@
 # Claude Citizen
 
-> An open-source attempt to finish Star Citizen before Star Citizen does. Built with Claude Fable 5.
+> An open-source attempt to finish Star Citizen before Star Citizen does. Built with Claude.
 
-**They've had 14 years and $800M. We have Claude Fable 5 and weekends.**
+**They've had 14 years and $800M. We have Claude and weekends.**
 
 ![Mine, trade, fight pirates, jump across the galaxy, and chat — multiplayer, in your browser](./docs/loop.gif)
 
@@ -42,6 +42,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Delivery contracts:** accept haul missions, deliver to the destination outpost for the reward
 - **Pirates:** hostiles hunt you in the sector — shoot back, watch your hull, collect the bounty
 - **An endless procedural galaxy:** fly any direction and planets, moons, stations, and derelicts keep appearing — some planets are vast
+- **Deep space:** the farther you fly from the core, the more rare gold ore veins (credit jackpots) and tougher, higher-bounty pirates appear — a HUD gauge tracks how deep (and dangerous) you are. Risk and reward scale together
 - **A named solar system:** Sun + Mercury through Saturn at a compressed scale, each with a procedurally textured surface (oceans/continents, gas bands, ice caps) — and they're solid, so you fly *around* them, not through
 - **Quantum travel:** pick a destination with `[N]` or open the **Solar Atlas** with `[M]` and click a planet, charge the drive, and jump to any planet in the system — warp streaks, a wide-FOV cruise, and a named arrival
 - **A cinematic sky:** bloom glow, fresnel planet atmospheres, a procedural nebula backdrop, slowly rotating worlds, and parallax dust that streams past for a sense of speed
@@ -49,7 +50,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **A capital ship:** a procedural dreadnought ~120× your fighter, its hull aglow with hundreds of windows — fly its length for the scale
 - **Game feel:** a chase camera that carries G-force weight, a boost ignition punch (FOV kick + exhaust flare + whoosh), and an air-rush layer that swells with speed
 - **Combat HUD:** target brackets + range, off-screen threat arrows (know where you're being shot from), and a lead indicator so you can actually land hits on pirates
-- **A leaderboard:** top pilots by credits — on the landing screen and in-game (`[L]`)
+- **A leaderboard:** top pilots by *lifetime* credits earned — on the landing screen and in-game (`[L]`)
 - **Pilot ranks:** six tiers (Cadet → Admiral) earned by *lifetime* credits, so spending never demotes you — each rank brings a growing **earnings bonus** (+0% → +50% on every payout) and **unlocks new ships**, so there's always a reason to keep flying. HUD progress track, promotion banner, and rank tags on the leaderboard
 - Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
@@ -97,7 +98,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 
 ## How this is built
 
-Every line of this project is written with **Claude Fable 5** (Anthropic's frontier model)
+Every line of this project is written with **Claude** (Anthropic's frontier model)
 driving [Claude Code](https://claude.com/claude-code). One human sets direction, reviews,
 and tunes the flight feel. The AI does the typing.
 

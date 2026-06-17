@@ -65,6 +65,8 @@ const rankNameEl = document.getElementById('rank-name')!
 const rankBarEl = document.getElementById('rank-bar')!
 const rankNextEl = document.getElementById('rank-next')!
 const promotionEl = document.getElementById('promotion')!
+const depthLabelEl = document.getElementById('depth-label')!
+const depthBarEl = document.getElementById('depth-bar')!
 let lastRankIndex = -1 // -1 until first HUD update, so we don't announce a "promotion" on load
 let promoTimer: ReturnType<typeof setTimeout> | undefined
 function showPromotion(name: string): void {
@@ -1326,6 +1328,19 @@ let last = performance.now()
 
 // --- Minimap (top-down radar, north-up, player-centered)
 const MAP_RANGE = 4500 // world units from player to minimap edge
+function updateDepthHUD(): void {
+  const df = deepFactor()
+  let label: string, color: string
+  if (df < 0.12) { label = 'CORE SPACE'; color = '#6fdc8c' }
+  else if (df < 0.45) { label = 'FRONTIER'; color = '#bfe06f' }
+  else if (df < 0.75) { label = 'DEEP SPACE'; color = '#ffb347' }
+  else { label = 'FAR REACHES'; color = '#ff5d5d' }
+  depthLabelEl.textContent = label
+  depthLabelEl.style.color = color
+  depthBarEl.style.width = `${Math.round(df * 100)}%`
+  depthBarEl.style.background = color
+}
+
 function drawMinimap(): void {
   const w = minimapCanvas.width
   const c = w / 2
@@ -1544,6 +1559,7 @@ function frame(now: number): void {
     updateRemotes()
     updateCamera(dt)
     drawMinimap()
+    updateDepthHUD()
   } else {
     // Menu background: slow orbit around the station
     const t = now * 0.0001
