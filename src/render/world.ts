@@ -122,7 +122,7 @@ function makeAtmosphere(radius: number, atmoColor: number, power: number): THREE
       }
     `,
   })
-  return new THREE.Mesh(new THREE.SphereGeometry(radius * 1.13, 48, 32), mat)
+  return new THREE.Mesh(new THREE.SphereGeometry(radius * 1.06, 48, 32), mat)
 }
 
 export function buildPlanet(): THREE.Group {
@@ -355,14 +355,15 @@ export function buildSun(radius: number, color: number): THREE.Group {
   })
   group.add(new THREE.Mesh(new THREE.IcosahedronGeometry(radius, 5), sunMat))
 
-  // Two additive corona shells — warm inner halo + faint wide outer bleed.
+  // Two additive corona shells — a tight warm halo + a soft faint bleed. Kept small,
+  // low-opacity and higher-poly so the limb reads as glow rather than a hard shell.
   group.add(new THREE.Mesh(
-    new THREE.SphereGeometry(radius * 1.18, 32, 32),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+    new THREE.SphereGeometry(radius * 1.1, 48, 32),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.16, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }),
   ))
   group.add(new THREE.Mesh(
-    new THREE.SphereGeometry(radius * 1.5, 32, 32),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.08, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }),
+    new THREE.SphereGeometry(radius * 1.25, 48, 32),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.05, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false }),
   ))
 
   group.userData.sunMat = sunMat

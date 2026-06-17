@@ -605,7 +605,7 @@ function resolvePlanetCollisions(): void {
   const hit = (cx: number, cy: number, cz: number, radius: number): void => {
     _toShip.set(ship.position.x - cx, ship.position.y - cy, ship.position.z - cz)
     const dist = _toShip.length()
-    const minDist = radius * 1.13 + 30 // sit above the surface (clears terrain displacement)
+    const minDist = radius * 1.06 + 30 // sit just above the surface (clears terrain displacement)
     if (dist < minDist && dist > 1e-3) {
       _toShip.multiplyScalar(1 / dist) // surface normal
       ship.position.set(cx, cy, cz).addScaledVector(_toShip, minDist)
