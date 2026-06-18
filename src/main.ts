@@ -537,7 +537,14 @@ const _fwd = new THREE.Vector3()
 const SAFE_RADIUS = 1600
 const SAFE_ANCHORS = [new THREE.Vector3(0, 0, 0), REFINERY_POS, COLONY_POS]
 function inSafeZone(pos: THREE.Vector3): boolean {
-  return SAFE_ANCHORS.some((a) => pos.distanceToSquared(a) < SAFE_RADIUS * SAFE_RADIUS)
+  if (SAFE_ANCHORS.some((a) => pos.distanceToSquared(a) < SAFE_RADIUS * SAFE_RADIUS)) return true
+  // Near a planet's surface, hostiles break off — descend to fly/admire in peace.
+  // Reach scales with the body's radius so big and small worlds both feel safe at the surface.
+  for (const p of [...PLANETS, SPAWN_PLANET]) {
+    const reach = p.radius * 1.5 + SAFE_RADIUS
+    if (pos.distanceToSquared(p.position) < reach * reach) return true
+  }
+  return false
 }
 
 // --- Quantum travel
@@ -1582,7 +1589,6 @@ function frame(now: number): void {
     if (input.boost && !prevBoost) {
       boostKick = 1
       audio.playBoostPunch(ship.velocity.length() / effSpeed())
-      audio.blip('boost')
     } // ignition punch
     prevBoost = input.boost
 
