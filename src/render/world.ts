@@ -415,8 +415,8 @@ function makePlanetSurface(
   }
 
   geo.computeVertexNormals()
-  // Earth gets extra resolution so rivers/coastlines stay crisp up close.
-  const mapSize = surface === 'earth' ? 2048 : radius >= 4000 || isGas ? 1024 : 512
+  // Earth & Mars get extra resolution so rivers/canyons/coastlines stay crisp up close.
+  const mapSize = surface === 'earth' || surface === 'mars' ? 2048 : radius >= 4000 || isGas ? 1024 : 512
   const maps = generatePlanetTextures(surface, seed, color, mapSize, radius)
   const material = new THREE.MeshStandardMaterial({
     map: maps.colorMap,

@@ -193,11 +193,19 @@ export function samplePlanetSurface(
 
   if (kind === 'mars') {
     const craters = craterField(x, y, z, buildCraters(seed + 901, craterCount(20, radius), craterAngularScale(radius)))
-    const rift = Math.pow(ridged(fbm(x * 2.3 * scale - 4, y * 2.3 * scale, z * 2.3 * scale, seed + 11, 4)), 5)
-    const rust = mixColor(_a.setRGB(0.38, 0.15, 0.08), _b.setRGB(0.78, 0.34, 0.18), (continents + 1) * 0.5)
-    rust.lerp(_b.setRGB(0.18, 0.13, 0.11), Math.max(0, detail) * 0.18)
-    rust.lerp(_b.setRGB(0.86, 0.82, 0.76), polar > 0.88 ? 0.85 : 0)
-    return { color: rust.clone(), height: continents * 0.2 + detail * 0.11 + craters * 0.26 - rift * 0.18 }
+    // Canyons: sharp ridged channels (Valles-Marineris-like), carved deep and shadowed.
+    const canyon = Math.pow(ridged(fbm(x * 2.3 * scale - 4, y * 2.3 * scale, z * 2.3 * scale, seed + 11, 4)), 6)
+    // Wind-carved dune streaks (stretched along longitude).
+    const dunes = fbm(x * 26 * scale, y * 7 * scale, z * 26 * scale, seed + 53, 3)
+    // Broad terrain → oxidation: dark basaltic lows, rusty mid, bright dust highlands.
+    const oxide = THREE.MathUtils.clamp((continents + 0.2) * 0.7 + 0.5, 0, 1)
+    const rust = _a.setRGB(0.30, 0.14, 0.09) // dark basalt
+    rust.lerp(_b.setRGB(0.62, 0.30, 0.16), THREE.MathUtils.smoothstep(oxide, 0.2, 0.55)) // iron oxide
+    rust.lerp(_b.setRGB(0.82, 0.52, 0.32), THREE.MathUtils.smoothstep(oxide, 0.55, 0.9)) // bright dust plains
+    rust.lerp(_b.setRGB(0.88, 0.62, 0.40), Math.max(0, dunes) * 0.18) // dune banding
+    rust.lerp(_b.setRGB(0.13, 0.07, 0.05), canyon * 0.8) // canyon shadow
+    rust.lerp(_b.setRGB(0.88, 0.86, 0.82), THREE.MathUtils.smoothstep(polar, 0.82, 0.92)) // soft polar frost
+    return { color: rust.clone(), height: continents * 0.2 + detail * 0.11 + craters * 0.26 - canyon * 0.3 }
   }
 
   if (kind === 'rocky' || kind === 'moon') {
