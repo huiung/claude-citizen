@@ -6,7 +6,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { createShipState, stepShip, type ControlInput } from './sim/physics'
-import { buildCraft, loadCapitalModel, loadCraftModelForType, loadPirateModel } from './render/shipyard'
+import { buildCraft, loadCapitalCarrierModel, loadCapitalModel, loadCraftModelForType, loadPirateModel } from './render/shipyard'
 import { SHIP_STATS, type ShipType } from './sim/shipTypes'
 import { nextRank, rankForCredits, rankProgress } from './sim/ranks'
 import {
@@ -246,13 +246,16 @@ scene.add(station, colony)
 
 // Capital ship — set-dressing for scale. Parked off the spawn corridor; fly its length for awe.
 // Keep a stable parent group so collision/flyby code works before and after the GLB loads.
-let capitalColliders: { p: THREE.Vector3; r: number }[] = []
+type CapitalCollider = { p: THREE.Vector3; r: number }
+type CapitalSetpiece = { root: THREE.Group; colliders: CapitalCollider[] }
+const capitalSetpieces: CapitalSetpiece[] = []
 const capital = new THREE.Group()
 capital.add(buildCapitalShip())
 capital.position.set(1000, 320, -2000)
 capital.rotation.y = 0.5
 scene.add(capital)
-fitCapitalColliders() // procedural hull bounds until the GLB loads
+const capitalSetpiece: CapitalSetpiece = { root: capital, colliders: fitCapitalColliders(capital) } // procedural hull bounds until the GLB loads
+capitalSetpieces.push(capitalSetpiece)
 void loadCapitalModel().then((model) => {
   if (!model) return
   for (const child of [...capital.children]) {
@@ -260,7 +263,23 @@ void loadCapitalModel().then((model) => {
     disposeObject(child)
   }
   capital.add(model)
-  fitCapitalColliders() // refit to the GLB's actual bounds (any scale/axis)
+  capitalSetpiece.colliders = fitCapitalColliders(capital) // refit to the GLB's actual bounds (any scale/axis)
+})
+const capitalCarrier = new THREE.Group()
+capitalCarrier.add(buildCapitalShip(13))
+capitalCarrier.position.set(-1450, 560, -2700)
+capitalCarrier.rotation.set(0.08, -0.78, 0.03)
+scene.add(capitalCarrier)
+const capitalCarrierSetpiece: CapitalSetpiece = { root: capitalCarrier, colliders: fitCapitalColliders(capitalCarrier) }
+capitalSetpieces.push(capitalCarrierSetpiece)
+void loadCapitalCarrierModel().then((model) => {
+  if (!model) return
+  for (const child of [...capitalCarrier.children]) {
+    capitalCarrier.remove(child)
+    disposeObject(child)
+  }
+  capitalCarrier.add(model)
+  capitalCarrierSetpiece.colliders = fitCapitalColliders(capitalCarrier)
 })
 
 // Named solar system — giant backdrop + quantum-travel targets. Trade/outposts stay local.
@@ -695,21 +714,21 @@ function resolvePlanetCollisions(): void {
 // Capital ship hull — fit collision spheres along the longest axis of the *actual* bounding box,
 // so it works for both the procedural hull and any GLB regardless of its scale or modelled axis.
 const _capWorld = new THREE.Vector3()
-function fitCapitalColliders(): void {
+function fitCapitalColliders(root: THREE.Group): CapitalCollider[] {
   // Measure in the parent's local space: zero out transform, get bounds, restore.
   const box = new THREE.Box3()
   const size = new THREE.Vector3()
   const ctr = new THREE.Vector3()
-  const savedPos = capital.position.clone()
-  const savedQuat = capital.quaternion.clone()
-  capital.position.set(0, 0, 0)
-  capital.quaternion.identity()
-  capital.updateMatrixWorld(true)
-  box.setFromObject(capital)
-  capital.position.copy(savedPos)
-  capital.quaternion.copy(savedQuat)
-  capital.updateMatrixWorld(true)
-  if (box.isEmpty()) { capitalColliders = []; return }
+  const savedPos = root.position.clone()
+  const savedQuat = root.quaternion.clone()
+  root.position.set(0, 0, 0)
+  root.quaternion.identity()
+  root.updateMatrixWorld(true)
+  box.setFromObject(root)
+  root.position.copy(savedPos)
+  root.quaternion.copy(savedQuat)
+  root.updateMatrixWorld(true)
+  if (box.isEmpty()) return []
   box.getSize(size)
   box.getCenter(ctr)
   const dims = [size.x, size.y, size.z]
@@ -726,19 +745,21 @@ function fitCapitalColliders(): void {
     p.setComponent(axis, ctr.getComponent(axis) + t * len * 0.8)
     cols.push({ p, r })
   }
-  capitalColliders = cols
+  return cols
 }
 function resolveCapitalCollision(): void {
-  for (const c of capitalColliders) {
-    _capWorld.copy(c.p)
-    capital.localToWorld(_capWorld) // local hull point → world (follows the ship's rotation/drift)
-    _toShip.subVectors(ship.position, _capWorld)
-    const dist = _toShip.length()
-    if (dist < c.r && dist > 1e-3) {
-      _toShip.multiplyScalar(1 / dist)
-      ship.position.copy(_capWorld).addScaledVector(_toShip, c.r)
-      const vn = ship.velocity.dot(_toShip)
-      if (vn < 0) ship.velocity.addScaledVector(_toShip, -vn) // kill inward velocity → slide
+  for (const setpiece of capitalSetpieces) {
+    for (const c of setpiece.colliders) {
+      _capWorld.copy(c.p)
+      setpiece.root.localToWorld(_capWorld) // local hull point → world (follows each ship's rotation/drift)
+      _toShip.subVectors(ship.position, _capWorld)
+      const dist = _toShip.length()
+      if (dist < c.r && dist > 1e-3) {
+        _toShip.multiplyScalar(1 / dist)
+        ship.position.copy(_capWorld).addScaledVector(_toShip, c.r)
+        const vn = ship.velocity.dot(_toShip)
+        if (vn < 0) ship.velocity.addScaledVector(_toShip, -vn) // kill inward velocity → slide
+      }
     }
   }
 }
@@ -1609,6 +1630,7 @@ function frame(now: number): void {
   nebula.position.copy(ship.position) // nebula skydome rides with the player too
   for (const g of planetGroups) g.rotation.y += dt * (g.userData.spin as number) // living, rotating worlds
   capital.rotation.y += dt * 0.0015 // capital ship drifts almost imperceptibly
+  capitalCarrier.rotation.y -= dt * 0.0011 // different silhouette, different lazy drift
   ;(sun.userData.sunMat as THREE.ShaderMaterial).uniforms.uTime.value = now * 0.001 // boil the star surface
   if (running) {
     streamCelestials(now)
