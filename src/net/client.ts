@@ -30,6 +30,12 @@ export interface NetEvents {
   onChat(name: string, text: string): void
   /** This Pilot Code signed in elsewhere — the server closed us and we won't reconnect. */
   onKicked?(): void
+  /** Server issued a nonce message to sign. */
+  onChallenge?(message: string): void
+  /** Auth verified — store pubkey + sessionId. */
+  onAuthOk?(pubkey: string, sessionId: string): void
+  /** Auth failed or was rejected — stay anonymous. */
+  onAuthError?(): void
 }
 
 const SEND_HZ = 10
@@ -44,7 +50,14 @@ export class NetClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private kicked = false // signed in elsewhere — stop reconnecting
 
+  private sessionId: string | null = null
+
   constructor(private name: string, private token: string, private events: NetEvents) {}
+
+  /** Set before connect/reconnect so hello/join can restore a verified identity. */
+  setSession(sessionId: string | null): void {
+    this.sessionId = sessionId
+  }
 
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return
@@ -68,8 +81,8 @@ export class NetClient {
       this.reconnectDelay = 2000 // connected — reset backoff
       // Viewer presence by default; a full 'join' once the player launches.
       this.ws?.send(JSON.stringify(this.active
-        ? { t: 'join', name: this.name, token: this.token }
-        : { t: 'hello', token: this.token }))
+        ? { t: 'join', name: this.name, token: this.token, sessionId: this.sessionId }
+        : { t: 'hello', token: this.token, sessionId: this.sessionId }))
       this.events.onStatus(true, this.online)
     }
     this.ws.onclose = () => {
@@ -121,6 +134,18 @@ export class NetClient {
       case 'chat':
         if (typeof msg.text === 'string') this.events.onChat(String(msg.name ?? '?'), msg.text)
         break
+      case 'challenge':
+        if (typeof msg.message === 'string') this.events.onChallenge?.(msg.message)
+        break
+      case 'auth-ok':
+        if (typeof msg.pubkey === 'string' && typeof msg.sessionId === 'string') {
+          this.sessionId = msg.sessionId
+          this.events.onAuthOk?.(msg.pubkey, msg.sessionId)
+        }
+        break
+      case 'auth-error':
+        this.events.onAuthError?.()
+        break
     }
   }
 
@@ -151,7 +176,7 @@ export class NetClient {
     this.name = name
     this.active = true
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ t: 'join', name, token: this.token }))
+      this.ws.send(JSON.stringify({ t: 'join', name, token: this.token, sessionId: this.sessionId }))
     }
     // If the socket isn't open yet, onopen will send 'join' since active is now true.
   }
@@ -160,6 +185,16 @@ export class NetClient {
   saveProgress(progress: PlayerProgress): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
     this.ws.send(JSON.stringify({ t: 'save', progress }))
+  }
+
+  /** Step 1 of SIWS: ask the server for a nonce to sign. */
+  requestChallenge(pubkey: string): void {
+    this.ws?.send(JSON.stringify({ t: 'auth-challenge', pubkey }))
+  }
+
+  /** Step 2 of SIWS: submit the signature (+ current anon token for claim). */
+  submitAuth(pubkey: string, signature: string): void {
+    this.ws?.send(JSON.stringify({ t: 'auth', pubkey, signature, anonToken: this.token }))
   }
 
   /** Returns true if a chat line was sent (false when offline). */
