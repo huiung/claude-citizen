@@ -454,9 +454,29 @@ scene.add(shipMesh)
 // hull is equipped). Flares up on boost; stretches on the ignition kick. Bloom makes it pop.
 const boostFlare = new THREE.Mesh(
   new THREE.ConeGeometry(0.7, 4, 14, 1, true),
-  new THREE.MeshBasicMaterial({
-    color: 0xbfe6ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
-    depthWrite: false, side: THREE.DoubleSide,
+  new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uOpacity: { value: 0 } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    vertexShader: `
+      varying float vT;
+      void main() {
+        vT = (position.y + 2.0) / 4.0; // 0 = nozzle (base), 1 = tail (tip)
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float uTime;
+      uniform float uOpacity;
+      varying float vT;
+      void main() {
+        float flick = 0.78 + 0.22 * sin(uTime * 20.0 + vT * 10.0); // plasma flicker
+        vec3 hot = vec3(0.85, 0.96, 1.0);  // white-hot nozzle core
+        vec3 cool = vec3(0.28, 0.60, 1.0); // cyan tail
+        vec3 col = mix(hot, cool, vT);
+        float a = uOpacity * (1.0 - vT) * flick; // bright at the nozzle, fades down the tail
+        gl_FragColor = vec4(col, a);
+      }
+    `,
   }),
 )
 boostFlare.frustumCulled = false
@@ -1698,12 +1718,14 @@ function frame(now: number): void {
   boostFlare.position.copy(shipMesh.position).add(_flareBack)
   boostFlare.quaternion.copy(shipMesh.quaternion)
   boostFlare.rotateX(Math.PI / 2) // cone tip trails back along the ship's +z
-  const flareMat = boostFlare.material as THREE.MeshBasicMaterial
+  const flareMat = boostFlare.material as THREE.ShaderMaterial
   const flareTarget = running && quantum.phase === 'idle'
     ? camThrust * 0.3 + (camBoost ? 0.45 : 0) // thrust glow + boost punch
     : 0
-  flareMat.opacity += (flareTarget - flareMat.opacity) * (1 - Math.exp(-12 * dt))
-  boostFlare.visible = flareMat.opacity > 0.01
+  const flareOp = flareMat.uniforms.uOpacity.value as number
+  flareMat.uniforms.uOpacity.value = flareOp + (flareTarget - flareOp) * (1 - Math.exp(-12 * dt))
+  flareMat.uniforms.uTime.value = performance.now() * 0.001
+  boostFlare.visible = (flareMat.uniforms.uOpacity.value as number) > 0.01
   boostFlare.scale.set(1, 1 + boostKick * 1.2 + camThrust * 0.4, 1) // stretches with thrust too
 
   // Onboarding objective — new pilots get a "next step" until they hunt their first pirate.

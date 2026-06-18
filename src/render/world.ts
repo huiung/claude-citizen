@@ -495,10 +495,36 @@ export function buildWarpField(): THREE.LineSegments {
     meta[i * 3 + 1] = Math.sin(ang) * radius
     meta[i * 3 + 2] = -WARP_RANGE * rand() // negative z = ahead of the camera
   }
+  const ends = new Float32Array(WARP_COUNT * 2) // per-vertex: 0 = far (vanishing point), 1 = near (camera)
+  for (let i = 0; i < WARP_COUNT; i++) { ends[i * 2] = 0; ends[i * 2 + 1] = 1 }
   const geo = new THREE.BufferGeometry()
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  const mat = new THREE.LineBasicMaterial({
-    color: 0xbfe0ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending,
+  geo.setAttribute('aEnd', new THREE.BufferAttribute(ends, 1))
+  // Shader streaks: hot white-cyan core at the vanishing point fading to deep blue toward the
+  // camera, brightening with warp intensity — reads as a tunnel sucked into the distance.
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uOpacity: { value: 0 }, uIntensity: { value: 0 } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    vertexShader: `
+      attribute float aEnd;
+      varying float vEnd;
+      void main() {
+        vEnd = aEnd;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      uniform float uOpacity;
+      uniform float uIntensity;
+      varying float vEnd;
+      void main() {
+        vec3 hot = vec3(0.9, 0.97, 1.0);   // vanishing-point core
+        vec3 cool = vec3(0.16, 0.42, 1.0); // trailing blue
+        vec3 col = mix(hot, cool, vEnd) * (1.0 + uIntensity * 1.6);
+        float a = uOpacity * mix(1.0, 0.1, vEnd); // bright ahead, fades toward the camera
+        gl_FragColor = vec4(col, a);
+      }
+    `,
   })
   const seg = new THREE.LineSegments(geo, mat)
   seg.userData.meta = meta
@@ -511,9 +537,11 @@ export function buildWarpField(): THREE.LineSegments {
  *  streaks are sucked toward the vanishing point ahead — tension. Otherwise they stream past
  *  the camera — travel. Opacity eases so the whole sequence is smooth. */
 export function updateWarpField(seg: THREE.LineSegments, intensity: number, dt: number, inward = false): void {
-  const mat = seg.material as THREE.LineBasicMaterial
-  mat.opacity += (intensity - mat.opacity) * Math.min(1, dt * 6)
-  if (mat.opacity < 0.01) { seg.visible = false; return }
+  const mat = seg.material as THREE.ShaderMaterial
+  const op = mat.uniforms.uOpacity.value as number
+  mat.uniforms.uOpacity.value = op + (intensity - op) * Math.min(1, dt * 6)
+  mat.uniforms.uIntensity.value = intensity
+  if ((mat.uniforms.uOpacity.value as number) < 0.01) { seg.visible = false; return }
   seg.visible = true
   const meta = seg.userData.meta as Float32Array
   const attr = seg.geometry.getAttribute('position') as THREE.BufferAttribute
