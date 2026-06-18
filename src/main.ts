@@ -679,6 +679,29 @@ function resolvePlanetCollisions(): void {
   hit(SPAWN_PLANET.position.x, SPAWN_PLANET.position.y, SPAWN_PLANET.position.z, SPAWN_PLANET.radius)
 }
 
+// Capital ship hull — a few spheres along the spine so you slide off instead of flying through.
+const CAPITAL_COLLIDERS = [
+  { z: -300, r: 72 }, // prow
+  { z: -110, r: 96 }, // bridge / tower midsection
+  { z: 80, r: 86 },
+  { z: 270, r: 80 },  // stern
+]
+const _capWorld = new THREE.Vector3()
+function resolveCapitalCollision(): void {
+  for (const c of CAPITAL_COLLIDERS) {
+    _capWorld.set(0, 0, c.z)
+    capital.localToWorld(_capWorld) // local spine point → world (follows the ship's rotation/drift)
+    _toShip.subVectors(ship.position, _capWorld)
+    const dist = _toShip.length()
+    if (dist < c.r && dist > 1e-3) {
+      _toShip.multiplyScalar(1 / dist)
+      ship.position.copy(_capWorld).addScaledVector(_toShip, c.r)
+      const vn = ship.velocity.dot(_toShip)
+      if (vn < 0) ship.velocity.addScaledVector(_toShip, -vn) // kill inward velocity → slide
+    }
+  }
+}
+
 const boltGeo = new THREE.SphereGeometry(0.4, 8, 8)
 const boltHaloGeo = new THREE.SphereGeometry(0.85, 8, 8)
 const explosionGeo = new THREE.SphereGeometry(1, 10, 10)
@@ -1584,6 +1607,7 @@ function frame(now: number): void {
     const input = readInput(dt)
     stepShip(ship, input, dt, { maxSpeed: effSpeed(), boostMultiplier: effBoost() })
     resolvePlanetCollisions()
+    resolveCapitalCollision()
     shipMesh.position.copy(ship.position)
     shipMesh.quaternion.copy(ship.quaternion)
 
