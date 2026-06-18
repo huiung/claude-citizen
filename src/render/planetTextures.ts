@@ -240,19 +240,29 @@ export function samplePlanetSurface(
   }
 
   if (kind === 'venus') {
-    const swirl = fbm(x * 4 * scale + y * 1.5, y * 4 * scale, z * 4 * scale - x * 1.5, seed + 311, 6)
-    const clouds = mixColor(_a.setRGB(0.72, 0.48, 0.18), _b.setRGB(0.98, 0.78, 0.38), (swirl + 1) * 0.5)
-    clouds.lerp(_b.setRGB(0.46, 0.28, 0.12), Math.max(0, fine) * 0.14)
-    return { color: clouds.clone(), height: swirl * 0.04 }
+    // Thick sulphuric cloud deck: soft latitude banding + swirling vortices + pale wisps.
+    const bands = Math.sin(y * 9 * scale + fbm(x * 3 * scale, y * 3 * scale, z * 3 * scale, seed + 311, 4) * 2.0) * 0.5 + 0.5
+    const swirl = fbm(x * 5 * scale + y * 2, y * 5 * scale, z * 5 * scale - x * 2, seed + 317, 6)
+    const wisp = fbm(x * 16 * scale, y * 16 * scale, z * 16 * scale, seed + 331, 4)
+    const clouds = _a.setRGB(0.78, 0.60, 0.30) // amber base
+    clouds.lerp(_b.setRGB(0.96, 0.86, 0.58), bands * 0.6) // bright cream bands
+    clouds.lerp(_b.setRGB(0.60, 0.38, 0.17), Math.max(0, swirl) * 0.4) // darker swirl
+    clouds.lerp(_b.setRGB(0.99, 0.93, 0.74), Math.max(0, wisp) * 0.18) // pale high wisps
+    return { color: clouds.clone(), height: 0 }
   }
 
+  // Banded gas giant: coarse + fine latitude belts warped by turbulence, plus a great-spot storm.
   const base = _a.set(baseColor)
-  const latBands = Math.sin(y * 26 * scale + fbm(x * 5 * scale, y * 5 * scale, z * 5 * scale, seed + 419, 4) * 2.5) * 0.5 + 0.5
+  const warp = fbm(x * 5 * scale, y * 5 * scale, z * 5 * scale, seed + 419, 4) * 2.2
+  const bands = Math.sin(y * 22 * scale + warp) * 0.5 + 0.5
+  const fineBands = Math.sin(y * 54 * scale + warp * 1.3) * 0.5 + 0.5
   const turbulence = fbm(x * 11 * scale + y * 5, y * 11 * scale, z * 11 * scale - y * 6, seed + 433, 5)
   const storm = Math.exp(-Math.pow((x - 0.32) * 10, 2) - Math.pow((y + 0.18) * 16, 2) - Math.pow((z - 0.45) * 10, 2))
-  const gas = mixColor(base.clone().multiplyScalar(0.72), _b.setRGB(0.9, 0.78, 0.55), latBands)
-  gas.lerp(_b.setRGB(0.45, 0.28, 0.18), Math.max(0, turbulence) * 0.22)
-  gas.lerp(_b.setRGB(0.86, 0.48, 0.26), storm * 0.8)
+  const gas = base.clone().multiplyScalar(0.7)
+  gas.lerp(_b.setRGB(0.92, 0.82, 0.60), bands * 0.7) // bright belts
+  gas.lerp(_b.setRGB(0.55, 0.38, 0.24), (1 - fineBands) * 0.25) // dark fine belts
+  gas.lerp(_b.setRGB(0.45, 0.28, 0.18), Math.max(0, turbulence) * 0.22) // turbulent mixing
+  gas.lerp(_b.setRGB(0.88, 0.46, 0.26), storm * 0.85) // great red spot
   return { color: gas.clone(), height: 0 }
 }
 
