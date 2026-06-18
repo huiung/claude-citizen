@@ -1238,7 +1238,7 @@ export class SolarSystemMap {
       this.mapRoot.add(atmosphere)
       if (active || selected || planet.name === nearestPlanet) {
         const labelPos = body.position.clone()
-        if (active && labelPos.distanceTo(sun.position) < sunRadius * 5.2) labelPos.add(new THREE.Vector3(radius * 4.4 + 7, radius * 2.2 + 3, 0))
+        if (active && labelPos.distanceTo(sun.position) < sunRadius * 5.2) labelPos.add(new THREE.Vector3(radius * 1.6 + 1, radius * 1.1 + 1, 0))
         this.addLabel(planet.name, labelPos, active ? 'active' : selected ? 'selected' : 'muted', active ? 85 : selected ? 80 : 45)
       }
       if (planet.hasRings) this.addPlanetRings(planetPos, radius)
