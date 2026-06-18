@@ -104,7 +104,7 @@ export function boostPunchToParams(speedFrac: number): BoostPunchParams {
   const speed = clamp(speedFrac, 0, 1.4)
   const t = Math.min(speed, 1)
   return {
-    noisePeak: 0.07 + t * 0.035,
+    noisePeak: 0.068 + t * 0.035,
     tonePeak: 0.024 + t * 0.018,
     filterStart: 180 + t * 120,
     filterEnd: 820 + t * 850,
@@ -163,7 +163,7 @@ export const ASSET_BLIP_SPECS: Partial<Record<BlipKind, AssetBlipSpec>> = {
       '/audio/kenney-sci-fi/laserSmall_001.ogg',
       '/audio/kenney-sci-fi/laserSmall_002.ogg',
     ],
-    gain: 0.26,
+    gain: 0.22,
   },
   hit: {
     variants: [
