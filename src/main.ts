@@ -14,7 +14,7 @@ import {
   buildCapitalShip, buildDustField, buildLootCrate, buildNebula, buildSolarPlanet, buildStarfield, buildStation,
   buildSun, buildWarpField, COLONY_POS, REFINERY_POS, SPAWN_PLANET, updateDustField, updateWarpField,
 } from './render/world'
-import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS } from './sim/solarSystem'
+import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS, type SurfaceKind } from './sim/solarSystem'
 import { NetClient, type PeerState, type PlayerProgress } from './net/client'
 import { dockableTarget, type DockTarget } from './sim/docking'
 import { cargoUsed, gainCredits, loadEconomy, OUTPOSTS, saveEconomy } from './sim/economy'
@@ -23,7 +23,7 @@ import { createMarket, step as marketStep } from './sim/market'
 import { generateContracts } from './sim/contracts'
 import { boostMultiplier, cargoCapacity, loadUpgrades, miningYield, saveUpgrades, topSpeed } from './sim/upgrades'
 import { type Celestial, queryCelestials } from './sim/galaxy'
-import { generatePlanetTextures, type PlanetTextureKind } from './render/planetTextures'
+import { generatePlanetTextures, samplePlanetSurface, type PlanetTextureKind } from './render/planetTextures'
 import { makeAsteroidMaterial } from './render/asteroidTextures'
 import { cancelTravel, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
@@ -601,21 +601,33 @@ function nearestPlanetIdx(): number {
 }
 
 const _toShip = new THREE.Vector3()
-/** Stop the ship flying through the sun/planets: clamp to the surface, kill inward velocity (slide). */
+/** Keep the ship above surfaces. Nearby solid planets clamp to the *sampled terrain height*
+ *  under the ship (low flight over hills & valleys); the sun, gas giants and distant bodies
+ *  use a fast spherical clamp. Inward velocity is killed so you slide along the surface. */
 function resolvePlanetCollisions(): void {
-  const hit = (cx: number, cy: number, cz: number, radius: number): void => {
+  const hit = (cx: number, cy: number, cz: number, radius: number, surface?: SurfaceKind, seed = 0, color = 0x999999): void => {
     _toShip.set(ship.position.x - cx, ship.position.y - cy, ship.position.z - cz)
     const dist = _toShip.length()
-    const minDist = radius * 1.06 + 30 // sit just above the surface (clears terrain displacement)
-    if (dist < minDist && dist > 1e-3) {
-      _toShip.multiplyScalar(1 / dist) // surface normal
+    if (dist <= 1e-3) return
+    _toShip.multiplyScalar(1 / dist) // surface normal
+    let minDist: number
+    if (surface && surface !== 'gas' && surface !== 'venus' && dist < radius * 2.5) {
+      // Low altitude: follow the real terrain. Height/displacement matches the close LOD mesh
+      // (height × radius × 0.055 × dispScale[=1.6]); a small clearance keeps us just above it.
+      const s = samplePlanetSurface(surface, seed, _toShip.x, _toShip.y, _toShip.z, color, radius)
+      minDist = radius + s.height * radius * 0.055 * 1.6 + radius * 0.004 + 6
+    } else {
+      minDist = radius * 1.06 + 30 // sun / gas giants / distant: fast spherical clamp
+    }
+    if (dist < minDist) {
       ship.position.set(cx, cy, cz).addScaledVector(_toShip, minDist)
       const vn = ship.velocity.dot(_toShip)
       if (vn < 0) ship.velocity.addScaledVector(_toShip, -vn)
     }
   }
   hit(SUN_POSITION.x, SUN_POSITION.y, SUN_POSITION.z, SUN_RADIUS)
-  for (const p of [...PLANETS, SPAWN_PLANET]) hit(p.position.x, p.position.y, p.position.z, p.radius)
+  for (const p of PLANETS) hit(p.position.x, p.position.y, p.position.z, p.radius, p.surface, p.seed, p.color)
+  hit(SPAWN_PLANET.position.x, SPAWN_PLANET.position.y, SPAWN_PLANET.position.z, SPAWN_PLANET.radius)
 }
 
 const boltGeo = new THREE.SphereGeometry(0.45, 6, 6)
