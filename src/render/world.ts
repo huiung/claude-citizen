@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { SurfaceKind } from '../sim/solarSystem'
+import { SUN_POSITION } from '../sim/solarSystem'
 import { generateCloudTexture, generatePlanetTextures, samplePlanetSurface } from './planetTextures'
 import { makeAsteroidMaterial, makeOreMaterial } from './asteroidTextures'
 
@@ -94,31 +95,53 @@ export function buildNebula(): THREE.Mesh {
 
 /** Fresnel atmosphere shell — glows along the limb (edge), fades to clear over the disc.
  *  BackSide + additive so it reads as light scattering around the planet, not a painted skin. */
-function makeAtmosphere(radius: number, atmoColor: number, power: number): THREE.Mesh {
+function makeAtmosphere(radius: number, atmoColor: number, power: number, dayColor = 0xffb070): THREE.Mesh {
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    uniforms: { uColor: { value: new THREE.Color(atmoColor) }, uPower: { value: power } },
+    uniforms: {
+      uColor: { value: new THREE.Color(atmoColor) },
+      uDayColor: { value: new THREE.Color(dayColor) },
+      uPower: { value: power },
+      uSunPos: { value: SUN_POSITION.clone() }, // world-space sun — drives the day/night limb
+    },
     vertexShader: /* glsl */ `
-      varying vec3 vNormal;
+      varying vec3 vNormalV;
       varying vec3 vView;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPos;
       void main(){
-        vNormal = normalize(normalMatrix * normal);
+        vNormalV = normalize(normalMatrix * normal);
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
         vView = normalize(-mv.xyz);
+        vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+        vWorldNormal = normalize(mat3(modelMatrix) * normal);
         gl_Position = projectionMatrix * mv;
       }
     `,
     fragmentShader: /* glsl */ `
-      varying vec3 vNormal;
+      varying vec3 vNormalV;
       varying vec3 vView;
+      varying vec3 vWorldNormal;
+      varying vec3 vWorldPos;
       uniform vec3 uColor;
+      uniform vec3 uDayColor;
       uniform float uPower;
+      uniform vec3 uSunPos;
       void main(){
-        float fres = pow(1.0 - abs(dot(normalize(vNormal), normalize(vView))), uPower);
-        gl_FragColor = vec4(uColor * fres, fres);
+        // Limb glow (Fresnel) — brightest where the shell grazes the view ray.
+        float fres = pow(1.0 - abs(dot(normalize(vNormalV), normalize(vView))), uPower);
+        // Day/night from the sun direction at this point on the shell.
+        vec3 sunDir = normalize(uSunPos - vWorldPos);
+        float ndl = dot(normalize(vWorldNormal), sunDir); // -1 night .. +1 day
+        float day = smoothstep(-0.3, 0.25, ndl);          // soft terminator
+        // Warm sunset band peaks across the terminator, on the lit side.
+        float sunset = pow(clamp(1.0 - abs(ndl), 0.0, 1.0), 2.0) * day;
+        vec3 col = mix(uColor, uDayColor, sunset);
+        float lit = mix(0.04, 1.0, day);                  // night limb nearly fades out
+        gl_FragColor = vec4(col * fres * lit, fres * lit);
       }
     `,
   })
@@ -377,7 +400,7 @@ function makePlanetSurface(
   radius: number, color: number, surface: SurfaceKind, seed: number, detail: number, dispScale: number,
 ): THREE.Mesh {
   const isGas = surface === 'gas'
-  const segments = detail >= 6 ? 96 : 56
+  const segments = detail >= 8 ? 192 : detail >= 6 ? 96 : 56
   const geo = new THREE.SphereGeometry(radius, segments, Math.max(24, Math.floor(segments / 2)))
   const pos = geo.getAttribute('position') as THREE.BufferAttribute
   const v = new THREE.Vector3()
@@ -392,7 +415,8 @@ function makePlanetSurface(
   }
 
   geo.computeVertexNormals()
-  const mapSize = radius >= 4000 || isGas ? 1024 : 512
+  // Earth gets extra resolution so rivers/coastlines stay crisp up close.
+  const mapSize = surface === 'earth' ? 2048 : radius >= 4000 || isGas ? 1024 : 512
   const maps = generatePlanetTextures(surface, seed, color, mapSize, radius)
   const material = new THREE.MeshStandardMaterial({
     map: maps.colorMap,
@@ -416,8 +440,9 @@ export function buildSolarPlanet(
     group.add(makePlanetSurface(radius, color, surface, seed, 4, 1))
   } else {
     const lod = new THREE.LOD()
-    lod.addLevel(makePlanetSurface(radius, color, surface, seed, 6, 1.5), 0) // close: detailed terrain
-    lod.addLevel(makePlanetSurface(radius, color, surface, seed, 4, 0.5), radius * 3.5) // far: low-poly, flatter
+    lod.addLevel(makePlanetSurface(radius, color, surface, seed, 8, 1.6), 0) // up close: highest tessellation + tallest terrain
+    lod.addLevel(makePlanetSurface(radius, color, surface, seed, 6, 1.4), radius * 1.8) // mid
+    lod.addLevel(makePlanetSurface(radius, color, surface, seed, 4, 0.5), radius * 4.5) // far: low-poly, flatter
     group.add(lod)
   }
 

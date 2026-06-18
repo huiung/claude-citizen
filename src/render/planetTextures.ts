@@ -155,17 +155,40 @@ export function samplePlanetSurface(
 
   if (kind === 'earth') {
     const landMask = continents + detail * 0.24
+    // Polar ice caps.
     if (polar > 0.84) return { color: _a.setRGB(0.88, 0.93, 0.96).clone(), height: 0.18 + fine * 0.03 }
+    // Oceans — deeper water reads darker/bluer.
     if (landMask < -0.08) {
       const depth = THREE.MathUtils.clamp((-landMask - 0.08) * 2.5, 0, 1)
       return { color: mixColor(_a.setRGB(0.04, 0.16, 0.34), _b.setRGB(0.08, 0.34, 0.55), 1 - depth).clone(), height: -0.18 - depth * 0.08 }
     }
+    // Coastal sand.
     if (landMask < 0.02) return { color: _a.setRGB(0.72, 0.62, 0.38).clone(), height: 0.02 }
+
+    // --- Land: biome colour (moisture × latitude × elevation) + carved rivers ---
     const mountain = ridged(detail + fine * 0.35)
-    const dry = THREE.MathUtils.clamp((continents + 0.18) * 1.3 + polar * 0.35, 0, 1)
-    const ground = mixColor(_a.setRGB(0.12, 0.42, 0.22), _b.setRGB(0.55, 0.44, 0.25), dry)
-    ground.lerp(_b.setRGB(0.75, 0.74, 0.66), Math.max(0, mountain - 0.72) * 2.6)
-    return { color: ground.clone(), height: 0.06 + mountain * 0.34 }
+    const elevation = 0.06 + mountain * 0.34
+    // Wetter toward continental lows, drier on highs; fine noise breaks biomes into patches.
+    const moisture = THREE.MathUtils.clamp(0.5 - continents * 0.45 + fine * 0.18, 0, 1)
+    // Colder toward the poles → boreal/tundra tints and lower snowline.
+    const cold = THREE.MathUtils.clamp((polar - 0.5) * 2.2, 0, 1)
+
+    // Desert → grassland → forest by moisture (in-place lerp chain; _b is the moving target).
+    const land = _a.setRGB(0.78, 0.69, 0.45)
+    land.lerp(_b.setRGB(0.45, 0.54, 0.26), THREE.MathUtils.smoothstep(moisture, 0.22, 0.5))
+    land.lerp(_b.setRGB(0.12, 0.34, 0.15), THREE.MathUtils.smoothstep(moisture, 0.5, 0.82))
+    // High latitudes drift to muted boreal green-grey.
+    land.lerp(_b.setRGB(0.42, 0.47, 0.40), cold * 0.55)
+    // Exposed rock on steep highlands, then snow on the highest/coldest peaks.
+    land.lerp(_b.setRGB(0.52, 0.50, 0.47), THREE.MathUtils.smoothstep(mountain, 0.64, 0.82))
+    land.lerp(_b.setRGB(0.93, 0.94, 0.96), THREE.MathUtils.clamp((mountain - 0.84) * 4 + cold * mountain * 0.5, 0, 1))
+
+    // Rivers: ridged-noise channels, strongest on wet lowlands, drawn as dark water and slightly carved.
+    const riverline = ridged(fbm(x * 3.6 * scale + 20, y * 3.6 * scale - 9, z * 3.6 * scale + 5, seed + 131, 5))
+    const river = Math.pow(Math.max(0, riverline), 9) * (1 - THREE.MathUtils.clamp(mountain, 0, 1)) * moisture
+    land.lerp(_b.setRGB(0.09, 0.27, 0.40), THREE.MathUtils.clamp(river * 3, 0, 0.9))
+
+    return { color: land.clone(), height: elevation - river * 0.04 }
   }
 
   if (kind === 'mars') {
