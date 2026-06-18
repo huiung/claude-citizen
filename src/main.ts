@@ -1037,10 +1037,14 @@ addEventListener('mouseup', (e) => {
   if (e.button === 2) weaponActive = false
 })
 
-function readInput(): ControlInput {
-  // Mouse deflection decays toward center — feels like a virtual joystick
-  mousePitch *= 0.92
-  mouseYaw *= 0.92
+// Mouse self-centering rate (1/s). Tuned so a 60 fps frame matches the old *0.92 feel
+// (e^(-5/60) ≈ 0.92), but now frame-rate independent so it feels identical at any refresh rate.
+const MOUSE_DECAY = 5
+function readInput(dt: number): ControlInput {
+  // Mouse deflection decays toward center — feels like a virtual joystick (frame-rate independent)
+  const keep = Math.exp(-MOUSE_DECAY * dt)
+  mousePitch *= keep
+  mouseYaw *= keep
   return {
     thrust: new THREE.Vector3(
       (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0),
@@ -1577,7 +1581,7 @@ function frame(now: number): void {
     quantumEl.hidden = true
     const dest = destinationArrival()
     navHintEl.textContent = `[N] pick planet | ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km   |   [J] jump`
-    const input = readInput()
+    const input = readInput(dt)
     stepShip(ship, input, dt, { maxSpeed: effSpeed(), boostMultiplier: effBoost() })
     resolvePlanetCollisions()
     shipMesh.position.copy(ship.position)
