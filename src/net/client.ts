@@ -189,12 +189,14 @@ export class NetClient {
 
   /** Step 1 of SIWS: ask the server for a nonce to sign. */
   requestChallenge(pubkey: string): void {
-    this.ws?.send(JSON.stringify({ t: 'auth-challenge', pubkey }))
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+    this.ws.send(JSON.stringify({ t: 'auth-challenge', pubkey }))
   }
 
   /** Step 2 of SIWS: submit the signature (+ current anon token for claim). */
   submitAuth(pubkey: string, signature: string): void {
-    this.ws?.send(JSON.stringify({ t: 'auth', pubkey, signature, anonToken: this.token }))
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
+    this.ws.send(JSON.stringify({ t: 'auth', pubkey, signature, anonToken: this.token }))
   }
 
   /** Returns true if a chat line was sent (false when offline). */
