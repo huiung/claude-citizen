@@ -672,15 +672,35 @@ function resolvePlanetCollisions(): void {
   hit(SPAWN_PLANET.position.x, SPAWN_PLANET.position.y, SPAWN_PLANET.position.z, SPAWN_PLANET.radius)
 }
 
-const boltGeo = new THREE.SphereGeometry(0.45, 6, 6)
-const playerBoltMat = new THREE.MeshBasicMaterial({ color: 0x8ff0ff })
-const pirateBoltMat = new THREE.MeshBasicMaterial({ color: 0xff7b4a })
+const boltGeo = new THREE.SphereGeometry(0.4, 8, 8)
+const boltHaloGeo = new THREE.SphereGeometry(0.85, 8, 8)
 const explosionGeo = new THREE.SphereGeometry(1, 10, 10)
 
+// Per-ship-type bolt colors (player); pirates fire warm orange. Friendly hulls read cool/bright,
+// hostiles read orange — so you can tell incoming fire apart at a glance.
+const BOLT_COLORS: Record<ShipType, number> = {
+  hauler: 0x8ff0ff, fighter: 0xffd23a, miner: 0xaef67a, interceptor: 0xc08aff,
+}
+const boltMatCache = new Map<string, THREE.MeshBasicMaterial>()
+function boltMat(color: number, opacity: number): THREE.MeshBasicMaterial {
+  const key = `${color}:${opacity}`
+  let m = boltMatCache.get(key)
+  if (!m) {
+    m = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false })
+    boltMatCache.set(key, m)
+  }
+  return m
+}
+
 function makeBolt(faction: 'player' | 'pirate'): THREE.Mesh {
-  const mesh = new THREE.Mesh(boltGeo, faction === 'player' ? playerBoltMat : pirateBoltMat)
-  mesh.scale.set(1, 1, 2.2) // elongated like a tracer
-  return mesh
+  const color = faction === 'player' ? BOLT_COLORS[selectedShipType] : 0xff7b4a
+  // Bright additive core + soft halo → bloom turns it into a glowing plasma tracer (not a flat dot).
+  const core = new THREE.Mesh(boltGeo, boltMat(color, 0.95))
+  core.scale.set(1, 1, 2.6) // elongated tracer; z aligns to travel via lookAt
+  const halo = new THREE.Mesh(boltHaloGeo, boltMat(color, 0.28))
+  halo.scale.set(1, 1, 1.6)
+  core.add(halo)
+  return core
 }
 
 function spawnExplosion(pos: THREE.Vector3, now: number): void {
@@ -1400,7 +1420,7 @@ const _skySun = new THREE.Vector3()
 // Atmospheric-entry sky: the closer you get to a planet's surface, the more the screen
 // fills with that planet's air color — brighter on the sun-facing (day) side, fading to
 // dark space at night. A sense of descending into the atmosphere and flying under its sky.
-function updateAtmoVeil(): void {
+function updateAtmoVeil(): number {
   let prox = 0
   let surface = 'rocky'
   let nx = 0, ny = 0, nz = 0
@@ -1421,6 +1441,7 @@ function updateAtmoVeil(): void {
     atmoVeilEl.style.background = 'none'
     atmoVeilEl.style.opacity = '0'
   }
+  return prox
 }
 
 const _altN = new THREE.Vector3()
@@ -1534,6 +1555,11 @@ function frame(now: number): void {
       : `QUANTUM TRAVEL → ${jumpTargetName} · ${Math.round(qr.progress * 100)}%`
     navHintEl.textContent = ''
     audio.setThrust(qr.phase === 'traveling' ? 0.75 : 0.2, qr.phase === 'traveling', qr.phase === 'traveling' ? 0.95 : 0)
+    audio.setAmbience({
+      atmosphere: 0,
+      quantum: qr.phase === 'spooling' ? 0.55 : 1,
+      speedFrac: qr.phase === 'traveling' ? 1.2 : 0.25,
+    })
     net.sendState(
       [ship.position.x, ship.position.y, ship.position.z],
       [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],
@@ -1553,7 +1579,11 @@ function frame(now: number): void {
     speedEl.textContent = String(Math.round(ship.velocity.length()))
     boostEl.style.visibility = input.boost ? 'visible' : 'hidden'
     camBoost = input.boost
-    if (input.boost && !prevBoost) { boostKick = 1; audio.blip('boost') } // ignition punch
+    if (input.boost && !prevBoost) {
+      boostKick = 1
+      audio.playBoostPunch(ship.velocity.length() / effSpeed())
+      audio.blip('boost')
+    } // ignition punch
     prevBoost = input.boost
 
     // Engine audio tracks commanded thrust; wind layer tracks actual speed.
@@ -1678,7 +1708,10 @@ function frame(now: number): void {
     drawMinimap()
     updateDepthHUD()
     updateAltitudeHUD()
-    updateAtmoVeil()
+    const atmosphere = updateAtmoVeil()
+    if (quantum.phase === 'idle') {
+      audio.setAmbience({ atmosphere, quantum: 0, speedFrac: ship.velocity.length() / effSpeed() })
+    }
   } else {
     // Menu background: slow orbit around the station
     const t = now * 0.0001
