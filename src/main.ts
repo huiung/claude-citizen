@@ -39,6 +39,7 @@ import { inject as injectAnalytics } from '@vercel/analytics'
 injectAnalytics() // Vercel Web Analytics (no-op off Vercel / in dev)
 
 const INTERP_DELAY_MS = 120
+const CAPTURE_OG = new URLSearchParams(location.search).get('capture') === 'og'
 
 // --- DOM
 const appEl = document.getElementById('app')!
@@ -90,7 +91,7 @@ const navHintEl = document.getElementById('nav-hint')!
 const objectiveEl = document.getElementById('objective')!
 // Onboarding: show a "next objective" only to brand-new pilots. localStorage gate (this device
 // hasn't onboarded) is the fast path; a returning token with saved progress also disables it.
-let onboardingActive = !localStorage.getItem('scc.onboarded')
+let onboardingActive = !CAPTURE_OG && !localStorage.getItem('scc.onboarded')
 let sessionKicked = false // signed in elsewhere — freeze the objective HUD on the warning
 // Onboarding progress is persisted so a refresh keeps your step (and graduating sticks),
 // even without a relay connection.
@@ -429,6 +430,7 @@ function saveHangar(): void {
 // Scatter spawns near the origin so pilots don't all stack on the same point (#1).
 // Well inside the 1600 safe-zone radius, so you never spawn into pirates.
 function randomSpawn(): THREE.Vector3 {
+  if (CAPTURE_OG) return new THREE.Vector3(320, -18, 220)
   const a = Math.random() * Math.PI * 2
   const r = 200 + Math.random() * 400 // 200–600: visibly different, still well inside the 1600 safe zone
   return new THREE.Vector3(Math.cos(a) * r, (Math.random() - 0.5) * 100, Math.sin(a) * r)
@@ -1299,12 +1301,12 @@ function launch(): void {
   if (statsTimer) clearInterval(statsTimer)
   overlayEl.hidden = true
   overlayEl.style.display = 'none'
-  hudEl.hidden = false
-  statusEl.hidden = false
-  helpEl.hidden = false
-  crosshairEl.hidden = false
-  walletEl.hidden = false
-  minimapWrapEl.hidden = false
+  hudEl.hidden = CAPTURE_OG
+  statusEl.hidden = CAPTURE_OG
+  helpEl.hidden = CAPTURE_OG
+  crosshairEl.hidden = CAPTURE_OG
+  walletEl.hidden = CAPTURE_OG
+  minimapWrapEl.hidden = CAPTURE_OG
   leaderboardPanelEl.hidden = true
   updateWalletHUD() // HUD only — don't net.saveProgress before onProgress restores, or we'd overwrite saved data
   hullBarEl.style.width = '100%'
@@ -1319,6 +1321,10 @@ function launch(): void {
 }
 launchEl.addEventListener('click', launch)
 nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') launch() })
+if (CAPTURE_OG) {
+  nicknameEl.value = 'test'
+  requestAnimationFrame(() => launch())
+}
 renderer.domElement.addEventListener('click', () => {
   if (running && !docked && !chatOpen && !solarMap.isOpen && document.pointerLockElement !== renderer.domElement) {
     requestFlightPointerLock()
@@ -1349,20 +1355,30 @@ function atmoColorFor(surface: string): string {
     : '#9fb4c8'
 }
 
-// Atmospheric-entry veil: the closer you get to a planet's surface, the more the screen
-// edges glow with that planet's air color — a sense of descending into the atmosphere.
+const _skyN = new THREE.Vector3()
+const _skySun = new THREE.Vector3()
+// Atmospheric-entry sky: the closer you get to a planet's surface, the more the screen
+// fills with that planet's air color — brighter on the sun-facing (day) side, fading to
+// dark space at night. A sense of descending into the atmosphere and flying under its sky.
 function updateAtmoVeil(): void {
   let prox = 0
   let surface = 'rocky'
+  let nx = 0, ny = 0, nz = 0
   for (const p of [...PLANETS, SPAWN_PLANET]) {
     const d = ship.position.distanceTo(p.position)
     const pr = 1 - Math.min(1, Math.max(0, (d - p.radius * 1.06) / (p.radius * 1.6)))
-    if (pr > prox) { prox = pr; surface = p.surface }
+    if (pr > prox) { prox = pr; surface = p.surface; nx = p.position.x; ny = p.position.y; nz = p.position.z }
   }
   if (prox > 0.01) {
-    atmoVeilEl.style.opacity = String(Math.min(0.7, prox * 0.7))
-    atmoVeilEl.style.boxShadow = `inset 0 0 ${Math.round(120 + prox * 130)}px ${Math.round(20 + prox * 60)}px ${atmoColorFor(surface)}`
+    // Day/night at our spot on the planet → sky brightness.
+    _skyN.set(ship.position.x - nx, ship.position.y - ny, ship.position.z - nz).normalize()
+    _skySun.set(SUN_POSITION.x - ship.position.x, SUN_POSITION.y - ship.position.y, SUN_POSITION.z - ship.position.z).normalize()
+    const day = THREE.MathUtils.clamp(_skyN.dot(_skySun) * 0.5 + 0.5, 0, 1)
+    const sky = atmoColorFor(surface)
+    atmoVeilEl.style.background = `radial-gradient(ellipse at center, transparent 22%, ${sky} 128%)`
+    atmoVeilEl.style.opacity = String(Math.min(0.82, prox) * (0.18 + day * 0.82))
   } else {
+    atmoVeilEl.style.background = 'none'
     atmoVeilEl.style.opacity = '0'
   }
 }
