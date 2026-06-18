@@ -605,6 +605,12 @@ function nearestPlanetIdx(): number {
 }
 
 const _toShip = new THREE.Vector3()
+const _t1 = new THREE.Vector3()
+const _t2 = new THREE.Vector3()
+const _probe = new THREE.Vector3()
+const _up = new THREE.Vector3(0, 1, 0)
+// Angular offsets (× probe radius) sampled around the ship's footprint to catch nearby peaks.
+const PROBE_OFFSETS: ReadonlyArray<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]]
 /** Keep the ship above surfaces. Nearby solid planets clamp to the *sampled terrain height*
  *  under the ship (low flight over hills & valleys); the sun, gas giants and distant bodies
  *  use a fast spherical clamp. Inward velocity is killed so you slide along the surface. */
@@ -616,10 +622,22 @@ function resolvePlanetCollisions(): void {
     _toShip.multiplyScalar(1 / dist) // surface normal
     let minDist: number
     if (surface && surface !== 'gas' && surface !== 'venus' && dist < radius * 2.5) {
-      // Low altitude: follow the real terrain. Height/displacement matches the close LOD mesh
-      // (height × radius × 0.055 × dispScale[=1.6]); a small clearance keeps us just above it.
-      const s = samplePlanetSurface(surface, seed, _toShip.x, _toShip.y, _toShip.z, color, radius)
-      minDist = radius + s.height * radius * 0.055 * 1.6 + radius * 0.004 + 6
+      // Low altitude: follow the real terrain. Sample under the ship AND a ring of nearby
+      // points, clamp to the *highest* — otherwise a peak beside us (while our footprint sits
+      // in a valley) is ignored and we fly through it. Height matches the close LOD mesh
+      // (height × radius × 0.055 × dispScale[=1.6]); a small clearance keeps us just above.
+      _t1.crossVectors(_toShip, _up)
+      if (_t1.lengthSq() < 1e-6) _t1.set(1, 0, 0) // over a pole — any tangent works
+      _t1.normalize()
+      _t2.crossVectors(_toShip, _t1).normalize()
+      const off = 0.012 // angular probe radius around the ship's footprint
+      let maxH = samplePlanetSurface(surface, seed, _toShip.x, _toShip.y, _toShip.z, color, radius).height
+      for (const [a, b] of PROBE_OFFSETS) {
+        _probe.copy(_toShip).addScaledVector(_t1, a * off).addScaledVector(_t2, b * off).normalize()
+        const h = samplePlanetSurface(surface, seed, _probe.x, _probe.y, _probe.z, color, radius).height
+        if (h > maxH) maxH = h
+      }
+      minDist = radius + maxH * radius * 0.055 * 1.6 + radius * 0.004 + 6
     } else {
       minDist = radius * 1.06 + 30 // sun / gas giants / distant: fast spherical clamp
     }
