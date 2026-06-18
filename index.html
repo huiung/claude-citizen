@@ -242,7 +242,8 @@
     #pc-status { font-size: 10px; color: #ffe08a; min-height: 12px; }
     #wallet-box { margin: 8px auto 0; }
     #connect-wallet { font: 12px "Share Tech Mono", ui-monospace, monospace; color: #9fffb0; background: transparent; border: 1px solid rgba(159,255,176,.5); border-radius: 4px; padding: 6px 12px; cursor: pointer; }
-    #connect-wallet:hover { border-color: #9fffb0; }
+    #connect-wallet:hover:not(:disabled) { border-color: #9fffb0; }
+    #connect-wallet:disabled { opacity: .65; cursor: default; border-color: rgba(159,255,176,.25); }
     #wallet-status { display: block; font-size: 11px; color: #ffe08a; min-height: 12px; margin-top: 4px; }
     #mobile-notice { display: none; }
     .is-mobile #nickname, .is-mobile #launch, .is-mobile .foot, .is-mobile #leaderboard-landing, .is-mobile #pilot-code, .is-mobile #wallet-box { display: none; }

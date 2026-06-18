@@ -171,13 +171,21 @@ restoreBtn.addEventListener('click', () => {
 const connectWalletBtn = document.getElementById('connect-wallet') as HTMLButtonElement
 const walletStatusEl = document.getElementById('wallet-status')!
 let pendingPubkey: string | null = null
+let netConnected = false // kept in sync by NetEvents.onStatus — auth needs a live socket
 
 function setWalletStatus(text: string): void { walletStatusEl.textContent = text }
 
-if (walletSession) setWalletStatus(`Connected ${walletSession.pubkey.slice(0, 4)}…${walletSession.pubkey.slice(-4)}`)
+/** Lock the button once a wallet is linked — the server rejects re-auth on a live connection. */
+function lockWalletButton(pubkey: string): void {
+  connectWalletBtn.disabled = true
+  connectWalletBtn.textContent = `✓ ${pubkey.slice(0, 4)}…${pubkey.slice(-4)}`
+}
+
+if (walletSession) { lockWalletButton(walletSession.pubkey); setWalletStatus('Wallet linked.') }
 
 connectWalletBtn.addEventListener('click', () => {
   if (!hasWallet()) { setWalletStatus('No Solana wallet found — install Phantom.'); return }
+  if (!netConnected) { setWalletStatus('Not connected to server — try again in a moment.'); return }
   setWalletStatus('Connecting…')
   connectWallet().then((pubkey) => {
     pendingPubkey = pubkey
@@ -1186,7 +1194,8 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     walletSession = { pubkey, sessionId, connectedAt: Date.now() }
     saveWalletSession(localStorage, walletSession)
     pendingPubkey = null
-    setWalletStatus(`Connected ${pubkey.slice(0, 4)}…${pubkey.slice(-4)}`)
+    lockWalletButton(pubkey)
+    setWalletStatus(`Connected ${pubkey.slice(0, 4)}…${pubkey.slice(-4)} — press LAUNCH to play`)
   },
   onAuthError: () => {
     pendingPubkey = null
@@ -1234,6 +1243,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     }
   },
   onStatus(connected, online) {
+    netConnected = connected
     netEl.textContent = connected ? 'SECTOR LINK: ONLINE' : 'SECTOR LINK: OFFLINE (solo)'
     onlineEl.textContent = String(online)
     if (connected) {
