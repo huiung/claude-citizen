@@ -215,11 +215,21 @@ export function samplePlanetSurface(
       craterCount(isMoon ? 38 : 30, radius),
       craterAngularScale(radius) * (isMoon ? 1.15 : 0.9),
     ))
-    const gray = isMoon
-      ? mixColor(_a.setRGB(0.24, 0.24, 0.23), _b.setRGB(0.68, 0.66, 0.6), (continents + detail + 2) * 0.25)
-      : mixColor(_a.set(baseColor).multiplyScalar(0.62), _b.set(baseColor).multiplyScalar(1.25), (continents + detail + 2) * 0.25)
-    gray.lerp(_b.setRGB(0.86, 0.83, 0.74), Math.max(0, craters) * 0.32)
-    return { color: gray.clone(), height: continents * 0.22 + detail * 0.12 + craters * 0.36 }
+    // Scarps/ridges + broad elevation for dark lows ↔ bright highlands.
+    const scarp = Math.pow(ridged(fbm(x * 4 * scale, y * 4 * scale, z * 4 * scale, seed + 211, 4)), 4)
+    const elev = THREE.MathUtils.clamp((continents + detail * 0.5) * 0.5 + 0.5, 0, 1)
+    let gray: THREE.Color
+    if (isMoon) {
+      gray = _a.setRGB(0.15, 0.15, 0.16) // dark basaltic maria in the lows
+      gray.lerp(_b.setRGB(0.64, 0.63, 0.60), THREE.MathUtils.smoothstep(elev, 0.34, 0.74)) // bright anorthosite highlands
+    } else {
+      gray = _a.set(baseColor).multiplyScalar(0.5) // shadowed base hue
+      gray.lerp(_b.set(baseColor).multiplyScalar(1.35), THREE.MathUtils.smoothstep(elev, 0.3, 0.8)) // sunlit highlands
+    }
+    gray.lerp(_b.setRGB(0.72, 0.70, 0.66), Math.max(0, fine) * 0.12) // fine regolith mottling
+    gray.lerp(_b.setRGB(0.90, 0.87, 0.80), Math.max(0, craters) * 0.42) // bright crater rims / ejecta
+    gray.lerp(_b.setRGB(0.08, 0.08, 0.09), scarp * 0.28) // scarp shadows
+    return { color: gray.clone(), height: continents * 0.22 + detail * 0.12 + craters * 0.36 + scarp * 0.07 }
   }
 
   if (kind === 'ice') {
