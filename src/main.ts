@@ -34,6 +34,8 @@ import { type Pirate, PIRATE_REWARD, spawnPirate, spawnPositionAround, stepPirat
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { SolarSystemMap, type SolarMapDestinationResult, type SolarMapNavigationTarget } from './ui/solarSystemMap'
+import { activeIdentity, loadWalletSession, saveWalletSession } from './net/identity'
+import { connectWallet, signMessage, hasWallet, WalletError, NO_WALLET } from './net/wallet'
 import { inject as injectAnalytics } from '@vercel/analytics'
 
 injectAnalytics() // Vercel Web Analytics (no-op off Vercel / in dev)
@@ -137,6 +139,11 @@ function loadToken(): string {
 }
 const playerToken = loadToken()
 
+// Wallet session (optional, secondary to the anonymous Pilot Code). When linked, the verified
+// pubkey becomes the active identity; otherwise the anonymous token is used.
+let walletSession = loadWalletSession(localStorage)
+const identity = activeIdentity(playerToken, walletSession)
+
 // Pilot Code = the anonymous token, surfaced so players can back it up / restore on another device.
 const myCodeEl = document.getElementById('my-code')!
 const copyCodeBtn = document.getElementById('copy-code')!
@@ -157,6 +164,30 @@ restoreBtn.addEventListener('click', () => {
   localStorage.setItem('scc.token', code)
   pcStatusEl.textContent = 'Loaded — reconnecting…'
   setTimeout(() => location.reload(), 400)
+})
+
+// Connect Wallet (optional, SIWS) — link a Solana wallet to claim the pilot. Anonymous play is unaffected.
+// Declared here (before NetClient) so the auth callbacks in the events object can see them.
+const connectWalletBtn = document.getElementById('connect-wallet') as HTMLButtonElement
+const walletStatusEl = document.getElementById('wallet-status')!
+let pendingPubkey: string | null = null
+
+function setWalletStatus(text: string): void { walletStatusEl.textContent = text }
+
+if (walletSession) setWalletStatus(`Connected ${walletSession.pubkey.slice(0, 4)}…${walletSession.pubkey.slice(-4)}`)
+
+connectWalletBtn.addEventListener('click', () => {
+  if (!hasWallet()) { setWalletStatus('No Solana wallet found — install Phantom.'); return }
+  setWalletStatus('Connecting…')
+  connectWallet().then((pubkey) => {
+    pendingPubkey = pubkey
+    setWalletStatus('Approve the signature in your wallet…')
+    net?.requestChallenge(pubkey)
+  }).catch((e) => {
+    setWalletStatus(e instanceof WalletError && e.message === NO_WALLET
+      ? 'No Solana wallet found — install Phantom.'
+      : 'Connection cancelled.')
+  })
 })
 
 // Landing stats (online / registered pilots) from the relay's /stats endpoint.
@@ -1145,7 +1176,22 @@ function readInput(dt: number): ControlInput {
   }
 }
 
-const net = new NetClient(nicknameEl.value || 'PILOT', playerToken, {
+const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
+  onChallenge: (message) => {
+    signMessage(message).then((sig) => {
+      if (pendingPubkey) net.submitAuth(pendingPubkey, sig)
+    }).catch(() => { setWalletStatus('Signature cancelled.'); pendingPubkey = null })
+  },
+  onAuthOk: (pubkey, sessionId) => {
+    walletSession = { pubkey, sessionId, connectedAt: Date.now() }
+    saveWalletSession(localStorage, walletSession)
+    pendingPubkey = null
+    setWalletStatus(`Connected ${pubkey.slice(0, 4)}…${pubkey.slice(-4)}`)
+  },
+  onAuthError: () => {
+    pendingPubkey = null
+    setWalletStatus('Wallet not linked — already has a pilot, or signing failed.')
+  },
   onProgress(p) {
     // Server is the source of truth — adopt saved progress when it arrives.
     econ.credits = p.credits
@@ -1207,6 +1253,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', playerToken, {
     objectiveEl.hidden = false
   },
 })
+net.setSession(walletSession?.sessionId ?? null) // resume a verified wallet session if we have one
 net.connect() // connect on page load as a viewer (presence) — counts toward "online" on the landing
 
 // --- Chat
