@@ -20,6 +20,9 @@ const CRAFT_MODEL_TARGET_SIZES: Record<ShipType, number> = {
 
 const PIRATE_MODEL_URL = '/assets/ships/pirate-raider.glb'
 const PIRATE_MODEL_TARGET_SIZE = 8.8
+const CAPITAL_MODEL_URL = '/assets/ships/capital-dreadnought.glb'
+const CAPITAL_CARRIER_MODEL_URL = '/assets/ships/capital-carrier.glb'
+const CAPITAL_MODEL_TARGET_SIZE = 620
 
 export function craftModelUrl(type: ShipType): string {
   return CRAFT_MODEL_URLS[type]
@@ -27,6 +30,14 @@ export function craftModelUrl(type: ShipType): string {
 
 export function pirateModelUrl(): string {
   return PIRATE_MODEL_URL
+}
+
+export function capitalModelUrl(): string {
+  return CAPITAL_MODEL_URL
+}
+
+export function capitalCarrierModelUrl(): string {
+  return CAPITAL_CARRIER_MODEL_URL
 }
 
 /** Load a generated GLB hull, normalized to game scale (by bounding box) and wrapped in a
@@ -56,6 +67,14 @@ export async function loadCraftModelForType(type: ShipType): Promise<THREE.Group
 
 export async function loadPirateModel(): Promise<THREE.Group | null> {
   return loadCraftModel(PIRATE_MODEL_URL, PIRATE_MODEL_TARGET_SIZE)
+}
+
+export async function loadCapitalModel(): Promise<THREE.Group | null> {
+  return loadCraftModel(CAPITAL_MODEL_URL, CAPITAL_MODEL_TARGET_SIZE)
+}
+
+export async function loadCapitalCarrierModel(): Promise<THREE.Group | null> {
+  return loadCraftModel(CAPITAL_CARRIER_MODEL_URL, CAPITAL_MODEL_TARGET_SIZE)
 }
 
 /**
