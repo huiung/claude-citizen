@@ -27,8 +27,8 @@ export interface Planet {
 // nearest and dead ahead at launch; the others fan out around the sun.
 const SPEC: ReadonlyArray<{ name: string; dist: number; radius: number; color: number; angle: number; surface: SurfaceKind; rings?: boolean }> = [
   { name: 'Earth', dist: 37000, radius: 4300, color: 0x3a72a8, angle: 90, surface: 'earth' },
-  { name: 'Venus', dist: 25000, radius: 4000, color: 0xd9ad6a, angle: 160, surface: 'venus' },
-  { name: 'Mercury', dist: 15000, radius: 1700, color: 0x9a8a78, angle: 225, surface: 'rocky' },
+  { name: 'Venus', dist: 33000, radius: 4000, color: 0xd9ad6a, angle: 160, surface: 'venus' },
+  { name: 'Mercury', dist: 28000, radius: 1700, color: 0x9a8a78, angle: 225, surface: 'rocky' },
   { name: 'Mars', dist: 52000, radius: 2400, color: 0xc25433, angle: 315, surface: 'mars' },
   { name: 'Jupiter', dist: 82000, radius: 16000, color: 0xc9aa80, angle: 25, surface: 'gas' },
   { name: 'Saturn', dist: 112000, radius: 13000, color: 0xdac89c, angle: 200, surface: 'gas', rings: true },
