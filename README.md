@@ -44,8 +44,9 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **An endless procedural galaxy:** fly any direction and planets, moons, stations, and derelicts keep appearing — some planets are vast
 - **Deep space:** the farther you fly from the core, the more rare gold ore veins (credit jackpots) and tougher, higher-bounty pirates appear — a HUD gauge tracks how deep (and dangerous) you are. Risk and reward scale together
 - **A named solar system:** Sun + Mercury through Saturn at a compressed scale, each with a procedurally textured surface (oceans/continents, gas bands, ice caps) — and they're solid, so you fly *around* them, not through
+- **Drop to the surface:** approach an earth-type world and it resolves into continents, rivers, forests, deserts and snow-capped peaks (procedural, higher-detail up close); the sky fills in with day/night atmosphere, an altimeter kicks in, and collision follows the *real terrain* — so you can skim low over its hills and valleys instead of bouncing off a sphere
 - **Quantum travel:** pick a destination with `[N]` or open the **Solar Atlas** with `[M]` and click a planet, charge the drive, and jump to any planet in the system — warp streaks, a wide-FOV cruise, and a named arrival
-- **A cinematic sky:** bloom glow, fresnel planet atmospheres, a procedural nebula backdrop, slowly rotating worlds, and parallax dust that streams past for a sense of speed
+- **A cinematic sky:** bloom glow, sunlit planet atmospheres (bright day limb, a warm sunset terminator, dark night side), a procedural nebula backdrop, slowly rotating worlds, and parallax dust that streams past for a sense of speed
 - **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor (detailed 3D models), each trading cargo/speed/toughness, unlocked as you climb the ranks
 - **A capital ship:** a procedural dreadnought ~120× your fighter, its hull aglow with hundreds of windows — fly its length for the scale
 - **Game feel:** a chase camera that carries G-force weight, a boost ignition punch (FOV kick + exhaust flare + whoosh), and an air-rush layer that swells with speed
@@ -55,7 +56,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
 - **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours. Grab a **Pilot Code** to restore your pilot on another device (one live session per code)
-- 145 tests, because "built with AI" shouldn't mean "built badly"
+- 147 tests, because "built with AI" shouldn't mean "built badly"
 
 ## Controls
 
@@ -90,8 +91,9 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | 6 | Hosted, playable at [claudecitizen.com](https://claudecitizen.com) | ✅ shipped |
 | 7 | Low-poly planet surfaces + cinematic sky (bloom, atmospheres, nebula, warp) | ✅ shipped |
 | 8 | Game feel + 3D ship models + capital ship + combat HUD + leaderboard | ✅ shipped |
-| 9 | Co-op combat — fight pirates together | next |
-| 10 | Procedural planetary landings (real terrain collision) | planned |
+| 9 | Detailed earth-type surfaces, day/night atmosphere, low-altitude terrain-following flight | ✅ shipped |
+| 10 | Co-op combat — fight pirates together | next |
+| 11 | Full planetary landings — touch down, walk the surface, take off | planned |
 | … | … | … |
 | 42 | Getting out of bed animation *(took the original 6 years — we'll take a weekend)* | someday |
 | 1.0 | **Ship before Star Citizen ships** | the whole point |
