@@ -68,6 +68,8 @@ const rankNextEl = document.getElementById('rank-next')!
 const promotionEl = document.getElementById('promotion')!
 const depthLabelEl = document.getElementById('depth-label')!
 const depthBarEl = document.getElementById('depth-bar')!
+const altLineEl = document.getElementById('alt-line')!
+const altLabelEl = document.getElementById('alt-label')!
 const atmoVeilEl = document.getElementById('atmo-veil')!
 let lastRankIndex = -1 // -1 until first HUD update, so we don't announce a "promotion" on load
 let promoTimer: ReturnType<typeof setTimeout> | undefined
@@ -1383,6 +1385,28 @@ function updateAtmoVeil(): void {
   }
 }
 
+const _altN = new THREE.Vector3()
+// Low-altitude readout: height above the nearest solid planet's sampled terrain.
+function updateAltitudeHUD(): void {
+  let best: typeof PLANETS[number] | null = null
+  let bestD = Infinity
+  for (const p of PLANETS) {
+    const d = ship.position.distanceTo(p.position)
+    if (d < bestD) { bestD = d; best = p }
+  }
+  if (best && bestD < best.radius * 2.5) {
+    _altN.set(ship.position.x - best.position.x, ship.position.y - best.position.y, ship.position.z - best.position.z).normalize()
+    const solid = best.surface !== 'gas' && best.surface !== 'venus'
+    const s = solid ? samplePlanetSurface(best.surface, best.seed, _altN.x, _altN.y, _altN.z, best.color, best.radius) : null
+    const terrainR = s ? best.radius + s.height * best.radius * 0.055 * 1.6 : best.radius
+    const alt = Math.max(0, Math.round(bestD - terrainR))
+    altLabelEl.textContent = `ALT ${alt.toLocaleString()} m`
+    altLineEl.hidden = false
+  } else {
+    altLineEl.hidden = true
+  }
+}
+
 function updateDepthHUD(): void {
   const df = deepFactor()
   let label: string, color: string
@@ -1615,6 +1639,7 @@ function frame(now: number): void {
     updateCamera(dt)
     drawMinimap()
     updateDepthHUD()
+    updateAltitudeHUD()
     updateAtmoVeil()
   } else {
     // Menu background: slow orbit around the station

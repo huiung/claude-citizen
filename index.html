@@ -64,6 +64,8 @@
     #depth-label { min-width: 78px; text-align: right; color: #8fe6a8; transition: color .5s; }
     #depth-track { width: 60px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .12); overflow: hidden; }
     #depth-bar { display: block; height: 100%; width: 0%; border-radius: 2px; background: #6fdc8c; transition: width .3s, background .5s; }
+    #alt-line { font-size: 10px; letter-spacing: 1px; margin-top: 3px; color: #aee9ff; opacity: .9; }
+    #alt-line[hidden] { display: none; }
     #nav-hint {
       font-size: 11px; color: #aee9ff; opacity: .8; margin-top: 5px; letter-spacing: .3px; min-height: 13px;
     }
@@ -311,6 +313,7 @@
   <div id="objective" hidden></div>
   <div id="minimap-wrap" hidden>
     <div id="depth-line"><span id="depth-label">CORE SPACE</span><span id="depth-track"><i id="depth-bar"></i></span></div>
+    <div id="alt-line" hidden><span id="alt-label">ALT —</span></div>
     <canvas id="minimap" width="120" height="120"></canvas>
     <div id="minimap-legend"><span style="color:#6fdc8c">●</span> REF&nbsp;&nbsp;<span style="color:#ffb347">●</span> COL&nbsp;&nbsp;<span style="color:#ff5d5d">●</span> HOSTILE</div>
     <div id="nav-hint"></div>
