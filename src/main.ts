@@ -6,7 +6,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { createShipState, stepShip, type ControlInput } from './sim/physics'
-import { buildCraft, loadCraftModelForType, loadPirateModel } from './render/shipyard'
+import { buildCraft, loadCapitalModel, loadCraftModelForType, loadPirateModel } from './render/shipyard'
 import { SHIP_STATS, type ShipType } from './sim/shipTypes'
 import { nextRank, rankForCredits, rankProgress } from './sim/ranks'
 import {
@@ -245,10 +245,23 @@ const colony = buildColony()
 scene.add(station, colony)
 
 // Capital ship — set-dressing for scale. Parked off the spawn corridor; fly its length for awe.
-const capital = buildCapitalShip()
+// Keep a stable parent group so collision/flyby code works before and after the GLB loads.
+let capitalColliders: { p: THREE.Vector3; r: number }[] = []
+const capital = new THREE.Group()
+capital.add(buildCapitalShip())
 capital.position.set(1000, 320, -2000)
 capital.rotation.y = 0.5
 scene.add(capital)
+fitCapitalColliders() // procedural hull bounds until the GLB loads
+void loadCapitalModel().then((model) => {
+  if (!model) return
+  for (const child of [...capital.children]) {
+    capital.remove(child)
+    disposeObject(child)
+  }
+  capital.add(model)
+  fitCapitalColliders() // refit to the GLB's actual bounds (any scale/axis)
+})
 
 // Named solar system — giant backdrop + quantum-travel targets. Trade/outposts stay local.
 const sun = buildSun(SUN_RADIUS, SUN_COLOR)
@@ -679,18 +692,46 @@ function resolvePlanetCollisions(): void {
   hit(SPAWN_PLANET.position.x, SPAWN_PLANET.position.y, SPAWN_PLANET.position.z, SPAWN_PLANET.radius)
 }
 
-// Capital ship hull — a few spheres along the spine so you slide off instead of flying through.
-const CAPITAL_COLLIDERS = [
-  { z: -300, r: 72 }, // prow
-  { z: -110, r: 96 }, // bridge / tower midsection
-  { z: 80, r: 86 },
-  { z: 270, r: 80 },  // stern
-]
+// Capital ship hull — fit collision spheres along the longest axis of the *actual* bounding box,
+// so it works for both the procedural hull and any GLB regardless of its scale or modelled axis.
 const _capWorld = new THREE.Vector3()
+function fitCapitalColliders(): void {
+  // Measure in the parent's local space: zero out transform, get bounds, restore.
+  const box = new THREE.Box3()
+  const size = new THREE.Vector3()
+  const ctr = new THREE.Vector3()
+  const savedPos = capital.position.clone()
+  const savedQuat = capital.quaternion.clone()
+  capital.position.set(0, 0, 0)
+  capital.quaternion.identity()
+  capital.updateMatrixWorld(true)
+  box.setFromObject(capital)
+  capital.position.copy(savedPos)
+  capital.quaternion.copy(savedQuat)
+  capital.updateMatrixWorld(true)
+  if (box.isEmpty()) { capitalColliders = []; return }
+  box.getSize(size)
+  box.getCenter(ctr)
+  const dims = [size.x, size.y, size.z]
+  let axis = 0 // longest axis = the hull's spine
+  if (dims[1] > dims[axis]) axis = 1
+  if (dims[2] > dims[axis]) axis = 2
+  const len = dims[axis]
+  const r = (dims[(axis + 1) % 3] + dims[(axis + 2) % 3]) * 0.25 + len * 0.04 // cross-section radius
+  const cols: { p: THREE.Vector3; r: number }[] = []
+  const n = 5
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1) - 0.5 // -0.5..0.5 along the spine
+    const p = ctr.clone()
+    p.setComponent(axis, ctr.getComponent(axis) + t * len * 0.8)
+    cols.push({ p, r })
+  }
+  capitalColliders = cols
+}
 function resolveCapitalCollision(): void {
-  for (const c of CAPITAL_COLLIDERS) {
-    _capWorld.set(0, 0, c.z)
-    capital.localToWorld(_capWorld) // local spine point → world (follows the ship's rotation/drift)
+  for (const c of capitalColliders) {
+    _capWorld.copy(c.p)
+    capital.localToWorld(_capWorld) // local hull point → world (follows the ship's rotation/drift)
     _toShip.subVectors(ship.position, _capWorld)
     const dist = _toShip.length()
     if (dist < c.r && dist > 1e-3) {
