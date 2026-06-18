@@ -9,6 +9,8 @@ import {
   ENGINE_GAIN_BOOST_MULT,
   ENGINE_GAIN_IDLE,
   ENGINE_GAIN_MAX,
+  ambienceToParams,
+  boostPunchToParams,
   miningToGain,
   thrustToFrequency,
   thrustToGain,
@@ -124,5 +126,70 @@ describe('mining audio shaping', () => {
     expect(activeGain).toBeLessThan(ENGINE_GAIN_IDLE)
     expect(miningToGain(true, false)).toBe(0)
     expect(miningToGain(false, true)).toBe(0)
+  })
+})
+
+describe('ambience audio shaping', () => {
+  it('keeps a subtle space bed audible even in empty space', () => {
+    const params = ambienceToParams({ atmosphere: 0, quantum: 0, speedFrac: 0 })
+
+    expect(params.spaceGain).toBeGreaterThan(0)
+    expect(params.spaceGain).toBeLessThan(ENGINE_GAIN_IDLE)
+    expect(params.atmoGain).toBe(0)
+    expect(params.quantumGain).toBe(0)
+  })
+
+  it('swells atmosphere gain and brightness as the ship enters air', () => {
+    const highOrbit = ambienceToParams({ atmosphere: 0.2, quantum: 0, speedFrac: 0.25 })
+    const lowFlight = ambienceToParams({ atmosphere: 1, quantum: 0, speedFrac: 0.85 })
+
+    expect(lowFlight.atmoGain).toBeGreaterThan(highOrbit.atmoGain)
+    expect(lowFlight.atmoFilterFreq).toBeGreaterThan(highOrbit.atmoFilterFreq)
+    expect(lowFlight.spaceGain).toBeLessThan(highOrbit.spaceGain)
+  })
+
+  it('adds quantum pressure without drowning the atmosphere layer', () => {
+    const params = ambienceToParams({ atmosphere: 0.7, quantum: 1, speedFrac: 1.2 })
+
+    expect(params.quantumGain).toBeGreaterThan(0)
+    expect(params.quantumFilterFreq).toBeGreaterThan(params.atmoFilterFreq)
+    expect(params.atmoGain).toBeGreaterThan(params.quantumGain)
+  })
+
+  it('clamps invalid or out-of-range inputs', () => {
+    const quiet = ambienceToParams({ atmosphere: -1, quantum: Number.NaN, speedFrac: -4 })
+    const loud = ambienceToParams({ atmosphere: 4, quantum: 9, speedFrac: 9 })
+
+    expect(quiet.atmoGain).toBe(0)
+    expect(quiet.quantumGain).toBe(0)
+    expect(loud.atmoGain).toBeLessThanOrEqual(0.026)
+    expect(loud.quantumGain).toBeLessThanOrEqual(0.012)
+  })
+})
+
+describe('boost punch shaping', () => {
+  it('creates a short layered whoosh that is stronger at speed', () => {
+    const slow = boostPunchToParams(0.1)
+    const fast = boostPunchToParams(1)
+
+    expect(fast.noisePeak).toBeGreaterThan(slow.noisePeak)
+    expect(fast.filterEnd).toBeGreaterThan(slow.filterEnd)
+    expect(fast.duration).toBeGreaterThan(0.2)
+    expect(fast.duration).toBeLessThan(0.6)
+  })
+
+  it('keeps the boost punch below explosion-level loudness', () => {
+    const params = boostPunchToParams(9)
+
+    expect(params.noisePeak).toBeLessThanOrEqual(0.105)
+    expect(params.tonePeak).toBeLessThanOrEqual(0.042)
+    expect(params.filterEnd).toBeLessThanOrEqual(1700)
+  })
+
+  it('clamps invalid speed input', () => {
+    const invalid = boostPunchToParams(Number.NaN)
+    const stopped = boostPunchToParams(0)
+
+    expect(invalid).toEqual(stopped)
   })
 })

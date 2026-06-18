@@ -17,6 +17,9 @@ export const ENGINE_GAIN_BOOST_MULT = 1.3
 /** Quiet continuous mining laser tone. Kept below idle engine gain on purpose. */
 export const MINING_GAIN_ACTIVE = 0.0035
 export const MINING_FREQ = 520
+export const SPACE_AMBIENCE_GAIN = 0.0032
+export const ATMO_AMBIENCE_GAIN_MAX = 0.026
+export const QUANTUM_AMBIENCE_GAIN_MAX = 0.012
 
 /** Clamp `x` into [min, max]. NaN collapses to `min` so audio params never go NaN. */
 export function clamp(x: number, min: number, max: number): number {
@@ -48,6 +51,67 @@ export function thrustToGain(level: number, boost = false): number {
 /** Mining hum is audible only while the laser is active and a rock is actually in range. */
 export function miningToGain(active: boolean, inRange: boolean): number {
   return active && inRange ? MINING_GAIN_ACTIVE : 0
+}
+
+export interface AmbienceState {
+  /** Atmospheric proximity in [0, 1], usually the same value driving the visual veil. */
+  atmosphere: number
+  /** Quantum-drive intensity in [0, 1]. */
+  quantum: number
+  /** Current speed as a fraction of the ship's effective max speed. */
+  speedFrac: number
+}
+
+export interface AmbienceParams {
+  spaceGain: number
+  spaceFilterFreq: number
+  atmoGain: number
+  atmoFilterFreq: number
+  quantumGain: number
+  quantumFilterFreq: number
+}
+
+/** Shape the living-space ambience layers from game state. Pure and unit-tested. */
+export function ambienceToParams(state: AmbienceState): AmbienceParams {
+  const atmosphere = clamp(state.atmosphere, 0, 1)
+  const quantum = clamp(state.quantum, 0, 1)
+  const speed = clamp(state.speedFrac, 0, 1.4)
+  const atmo = atmosphere * atmosphere
+  const q = quantum * quantum
+
+  return {
+    spaceGain: SPACE_AMBIENCE_GAIN * (1 - atmosphere * 0.45) * (1 - quantum * 0.25),
+    spaceFilterFreq: 140 + speed * 90,
+    atmoGain: ATMO_AMBIENCE_GAIN_MAX * atmo * (0.55 + Math.min(speed, 1) * 0.45),
+    atmoFilterFreq: 340 + atmo * 980 + Math.min(speed, 1) * 420,
+    quantumGain: QUANTUM_AMBIENCE_GAIN_MAX * q,
+    quantumFilterFreq: 1200 + q * 1800,
+  }
+}
+
+export interface BoostPunchParams {
+  noisePeak: number
+  tonePeak: number
+  filterStart: number
+  filterEnd: number
+  toneStart: number
+  toneEnd: number
+  duration: number
+}
+
+/** Short boost ignition punch: a pressure thump plus a filtered whoosh. */
+export function boostPunchToParams(speedFrac: number): BoostPunchParams {
+  const speed = clamp(speedFrac, 0, 1.4)
+  const t = Math.min(speed, 1)
+  return {
+    noisePeak: 0.07 + t * 0.035,
+    tonePeak: 0.024 + t * 0.018,
+    filterStart: 180 + t * 120,
+    filterEnd: 820 + t * 850,
+    toneStart: 72 + t * 18,
+    toneEnd: 118 + t * 34,
+    duration: 0.3,
+  }
 }
 
 /** One-shot UI / combat cue kinds. */
@@ -148,10 +212,17 @@ export class GameAudio {
   private noiseGain: GainNode | null = null
   private windGain: GainNode | null = null // air-rush layer that swells with speed
   private windFilter: BiquadFilterNode | null = null
+  private spaceAmbienceGain: GainNode | null = null
+  private spaceAmbienceFilter: BiquadFilterNode | null = null
+  private atmoAmbienceGain: GainNode | null = null
+  private atmoAmbienceFilter: BiquadFilterNode | null = null
+  private quantumAmbienceGain: GainNode | null = null
+  private quantumAmbienceFilter: BiquadFilterNode | null = null
   private miningOsc: OscillatorNode | null = null
   private miningGain: GainNode | null = null
   private assetBuffers = new Map<BlipKind, AudioBuffer[]>()
   private assetCursor = new Map<BlipKind, number>()
+  private noiseBuffer: AudioBuffer | null = null
   private loadingAssets = false
 
   private started = false
@@ -201,6 +272,29 @@ export class GameAudio {
       this.osc1 = osc1
       this.osc2 = osc2
 
+      // A very low musical bed: not a song, just space pressure under the engine.
+      const spaceAmbienceGain = ctx.createGain()
+      spaceAmbienceGain.gain.value = SPACE_AMBIENCE_GAIN
+      const spaceAmbienceFilter = ctx.createBiquadFilter()
+      spaceAmbienceFilter.type = 'lowpass'
+      spaceAmbienceFilter.frequency.value = 140
+      spaceAmbienceFilter.Q.value = 0.7
+      const spaceA = ctx.createOscillator()
+      spaceA.type = 'sine'
+      spaceA.frequency.value = 36
+      const spaceB = ctx.createOscillator()
+      spaceB.type = 'triangle'
+      spaceB.frequency.value = 54
+      spaceB.detune.value = -11
+      spaceA.connect(spaceAmbienceFilter)
+      spaceB.connect(spaceAmbienceFilter)
+      spaceAmbienceFilter.connect(spaceAmbienceGain)
+      spaceAmbienceGain.connect(master)
+      spaceA.start()
+      spaceB.start()
+      this.spaceAmbienceGain = spaceAmbienceGain
+      this.spaceAmbienceFilter = spaceAmbienceFilter
+
       // Filtered noise layer — quiet hiss that scales with the engine.
       const noiseGain = ctx.createGain()
       noiseGain.gain.value = 0
@@ -211,6 +305,7 @@ export class GameAudio {
 
       const buf = this.makeNoiseBuffer(ctx)
       if (buf) {
+        this.noiseBuffer = buf
         const noise = ctx.createBufferSource()
         noise.buffer = buf
         noise.loop = true
@@ -235,6 +330,40 @@ export class GameAudio {
         wind.start()
         this.windGain = windGain
         this.windFilter = windFilter
+
+        // Atmosphere: soft, wide noise that appears with the visual entry veil.
+        const atmoAmbienceGain = ctx.createGain()
+        atmoAmbienceGain.gain.value = 0
+        const atmoAmbienceFilter = ctx.createBiquadFilter()
+        atmoAmbienceFilter.type = 'lowpass'
+        atmoAmbienceFilter.frequency.value = 340
+        atmoAmbienceFilter.Q.value = 0.4
+        const atmo = ctx.createBufferSource()
+        atmo.buffer = buf
+        atmo.loop = true
+        atmo.connect(atmoAmbienceFilter)
+        atmoAmbienceFilter.connect(atmoAmbienceGain)
+        atmoAmbienceGain.connect(master)
+        atmo.start()
+        this.atmoAmbienceGain = atmoAmbienceGain
+        this.atmoAmbienceFilter = atmoAmbienceFilter
+
+        // Quantum pressure: brighter filtered noise, kept quieter than atmosphere.
+        const quantumAmbienceGain = ctx.createGain()
+        quantumAmbienceGain.gain.value = 0
+        const quantumAmbienceFilter = ctx.createBiquadFilter()
+        quantumAmbienceFilter.type = 'bandpass'
+        quantumAmbienceFilter.frequency.value = 1200
+        quantumAmbienceFilter.Q.value = 0.9
+        const quantumNoise = ctx.createBufferSource()
+        quantumNoise.buffer = buf
+        quantumNoise.loop = true
+        quantumNoise.connect(quantumAmbienceFilter)
+        quantumAmbienceFilter.connect(quantumAmbienceGain)
+        quantumAmbienceGain.connect(master)
+        quantumNoise.start()
+        this.quantumAmbienceGain = quantumAmbienceGain
+        this.quantumAmbienceFilter = quantumAmbienceFilter
       }
       this.noiseGain = noiseGain
 
@@ -367,6 +496,24 @@ export class GameAudio {
     }
   }
 
+  /** Update procedural ambience layers. Call every frame with cheap, normalized game state. */
+  setAmbience(state: AmbienceState): void {
+    const ctx = this.ctx
+    if (!ctx) return
+    try {
+      const now = ctx.currentTime
+      const params = ambienceToParams(state)
+      this.spaceAmbienceGain?.gain.setTargetAtTime(params.spaceGain, now, 0.35)
+      this.spaceAmbienceFilter?.frequency.setTargetAtTime(params.spaceFilterFreq, now, 0.5)
+      this.atmoAmbienceGain?.gain.setTargetAtTime(params.atmoGain, now, 0.22)
+      this.atmoAmbienceFilter?.frequency.setTargetAtTime(params.atmoFilterFreq, now, 0.25)
+      this.quantumAmbienceGain?.gain.setTargetAtTime(params.quantumGain, now, 0.18)
+      this.quantumAmbienceFilter?.frequency.setTargetAtTime(params.quantumFilterFreq, now, 0.2)
+    } catch {
+      /* ignore transient audio errors */
+    }
+  }
+
   /**
    * Engage/disengage boost without changing the commanded thrust level. This is a
    * convenience that re-applies thrust at full level when boosting; for precise
@@ -384,6 +531,69 @@ export class GameAudio {
       this.engineGain.gain.setTargetAtTime(clamp(target, 0, ENGINE_GAIN_MAX * ENGINE_GAIN_BOOST_MULT), now, RAMP)
     } catch {
       /* ignore */
+    }
+  }
+
+  /** One-shot boost ignition: pressure thump + filtered noise whoosh. */
+  playBoostPunch(speedFrac = 0): void {
+    const ctx = this.ctx
+    const master = this.master
+    const noiseBuffer = this.noiseBuffer
+    if (!ctx || !master) return
+    try {
+      const now = ctx.currentTime
+      const p = boostPunchToParams(speedFrac)
+
+      const tone = ctx.createOscillator()
+      const toneGain = ctx.createGain()
+      tone.type = 'triangle'
+      tone.frequency.setValueAtTime(p.toneStart, now)
+      tone.frequency.exponentialRampToValueAtTime(p.toneEnd, now + p.duration * 0.75)
+      toneGain.gain.setValueAtTime(0.0001, now)
+      toneGain.gain.exponentialRampToValueAtTime(p.tonePeak, now + 0.035)
+      toneGain.gain.exponentialRampToValueAtTime(0.0001, now + p.duration)
+      tone.connect(toneGain)
+      toneGain.connect(master)
+      tone.start(now)
+      tone.stop(now + p.duration + 0.03)
+      tone.onended = () => {
+        try {
+          tone.disconnect()
+          toneGain.disconnect()
+        } catch {
+          /* already gone */
+        }
+      }
+
+      if (noiseBuffer) {
+        const noise = ctx.createBufferSource()
+        const filter = ctx.createBiquadFilter()
+        const gain = ctx.createGain()
+        noise.buffer = noiseBuffer
+        filter.type = 'bandpass'
+        filter.Q.value = 0.85
+        filter.frequency.setValueAtTime(p.filterStart, now)
+        filter.frequency.exponentialRampToValueAtTime(p.filterEnd, now + p.duration * 0.65)
+        gain.gain.setValueAtTime(0.0001, now)
+        gain.gain.exponentialRampToValueAtTime(p.noisePeak, now + 0.045)
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + p.duration)
+        noise.connect(filter)
+        filter.connect(gain)
+        gain.connect(master)
+        noise.start(now)
+        noise.stop(now + p.duration + 0.03)
+        noise.onended = () => {
+          try {
+            noise.disconnect()
+            filter.disconnect()
+            gain.disconnect()
+          } catch {
+            /* already gone */
+          }
+        }
+      }
+    } catch {
+      /* ignore transient audio errors */
     }
   }
 
