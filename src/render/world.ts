@@ -291,6 +291,129 @@ export function buildColony(): THREE.Group {
   return group
 }
 
+/** Degen launch monument — a giant reusable-rocket landmark with a golden dog-coin
+ *  emblem. It is decorative world dressing only: no branded logos, no gameplay stats. */
+export function buildMuchLaunchTower(): THREE.Group {
+  const group = new THREE.Group()
+  group.name = 'Much Launch Tower'
+
+  const white = new THREE.MeshStandardMaterial({ color: 0xe8eee6, flatShading: true, metalness: 0.18, roughness: 0.52 })
+  const charcoal = new THREE.MeshStandardMaterial({ color: 0x15191d, flatShading: true, metalness: 0.62, roughness: 0.42 })
+  const towerMat = new THREE.MeshStandardMaterial({ color: 0x59636e, flatShading: true, metalness: 0.7, roughness: 0.38 })
+  const gold = new THREE.MeshStandardMaterial({ color: 0xf0b640, flatShading: true, metalness: 0.55, roughness: 0.36, emissive: 0x3a2100, emissiveIntensity: 0.18 })
+  const amber = new THREE.MeshBasicMaterial({ color: 0xffc24d })
+  const orangeGlow = new THREE.MeshBasicMaterial({ color: 0xff7a2e })
+  const windowMat = new THREE.MeshBasicMaterial({ color: 0x9ff7ff })
+
+  const box = (name: string, size: [number, number, number], pos: [number, number, number], mat: THREE.Material, rot: [number, number, number] = [0, 0, 0]): THREE.Mesh => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), mat)
+    mesh.name = name
+    mesh.position.set(pos[0], pos[1], pos[2])
+    mesh.rotation.set(rot[0], rot[1], rot[2])
+    group.add(mesh)
+    return mesh
+  }
+  const cyl = (name: string, rt: number, rb: number, h: number, pos: [number, number, number], mat: THREE.Material, radial = 16): THREE.Mesh => {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, radial), mat)
+    mesh.name = name
+    mesh.position.set(pos[0], pos[1], pos[2])
+    group.add(mesh)
+    return mesh
+  }
+  // Launch pad and tower.
+  box('launch pad deck', [320, 24, 260], [0, -18, 0], charcoal)
+  box('flame trench glow', [80, 6, 120], [0, -32, 0], orangeGlow)
+  box('tower spine', [24, 430, 24], [-105, 180, 0], towerMat)
+  for (let i = 0; i < 9; i++) {
+    const y = -10 + i * 46
+    box(`tower deck ${i}`, [78, 7, 54], [-105, y, 0], towerMat)
+    box(`tower diagonal a ${i}`, [8, 64, 8], [-105, y + 20, -24], towerMat, [0, 0, 0.65])
+    box(`tower diagonal b ${i}`, [8, 64, 8], [-105, y + 20, 24], towerMat, [0, 0, -0.65])
+  }
+  box('crew arm upper', [100, 8, 10], [-54, 250, 0], towerMat)
+  box('crew arm lower', [82, 7, 9], [-60, 112, 0], towerMat)
+  for (let i = 0; i < 7; i++) {
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(2.4, 8, 6), i % 2 ? amber : windowMat)
+    lamp.name = `tower beacon ${i}`
+    lamp.position.set(-92, 12 + i * 48, 29)
+    group.add(lamp)
+  }
+
+  // Reusable rocket: intentionally generic, low-poly and chunky.
+  cyl('rocket lower booster', 34, 38, 255, [18, 95, 0], white, 18)
+  cyl('rocket upper stage', 26, 32, 130, [18, 290, 0], white, 18)
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(26, 72, 18), white)
+  nose.name = 'rocket nose cone'
+  nose.position.set(18, 391, 0)
+  group.add(nose)
+  cyl('black interstage', 35, 35, 30, [18, 230, 0], charcoal, 18)
+  cyl('black engine skirt', 40, 34, 42, [18, -54, 0], charcoal, 18)
+  for (const z of [-28, 28]) {
+    box(`landing fin ${z}`, [12, 68, 42], [18, -82, z], charcoal, [0.42, 0, 0])
+  }
+  for (const x of [-7, 18, 43]) {
+    const bell = cyl(`engine bell ${x}`, 8, 12, 20, [x, -88, 0], charcoal, 10)
+    bell.rotation.x = Math.PI
+    const glow = new THREE.Mesh(new THREE.CircleGeometry(8, 12), orangeGlow)
+    glow.name = `engine glow ${x}`
+    glow.position.set(x, -101, 0)
+    glow.rotation.x = -Math.PI / 2
+    group.add(glow)
+  }
+
+  // Actual doge decal supplied by the project owner. Two placements keep it readable
+  // from both the spawn approach and close fly-bys.
+  const dogeTex = new THREE.TextureLoader().load('/assets/decals/doge.png')
+  dogeTex.colorSpace = THREE.SRGBColorSpace
+  const dogeMat = new THREE.MeshBasicMaterial({ map: dogeTex, transparent: true, depthWrite: false })
+  const sideDoge = new THREE.Mesh(new THREE.PlaneGeometry(94, 63), dogeMat)
+  sideDoge.name = 'doge side decal'
+  sideDoge.position.set(57.6, 156, 0)
+  sideDoge.rotation.y = Math.PI / 2
+  group.add(sideDoge)
+  const frontDoge = new THREE.Mesh(new THREE.PlaneGeometry(82, 55), dogeMat)
+  frontDoge.name = 'doge front decal'
+  frontDoge.position.set(18, 154, 39.4)
+  group.add(frontDoge)
+
+  // Moon/coin gag around the pad, readable from a distance.
+  const moon = new THREE.Mesh(new THREE.SphereGeometry(36, 24, 16), gold)
+  moon.name = 'to the moons beacon'
+  moon.position.set(130, 290, -80)
+  group.add(moon)
+  const bite = new THREE.Mesh(new THREE.SphereGeometry(34, 24, 16), new THREE.MeshBasicMaterial({ color: 0x010206 }))
+  bite.name = 'moon crescent cutout'
+  bite.position.set(144, 300, -68)
+  group.add(bite)
+
+  const signCanvas = document.createElement('canvas')
+  signCanvas.width = 512
+  signCanvas.height = 160
+  const ctx = signCanvas.getContext('2d')!
+  ctx.fillStyle = '#07100d'
+  ctx.fillRect(0, 0, signCanvas.width, signCanvas.height)
+  ctx.strokeStyle = '#ffcf66'
+  ctx.lineWidth = 10
+  ctx.strokeRect(9, 9, signCanvas.width - 18, signCanvas.height - 18)
+  ctx.fillStyle = '#ffcf66'
+  ctx.font = '700 54px monospace'
+  ctx.fillText('MUCH LAUNCH', 54, 72)
+  ctx.font = '700 30px monospace'
+  ctx.fillText('TO THE MOONS', 102, 116)
+  const signTex = new THREE.CanvasTexture(signCanvas)
+  signTex.colorSpace = THREE.SRGBColorSpace
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(150, 47),
+    new THREE.MeshBasicMaterial({ map: signTex, transparent: true }),
+  )
+  sign.name = 'much launch sign'
+  sign.position.set(-12, 45, 135)
+  sign.rotation.y = Math.PI
+  group.add(sign)
+
+  return group
+}
+
 export function buildAsteroids(): THREE.Group {
   const group = new THREE.Group()
   const rand = mulberry32(1337)

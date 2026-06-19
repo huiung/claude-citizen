@@ -12,7 +12,7 @@ import { nextRank, rankForCredits, rankProgress } from './sim/ranks'
 import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
   buildCapitalShip, buildDustField, buildLootCrate, buildNebula, buildSolarPlanet, buildStarfield, buildStation,
-  buildSun, buildWarpField, COLONY_POS, REFINERY_POS, SPAWN_PLANET, updateDustField, updateWarpField,
+  buildMuchLaunchTower, buildSun, buildWarpField, COLONY_POS, REFINERY_POS, SPAWN_PLANET, updateDustField, updateWarpField,
 } from './render/world'
 import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS, type SurfaceKind } from './sim/solarSystem'
 import { NetClient, type PeerState, type PlayerProgress } from './net/client'
@@ -320,6 +320,13 @@ void loadCapitalCarrierModel().then((model) => {
   capitalCarrier.add(model)
   capitalCarrierSetpiece.colliders = fitCapitalColliders(capitalCarrier)
 })
+const muchLaunchTower = new THREE.Group()
+muchLaunchTower.add(buildMuchLaunchTower())
+muchLaunchTower.position.set(-720, 110, -1280)
+muchLaunchTower.rotation.set(0.02, 0.38, -0.04)
+muchLaunchTower.scale.setScalar(1.25)
+scene.add(muchLaunchTower)
+capitalSetpieces.push({ root: muchLaunchTower, colliders: fitCapitalColliders(muchLaunchTower) })
 
 // Named solar system — giant backdrop + quantum-travel targets. Trade/outposts stay local.
 const sun = buildSun(SUN_RADIUS, SUN_COLOR)
