@@ -948,9 +948,7 @@ const GOALS: Goal[] = [
   { label: 'Reach Ensign rank — 1,000 cr earned', done: () => econ.earned >= 1000, track: earnedTrack(1000) },
   { label: 'Buy a second ship at a station', done: () => ownedShips.size >= 2, track: () => `${ownedShips.size} / 2 ships` },
   { label: 'Reach Pilot rank — 5,000 cr earned', done: () => econ.earned >= 5000, track: earnedTrack(5000) },
-  { label: 'Reach Ace rank — 20,000 cr earned', done: () => econ.earned >= 20000, track: earnedTrack(20000) },
-  { label: 'Reach Commander rank — 80,000 cr earned', done: () => econ.earned >= 80000, track: earnedTrack(80000) },
-  { label: 'Reach Admiral — the top rank, 250,000 cr earned', done: () => econ.earned >= 250000, track: earnedTrack(250000) },
+  // Beyond Pilot, the rank bar + leaderboard carry the long game — no need to duplicate it here.
 ]
 const market = createMarket()
 const contracts = generateContracts(20260614, OUTPOSTS)
