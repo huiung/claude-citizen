@@ -112,10 +112,15 @@ function finishOnboarding(): void {
 /** Action-gated steps — just *show* each system, no forced grind:
  *  mine once → open the station (Space) → kill a pirate → done. */
 function currentObjective(): string | null {
-  if (!onboardingActive) return null
-  if (!minedEver) return 'Mine ORE — fly to a cyan-veined asteroid and hold Left-click'
-  if (!dockedEver) return 'Dock at an outpost (Space) — trade, upgrade & buy ships here'
-  return 'Hunt a pirate — hold Right-click to fire (watch your hull)' // killing one calls finishOnboarding()
+  if (onboardingActive) {
+    if (!minedEver) return 'Mine ORE — fly to a cyan-veined asteroid and hold Left-click'
+    if (!dockedEver) return 'Dock at an outpost (Space) — trade, upgrade & buy ships here'
+    return 'Hunt a pirate — hold Right-click to fire (watch your hull)' // killing one calls finishOnboarding()
+  }
+  // Post-onboarding objective chain — always surfaces the next thing to chase.
+  const goal = GOALS.find((g) => !g.done())
+  if (!goal) return null // everything done — veteran pilot
+  return goal.track ? `${goal.label}  ·  ${goal.track()}` : goal.label
 }
 const safeEl = document.getElementById('safe-zone')!
 const chatInputEl = document.getElementById('chat-input') as HTMLInputElement
@@ -934,6 +939,19 @@ function updateExplosions(now: number): void {
 // --- Game systems (main owns all state; modules are pure)
 const econ = loadEconomy()
 const upgrades = loadUpgrades()
+// Objective chain (post-onboarding): conditions read live progress — no extra tracking or saving.
+const upgradeTotal = (): number => upgrades.tiers.cargo + upgrades.tiers.speed + upgrades.tiers.boost + upgrades.tiers.mining
+interface Goal { label: string; done: () => boolean; track?: () => string }
+const earnedTrack = (target: number) => () => `${Math.floor(econ.earned).toLocaleString()} / ${target.toLocaleString()} cr`
+const GOALS: Goal[] = [
+  { label: 'Buy your first upgrade at a station (cargo / speed / boost / mining)', done: () => upgradeTotal() > 0 },
+  { label: 'Reach Ensign rank — 1,000 cr earned', done: () => econ.earned >= 1000, track: earnedTrack(1000) },
+  { label: 'Buy a second ship at a station', done: () => ownedShips.size >= 2, track: () => `${ownedShips.size} / 2 ships` },
+  { label: 'Reach Pilot rank — 5,000 cr earned', done: () => econ.earned >= 5000, track: earnedTrack(5000) },
+  { label: 'Reach Ace rank — 20,000 cr earned', done: () => econ.earned >= 20000, track: earnedTrack(20000) },
+  { label: 'Reach Commander rank — 80,000 cr earned', done: () => econ.earned >= 80000, track: earnedTrack(80000) },
+  { label: 'Reach Admiral — the top rank, 250,000 cr earned', done: () => econ.earned >= 250000, track: earnedTrack(250000) },
+]
 const market = createMarket()
 const contracts = generateContracts(20260614, OUTPOSTS)
 const audio = new GameAudio()
