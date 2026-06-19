@@ -1017,7 +1017,7 @@ const stationMenu = new StationMenu({
 document.body.appendChild(stationMenu.root)
 
 // --- Remote ships
-interface RemoteShip { mesh: THREE.Group; peer: PeerState }
+interface RemoteShip { mesh: THREE.Group; peer: PeerState; label: CSS2DObject }
 const remotes = new Map<string, RemoteShip>()
 const PALETTE = [0xc75d5d, 0x5d8ac7, 0xc7a85d, 0x9b5dc7, 0x5dc7b8, 0xc75da6]
 
@@ -1239,7 +1239,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     mesh.add(labelObj)
     mesh.position.fromArray(peer.p)
     scene.add(mesh)
-    remotes.set(peer.id, { mesh, peer })
+    remotes.set(peer.id, { mesh, peer, label: labelObj })
   },
   onPeerState() { /* interpolation reads peer buffers each frame */ },
   onPeerLeave(id) {
@@ -1327,9 +1327,12 @@ const _qb = new THREE.Quaternion()
 const _pa = new THREE.Vector3()
 const _pb = new THREE.Vector3()
 
+// Nameplates fade out with distance so far-off pilots don't clutter the screen.
+const NAMEPLATE_FADE_NEAR = 1200
+const NAMEPLATE_FADE_FAR = 2600
 function updateRemotes(): void {
   const renderTime = performance.now() - INTERP_DELAY_MS
-  for (const { mesh, peer } of remotes.values()) {
+  for (const { mesh, peer, label } of remotes.values()) {
     if (peer.prev && peer.receivedAt > peer.prev.receivedAt) {
       const span = peer.receivedAt - peer.prev.receivedAt
       const alpha = THREE.MathUtils.clamp((renderTime - peer.prev.receivedAt) / span, 0, 1.25)
@@ -1341,6 +1344,11 @@ function updateRemotes(): void {
       mesh.position.fromArray(peer.p)
       mesh.quaternion.fromArray(peer.q)
     }
+    // Distance-fade the nameplate: crisp up close, gone far away.
+    const d = ship.position.distanceTo(mesh.position)
+    const op = 1 - THREE.MathUtils.clamp((d - NAMEPLATE_FADE_NEAR) / (NAMEPLATE_FADE_FAR - NAMEPLATE_FADE_NEAR), 0, 1)
+    label.visible = op > 0.02
+    ;(label.element as HTMLElement).style.opacity = String(op)
   }
 }
 
