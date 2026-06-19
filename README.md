@@ -114,6 +114,12 @@ The bar for a first contribution is intentionally low; the `good first issue` la
 
 Ambitious, probably stupid, doing it anyway.
 
+## Token
+
+$Citizen Token
+
+**CA:** `6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump`
+
 ## License
 
 [MIT](./LICENSE)
