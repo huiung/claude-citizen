@@ -51,7 +51,8 @@ async function refreshHolder(ws, client) {
 const httpServer = createServer((req, res) => {
   if (req.url === '/stats') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
-    res.end(JSON.stringify({ online: clients.size, registered: Object.keys(store).length }))
+    // `helius` = is the API key present in this runtime? (boolean only — never the key value)
+    res.end(JSON.stringify({ online: clients.size, registered: Object.keys(store).length, helius: !!HELIUS_API_KEY }))
     return
   }
   if (req.url === '/leaderboard') {
