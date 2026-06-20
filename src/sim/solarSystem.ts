@@ -43,10 +43,11 @@ export const PLANETS: ReadonlyArray<Planet> = SPEC.map((s, i) => {
     hasRings: !!s.rings,
     surface: s.surface,
     seed: 1000 + i * 137,
-    // orbit in the XZ plane with a small vertical spread so they don't all line up flat
+    // Orbit on the ecliptic plane (industry-standard — real planets lie ~flat, ±7°). Keeping them
+    // co-planar makes the system readable & navigable; distances and order stay compressed-but-real.
     position: new Vector3(
       SUN_POSITION.x + Math.cos(a) * s.dist,
-      SUN_POSITION.y + s.dist * 0.05 * Math.sin(a * 1.7),
+      SUN_POSITION.y,
       SUN_POSITION.z + Math.sin(a) * s.dist,
     ),
   }
