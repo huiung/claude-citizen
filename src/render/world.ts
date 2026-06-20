@@ -414,6 +414,102 @@ export function buildMuchLaunchTower(): THREE.Group {
   return group
 }
 
+/** Rare frog shrine — a Pepe-inspired low-poly monument. It avoids copied artwork:
+ *  the read comes from the silhouette (wide frog face, sleepy eyes, flat mouth). */
+export function buildRareFrogShrine(): THREE.Group {
+  const group = new THREE.Group()
+  group.name = 'Rare Frog Shrine'
+
+  const stone = new THREE.MeshStandardMaterial({ color: 0x27312c, flatShading: true, metalness: 0.15, roughness: 0.74 })
+  const darkStone = new THREE.MeshStandardMaterial({ color: 0x111713, flatShading: true, metalness: 0.2, roughness: 0.8 })
+  const limeGlow = new THREE.MeshBasicMaterial({ color: 0x76ff7a })
+
+  const box = (name: string, size: [number, number, number], pos: [number, number, number], mat: THREE.Material, rot: [number, number, number] = [0, 0, 0]): THREE.Mesh => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(size[0], size[1], size[2]), mat)
+    mesh.name = name
+    mesh.position.set(pos[0], pos[1], pos[2])
+    mesh.rotation.set(rot[0], rot[1], rot[2])
+    group.add(mesh)
+    return mesh
+  }
+  const cyl = (name: string, rt: number, rb: number, h: number, pos: [number, number, number], mat: THREE.Material, radial = 16): THREE.Mesh => {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, radial), mat)
+    mesh.name = name
+    mesh.position.set(pos[0], pos[1], pos[2])
+    group.add(mesh)
+    return mesh
+  }
+  cyl('rare pond plinth', 150, 170, 26, [0, -18, 0], darkStone, 10)
+  cyl('rare pond glow', 124, 136, 8, [0, -4, 0], limeGlow, 18)
+  cyl('frog shrine pedestal', 86, 102, 80, [0, 36, 0], stone, 8)
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2
+    const marker = box(`pond monolith ${i}`, [12, 54 + (i % 2) * 18, 12], [Math.cos(a) * 150, 24, Math.sin(a) * 150], i % 2 ? stone : darkStone)
+    marker.rotation.y = -a
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(5, 8, 6), limeGlow)
+    lamp.name = `pond signal ${i}`
+    lamp.position.set(Math.cos(a) * 150, 60 + (i % 2) * 18, Math.sin(a) * 150)
+    group.add(lamp)
+  }
+
+  // Real meme signal screen. The earlier sculpted frog face read too far from the
+  // source, so the shrine now uses the provided image as the artifact itself.
+  const pepeTex = new THREE.TextureLoader().load('/assets/decals/pepe.jpeg')
+  pepeTex.colorSpace = THREE.SRGBColorSpace
+  box('rare pepe signal pylon', [32, 150, 18], [0, 92, 20], stone)
+  box('rare pepe signal screen backplate', [168, 168, 10], [0, 168, 76], darkStone)
+  const pepeScreen = new THREE.Mesh(
+    new THREE.PlaneGeometry(154, 154),
+    new THREE.MeshBasicMaterial({ map: pepeTex }),
+  )
+  pepeScreen.name = 'rare pepe signal screen'
+  pepeScreen.position.set(0, 168, 82)
+  group.add(pepeScreen)
+  box('rare pepe screen top frame', [184, 9, 9], [0, 258, 83], limeGlow)
+  box('rare pepe screen bottom frame', [184, 9, 9], [0, 78, 83], limeGlow)
+  box('rare pepe screen left frame', [9, 184, 9], [-90, 168, 83], limeGlow)
+  box('rare pepe screen right frame', [9, 184, 9], [90, 168, 83], limeGlow)
+
+  // A faint halo/crown reads like an artifact instead of a literal character model.
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(92, 2.8, 8, 40), limeGlow)
+  halo.name = 'rare signal halo'
+  halo.position.set(0, 168, -40)
+  halo.rotation.x = Math.PI / 2
+  group.add(halo)
+  for (const x of [-82, -44, 44, 82]) {
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(10, 0), limeGlow)
+    gem.name = `rare signal gem ${x}`
+    gem.position.set(x, 70, 86)
+    group.add(gem)
+  }
+
+  const signCanvas = document.createElement('canvas')
+  signCanvas.width = 512
+  signCanvas.height = 160
+  const ctx = signCanvas.getContext('2d')!
+  ctx.fillStyle = '#06110a'
+  ctx.fillRect(0, 0, signCanvas.width, signCanvas.height)
+  ctx.strokeStyle = '#76ff7a'
+  ctx.lineWidth = 10
+  ctx.strokeRect(9, 9, signCanvas.width - 18, signCanvas.height - 18)
+  ctx.fillStyle = '#bfffc0'
+  ctx.font = '700 54px monospace'
+  ctx.fillText('RARE PEPE', 82, 72)
+  ctx.font = '700 30px monospace'
+  ctx.fillText('POND LINK: ONLINE', 84, 116)
+  const signTex = new THREE.CanvasTexture(signCanvas)
+  signTex.colorSpace = THREE.SRGBColorSpace
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(158, 49),
+    new THREE.MeshBasicMaterial({ map: signTex, transparent: true }),
+  )
+  sign.name = 'rare pond sign'
+  sign.position.set(0, 48, 175)
+  group.add(sign)
+
+  return group
+}
+
 export function buildAsteroids(): THREE.Group {
   const group = new THREE.Group()
   const rand = mulberry32(1337)

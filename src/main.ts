@@ -12,7 +12,7 @@ import { nextRank, rankForCredits, rankProgress } from './sim/ranks'
 import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
   buildCapitalShip, buildDustField, buildLootCrate, buildNebula, buildSolarPlanet, buildStarfield, buildStation,
-  buildMuchLaunchTower, buildSun, buildWarpField, COLONY_POS, REFINERY_POS, SPAWN_PLANET, updateDustField, updateWarpField,
+  buildMuchLaunchTower, buildRareFrogShrine, buildSun, buildWarpField, COLONY_POS, REFINERY_POS, SPAWN_PLANET, updateDustField, updateWarpField,
 } from './render/world'
 import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS, type SurfaceKind } from './sim/solarSystem'
 import { NetClient, type PeerState, type PlayerProgress } from './net/client'
@@ -332,6 +332,13 @@ muchLaunchTower.rotation.set(0.02, 0.38, -0.04)
 muchLaunchTower.scale.setScalar(1.25)
 scene.add(muchLaunchTower)
 capitalSetpieces.push({ root: muchLaunchTower, colliders: fitCapitalColliders(muchLaunchTower) })
+const rareFrogShrine = new THREE.Group()
+rareFrogShrine.add(buildRareFrogShrine())
+rareFrogShrine.position.set(260, 90, 1180) // behind spawn (+z) — turn around from the refinery to see it
+rareFrogShrine.rotation.set(-0.03, Math.PI - 0.15, 0.02) // face back toward spawn
+rareFrogShrine.scale.setScalar(1.2)
+scene.add(rareFrogShrine)
+capitalSetpieces.push({ root: rareFrogShrine, colliders: fitCapitalColliders(rareFrogShrine) })
 
 // Named solar system — giant backdrop + quantum-travel targets. Trade/outposts stay local.
 const sun = buildSun(SUN_RADIUS, SUN_COLOR)
