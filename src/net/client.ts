@@ -8,6 +8,7 @@ export interface PeerState {
   q: [number, number, number, number]
   receivedAt: number
   prev?: { p: [number, number, number]; q: [number, number, number, number]; receivedAt: number }
+  tier?: number // token-holder cosmetic tier: 0 none · 1 gold · 2 cyan · 3 whale
 }
 
 /** The small progress blob the server persists per anonymous token. */
@@ -36,6 +37,10 @@ export interface NetEvents {
   onAuthOk?(pubkey: string, sessionId: string): void
   /** Auth failed or was rejected — stay anonymous. */
   onAuthError?(): void
+  /** Our own token-holder tier resolved (cosmetic flair only). */
+  onHolder?(tier: number): void
+  /** A peer's holder tier arrived/updated after they joined. */
+  onPeerHolder?(id: string, tier: number): void
 }
 
 const SEND_HZ = 10
@@ -134,6 +139,16 @@ export class NetClient {
       case 'chat':
         if (typeof msg.text === 'string') this.events.onChat(String(msg.name ?? '?'), msg.text)
         break
+      case 'holder':
+        this.events.onHolder?.(Number(msg.tier) || 0)
+        break
+      case 'peer-holder': {
+        const tier = Number(msg.tier) || 0
+        const peer = this.peers.get(msg.id)
+        if (peer) peer.tier = tier
+        this.events.onPeerHolder?.(String(msg.id), tier)
+        break
+      }
       case 'challenge':
         if (typeof msg.message === 'string') this.events.onChallenge?.(msg.message)
         break
@@ -154,6 +169,7 @@ export class NetClient {
       id: raw.id, name: raw.name, color: raw.color,
       p: raw.p ?? [0, 0, 0], q: raw.q ?? [0, 0, 0, 1],
       receivedAt: performance.now(),
+      tier: Number(raw.tier) || 0,
     }
     this.peers.set(peer.id, peer)
     this.events.onPeerJoin(peer)
