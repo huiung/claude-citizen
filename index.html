@@ -29,6 +29,11 @@
       background: rgba(0, 20, 8, 0.55); padding: 1px 6px; border-radius: 3px;
       font-family: inherit;
     }
+    /* Token-holder flair — tiered nameplate colors (cosmetic only). */
+    .nameplate.holder { background: rgba(20, 16, 4, 0.62); border: 1px solid currentColor; }
+    .nameplate.t1 { color: #ffd24a; text-shadow: 0 0 6px #000, 0 0 10px rgba(255, 210, 74, .6); }   /* gold */
+    .nameplate.t2 { color: #4ef0ff; text-shadow: 0 0 6px #000, 0 0 10px rgba(78, 240, 255, .6); }   /* cyan */
+    .nameplate.t3 { color: #c08aff; text-shadow: 0 0 6px #000, 0 0 12px rgba(192, 138, 255, .7); }  /* whale violet */
     .ore-float {
       color: #8ff0ff; font-size: 15px; font-weight: 600; font-family: inherit;
       text-shadow: 0 0 8px rgba(80, 220, 255, .7), 0 0 2px #000; pointer-events: none;
@@ -244,6 +249,9 @@
     #connect-wallet { font: 12px "Share Tech Mono", ui-monospace, monospace; color: #9fffb0; background: transparent; border: 1px solid rgba(159,255,176,.5); border-radius: 4px; padding: 6px 12px; cursor: pointer; }
     #connect-wallet:hover:not(:disabled) { border-color: #9fffb0; }
     #connect-wallet:disabled { opacity: .65; cursor: default; border-color: rgba(159,255,176,.25); }
+    #disconnect-wallet { font: 11px "Share Tech Mono", ui-monospace, monospace; color: #ff9a8a; background: transparent; border: 1px solid rgba(255,154,138,.4); border-radius: 4px; padding: 5px 10px; cursor: pointer; margin-left: 6px; }
+    #disconnect-wallet:hover { border-color: #ff9a8a; }
+    #disconnect-wallet[hidden] { display: none; }
     #wallet-status { display: block; font-size: 11px; color: #ffe08a; min-height: 12px; margin-top: 4px; }
     #mobile-notice { display: none; }
     .is-mobile #nickname, .is-mobile #launch, .is-mobile .foot, .is-mobile #leaderboard-landing, .is-mobile #pilot-code, .is-mobile #wallet-box { display: none; }
@@ -349,6 +357,7 @@
     </div>
     <div id="wallet-box">
       <button id="connect-wallet">Connect Wallet (optional)</button>
+      <button id="disconnect-wallet" hidden>Disconnect</button>
       <span id="wallet-status"></span>
     </div>
     <details id="pilot-code">

@@ -41,7 +41,10 @@ import { inject as injectAnalytics } from '@vercel/analytics'
 injectAnalytics() // Vercel Web Analytics (no-op off Vercel / in dev)
 
 const INTERP_DELAY_MS = 120
-const CAPTURE_OG = new URLSearchParams(location.search).get('capture') === 'og'
+const captureMode = new URLSearchParams(location.search).get('capture')
+const CAPTURE_OG = captureMode === 'og'
+const CAPTURE_HOLDER = captureMode === 'holder'
+const CAPTURE_CLEAN = CAPTURE_OG || CAPTURE_HOLDER
 
 // --- DOM
 const appEl = document.getElementById('app')!
@@ -95,7 +98,7 @@ const navHintEl = document.getElementById('nav-hint')!
 const objectiveEl = document.getElementById('objective')!
 // Onboarding: show a "next objective" only to brand-new pilots. localStorage gate (this device
 // hasn't onboarded) is the fast path; a returning token with saved progress also disables it.
-let onboardingActive = !CAPTURE_OG && !localStorage.getItem('scc.onboarded')
+let onboardingActive = !CAPTURE_CLEAN && !localStorage.getItem('scc.onboarded')
 let sessionKicked = false // signed in elsewhere — freeze the objective HUD on the warning
 // Onboarding progress is persisted so a refresh keeps your step (and graduating sticks),
 // even without a relay connection.
@@ -174,6 +177,7 @@ restoreBtn.addEventListener('click', () => {
 // Connect Wallet (optional, SIWS) — link a Solana wallet to claim the pilot. Anonymous play is unaffected.
 // Declared here (before NetClient) so the auth callbacks in the events object can see them.
 const connectWalletBtn = document.getElementById('connect-wallet') as HTMLButtonElement
+const disconnectWalletBtn = document.getElementById('disconnect-wallet') as HTMLButtonElement
 const walletStatusEl = document.getElementById('wallet-status')!
 let pendingPubkey: string | null = null
 let netConnected = false // kept in sync by NetEvents.onStatus — auth needs a live socket
@@ -184,9 +188,18 @@ function setWalletStatus(text: string): void { walletStatusEl.textContent = text
 function lockWalletButton(pubkey: string): void {
   connectWalletBtn.disabled = true
   connectWalletBtn.textContent = `✓ ${pubkey.slice(0, 4)}…${pubkey.slice(-4)}`
+  disconnectWalletBtn.hidden = false
 }
 
 if (walletSession) { lockWalletButton(walletSession.pubkey); setWalletStatus('Wallet linked.') }
+
+// Disconnect: clear the saved session and reload to anonymous — the server's single-identity
+// guard means a fresh connection is the clean way to switch wallets.
+disconnectWalletBtn.addEventListener('click', () => {
+  saveWalletSession(localStorage, null)
+  setWalletStatus('Disconnecting…')
+  setTimeout(() => location.reload(), 200)
+})
 
 connectWalletBtn.addEventListener('click', () => {
   if (!hasWallet()) { setWalletStatus('No Solana wallet found — install Phantom.'); return }
@@ -522,7 +535,7 @@ function saveHangar(): void {
 // Scatter spawns near the origin so pilots don't all stack on the same point (#1).
 // Well inside the 1600 safe-zone radius, so you never spawn into pirates.
 function randomSpawn(): THREE.Vector3 {
-  if (CAPTURE_OG) return new THREE.Vector3(320, -18, 220)
+  if (CAPTURE_CLEAN) return new THREE.Vector3(320, -18, 220)
   const a = Math.random() * Math.PI * 2
   const r = 200 + Math.random() * 400 // 200–600: visibly different, still well inside the 1600 safe zone
   return new THREE.Vector3(Math.cos(a) * r, (Math.random() - 0.5) * 100, Math.sin(a) * r)
@@ -545,7 +558,7 @@ scene.add(shipMesh)
 const boostFlare = new THREE.Mesh(
   new THREE.ConeGeometry(0.7, 4, 14, 1, true),
   new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uOpacity: { value: 0 } },
+    uniforms: { uTime: { value: 0 }, uOpacity: { value: 0 }, uTier: { value: 0 } },
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     vertexShader: `
       varying float vT;
@@ -557,11 +570,16 @@ const boostFlare = new THREE.Mesh(
     fragmentShader: `
       uniform float uTime;
       uniform float uOpacity;
+      uniform float uTier; // holder tier 0..3 → tinted exhaust (cosmetic only)
       varying float vT;
       void main() {
         float flick = 0.78 + 0.22 * sin(uTime * 20.0 + vT * 10.0); // plasma flicker
-        vec3 hot = vec3(0.85, 0.96, 1.0);  // white-hot nozzle core
-        vec3 cool = vec3(0.28, 0.60, 1.0); // cyan tail
+        // Tail tint per tier: 0 cyan (default) · 1 gold · 2 cyan-bright · 3 violet.
+        vec3 cool = vec3(0.28, 0.60, 1.0);
+        if (uTier > 2.5) cool = vec3(0.72, 0.36, 1.0);      // whale: violet
+        else if (uTier > 1.5) cool = vec3(0.30, 0.95, 1.0); // cyan
+        else if (uTier > 0.5) cool = vec3(1.0, 0.62, 0.12);  // gold/amber
+        vec3 hot = mix(vec3(0.85, 0.96, 1.0), cool * 0.6 + vec3(0.5), step(0.5, uTier)); // brighten core for holders
         vec3 col = mix(hot, cool, vT);
         float a = uOpacity * (1.0 - vT) * flick; // bright at the nozzle, fades down the tail
         gl_FragColor = vec4(col, a);
@@ -1041,8 +1059,47 @@ document.body.appendChild(stationMenu.root)
 
 // --- Remote ships
 interface RemoteShip { mesh: THREE.Group; peer: PeerState; label: CSS2DObject }
+let selfTier = CAPTURE_HOLDER ? 3 : 0 // token-holder tier → tinted engine trail (cosmetic only)
+/** Set a peer's nameplate text + holder flair by tier (1 gold · 2 cyan · 3 whale). */
+function applyHolderNameplate(el: HTMLElement, name: string, tier: number): void {
+  el.className = tier > 0 ? `nameplate holder t${tier}` : 'nameplate'
+  el.textContent = tier > 0 ? `◆ ${name}` : name
+}
 const remotes = new Map<string, RemoteShip>()
 const PALETTE = [0xc75d5d, 0x5d8ac7, 0xc7a85d, 0x9b5dc7, 0x5dc7b8, 0xc75da6]
+let holderShowcasePeersReady = false
+const holderShowcaseSpecs = [
+  { id: 'holder-tier-1', name: 'TIER 1 HOLDER', tier: 1, color: 2, offset: new THREE.Vector3(-52, 8, -104) },
+  { id: 'holder-tier-2', name: 'TIER 2 HOLDER', tier: 2, color: 4, offset: new THREE.Vector3(0, 14, -128) },
+  { id: 'holder-tier-3', name: 'WHALE HOLDER', tier: 3, color: 3, offset: new THREE.Vector3(52, 8, -104) },
+]
+const _holderShowcasePos = new THREE.Vector3()
+function ensureHolderShowcasePeers(): void {
+  if (holderShowcasePeersReady) return
+  holderShowcasePeersReady = true
+  for (const spec of holderShowcaseSpecs) {
+    const mesh = buildCraft('hauler', PALETTE[spec.color % PALETTE.length])
+    const label = document.createElement('div')
+    const labelObj = new CSS2DObject(label)
+    labelObj.position.set(0, 2.4, 0)
+    mesh.add(labelObj)
+    _holderShowcasePos.copy(spec.offset).applyQuaternion(ship.quaternion).add(ship.position)
+    mesh.position.copy(_holderShowcasePos)
+    mesh.quaternion.copy(ship.quaternion)
+    const peer: PeerState = {
+      id: spec.id,
+      name: spec.name,
+      color: spec.color,
+      p: [mesh.position.x, mesh.position.y, mesh.position.z],
+      q: [mesh.quaternion.x, mesh.quaternion.y, mesh.quaternion.z, mesh.quaternion.w],
+      receivedAt: performance.now(),
+      tier: spec.tier,
+    }
+    scene.add(mesh)
+    remotes.set(peer.id, { mesh, peer, label: labelObj })
+    applyHolderNameplate(label, peer.name, peer.tier ?? 0)
+  }
+}
 
 const solarMap = new SolarSystemMap({
   getSnapshot: () => ({
@@ -1255,16 +1312,23 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   onPeerJoin(peer) {
     const mesh = buildCraft('hauler', PALETTE[peer.color % PALETTE.length])
     const label = document.createElement('div')
-    label.className = 'nameplate'
-    label.textContent = peer.name
     const labelObj = new CSS2DObject(label)
     labelObj.position.set(0, 2.2, 0)
     mesh.add(labelObj)
     mesh.position.fromArray(peer.p)
     scene.add(mesh)
     remotes.set(peer.id, { mesh, peer, label: labelObj })
+    applyHolderNameplate(label, peer.name, peer.tier ?? 0)
   },
   onPeerState() { /* interpolation reads peer buffers each frame */ },
+  onPeerHolder(id, tier) {
+    const remote = remotes.get(id)
+    if (remote) {
+      remote.peer.tier = tier
+      applyHolderNameplate(remote.label.element as HTMLElement, remote.peer.name, tier)
+    }
+  },
+  onHolder(tier) { selfTier = tier }, // drives our own tinted engine trail
   onPeerLeave(id) {
     const remote = remotes.get(id)
     if (remote) {
@@ -1552,12 +1616,12 @@ function launch(): void {
   if (statsTimer) clearInterval(statsTimer)
   overlayEl.hidden = true
   overlayEl.style.display = 'none'
-  hudEl.hidden = CAPTURE_OG
-  statusEl.hidden = CAPTURE_OG
-  helpEl.hidden = CAPTURE_OG
-  crosshairEl.hidden = CAPTURE_OG
-  walletEl.hidden = CAPTURE_OG
-  minimapWrapEl.hidden = CAPTURE_OG
+  hudEl.hidden = CAPTURE_CLEAN
+  statusEl.hidden = CAPTURE_CLEAN
+  helpEl.hidden = CAPTURE_CLEAN
+  crosshairEl.hidden = CAPTURE_CLEAN
+  walletEl.hidden = CAPTURE_CLEAN
+  minimapWrapEl.hidden = CAPTURE_CLEAN
   leaderboardPanelEl.hidden = true
   updateWalletHUD() // HUD only — don't net.saveProgress before onProgress restores, or we'd overwrite saved data
   hullBarEl.style.width = '100%'
@@ -1572,7 +1636,7 @@ function launch(): void {
 }
 launchEl.addEventListener('click', launch)
 nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') launch() })
-if (CAPTURE_OG) {
+if (CAPTURE_CLEAN) {
   nicknameEl.value = 'test'
   requestAnimationFrame(() => launch())
 }
@@ -1895,6 +1959,7 @@ function frame(now: number): void {
   }
 
   if (running) {
+    if (CAPTURE_HOLDER) ensureHolderShowcasePeers()
     updateRemotes()
     updateCamera(dt)
     drawMinimap()
@@ -1945,11 +2010,12 @@ function frame(now: number): void {
   boostFlare.rotateX(Math.PI / 2) // cone tip trails back along the ship's +z
   const flareMat = boostFlare.material as THREE.ShaderMaterial
   const flareTarget = running && quantum.phase === 'idle'
-    ? camThrust * 0.3 + (camBoost ? 0.45 : 0) // thrust glow + boost punch
+    ? (CAPTURE_HOLDER ? 0.62 : 0) + camThrust * 0.3 + (camBoost ? 0.45 : 0) // thrust glow + boost punch
     : 0
   const flareOp = flareMat.uniforms.uOpacity.value as number
   flareMat.uniforms.uOpacity.value = flareOp + (flareTarget - flareOp) * (1 - Math.exp(-12 * dt))
   flareMat.uniforms.uTime.value = performance.now() * 0.001
+  flareMat.uniforms.uTier.value = selfTier // tinted exhaust by holder tier
   boostFlare.visible = (flareMat.uniforms.uOpacity.value as number) > 0.01
   boostFlare.scale.set(1, 1 + boostKick * 1.2 + camThrust * 0.4, 1) // stretches with thrust too
 
