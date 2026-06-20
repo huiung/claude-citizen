@@ -8,9 +8,15 @@ import {
   verifySignature, createChallengeStore, createSessionStore,
   resolveClaim, issueChallenge,
 } from './auth.mjs'
+import { fetchHolderTier, createHolderCache } from './holders.mjs'
 
 const PORT = process.env.PORT ?? 8080
 const STORE_FILE = process.env.STORE_FILE ?? './progress.json'
+// Token-holder cosmetics (flair only, never gameplay). Verified pubkeys are checked against
+// the mint via Helius; a missing key just means no flair anywhere.
+const HELIUS_API_KEY = process.env.HELIUS_API_KEY
+const HOLDER_MINT = '6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump'
+const holderCache = createHolderCache()
 // Area-of-interest: position updates only relay to pilots within this range. Cuts the
 // O(N^2) state broadcast to O(N*k) as players spread out across the sector.
 const AOI_RADIUS = 3000
@@ -24,6 +30,21 @@ function applySession(client, sessionId) {
   if (!sessionId) return
   const pubkey = sessions.resolve(String(sessionId).slice(0, 64))
   if (pubkey) { client.authed = true; client.pubkey = pubkey }
+}
+
+/** Resolve a verified pubkey's holder tier (cached), set it on the client, and tell the player
+ *  + nearby peers so cosmetic flair appears. Best-effort: failures leave tier 0. */
+async function refreshHolder(ws, client) {
+  if (!client.authed || !client.pubkey) return
+  let tier = holderCache.get(client.pubkey, Date.now())
+  if (tier === null) {
+    tier = await fetchHolderTier(client.pubkey, { apiKey: HELIUS_API_KEY, mint: HOLDER_MINT })
+    holderCache.set(client.pubkey, tier, Date.now())
+  }
+  if (!clients.has(ws)) return // disconnected during the async lookup
+  client.tier = tier
+  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ t: 'holder', tier }))
+  if (client.active && tier > 0) broadcast(ws, { t: 'peer-holder', id: client.id, tier })
 }
 
 // HTTP server: a /stats endpoint for the landing page + the WebSocket upgrade.
@@ -112,12 +133,13 @@ wss.on('connection', (ws) => {
       const client = {
         id: Math.random().toString(36).slice(2, 10),
         name: null, color: -1, p: [0, 0, 0], q: [0, 0, 0, 1], token,
-        active: false, authed: false, pubkey: null,
+        active: false, authed: false, pubkey: null, tier: 0,
       }
       applySession(client, msg.sessionId)
       clients.set(ws, client)
       const key = identityKey(client)
       if (key && !(key in store)) { store[key] = null; flush() } // seen → counts as registered
+      void refreshHolder(ws, client) // resolve holder flair if this viewer carried a verified session
       console.log(`[hello] viewer — ${clients.size} online`)
       return
     }
@@ -136,7 +158,7 @@ wss.on('connection', (ws) => {
           id: Math.random().toString(36).slice(2, 10),
           name: String(msg.name ?? 'PILOT').slice(0, 16),
           color: nextColor++, p: [0, 0, 0], q: [0, 0, 0, 1], token,
-          active: true, authed: false, pubkey: null,
+          active: true, authed: false, pubkey: null, tier: 0,
         }
         clients.set(ws, client)
       }
@@ -158,7 +180,8 @@ wss.on('connection', (ws) => {
         if (store[key]) ws.send(JSON.stringify({ t: 'progress', data: store[key] }))
         else if (!(key in store)) { store[key] = null; flush() }
       }
-      broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q })
+      broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q, tier: client.tier ?? 0 })
+      void refreshHolder(ws, client) // (re)check holder flair now that we're an active, visible pilot
       console.log(`[join] ${client.name} (${client.id})${client.token ? ' +token' : ''} — ${clients.size} online`)
       return
     }
@@ -195,6 +218,7 @@ wss.on('connection', (ws) => {
       const sessionId = sessions.create(pubkey)
       ws.send(JSON.stringify({ t: 'auth-ok', pubkey, sessionId }))
       if (store[pubkey]) ws.send(JSON.stringify({ t: 'progress', data: store[pubkey] }))
+      void refreshHolder(ws, client) // grant holder flair if this wallet holds the token
       return
     }
 
