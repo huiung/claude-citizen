@@ -14,6 +14,8 @@ export const ENGINE_GAIN_IDLE = 0.006
 export const ENGINE_GAIN_MAX = 0.04
 /** Multiplier applied to the gain when boost is engaged. */
 export const ENGINE_GAIN_BOOST_MULT = 1.3
+/** Toggle for thrust/boost/wind layers; menu music and UI/ambient cues are separate. */
+export const FLIGHT_AUDIO_ENABLED = true
 /** Quiet continuous mining laser tone. Kept below idle engine gain on purpose. */
 export const MINING_GAIN_ACTIVE = 0.0035
 export const MINING_FREQ = 520
@@ -252,7 +254,7 @@ export class GameAudio {
 
       // Engine: two detuned oscillators + a band of filtered noise for grit.
       const engineGain = ctx.createGain()
-      engineGain.gain.value = ENGINE_GAIN_IDLE
+      engineGain.gain.value = FLIGHT_AUDIO_ENABLED ? ENGINE_GAIN_IDLE : 0
       engineGain.connect(master)
       this.engineGain = engineGain
 
@@ -465,6 +467,12 @@ export class GameAudio {
       const now = ctx.currentTime
       this.osc1.frequency.setTargetAtTime(freq, now, RAMP)
       this.osc2.frequency.setTargetAtTime(freq * 0.5, now, RAMP)
+      if (!FLIGHT_AUDIO_ENABLED) {
+        this.engineGain.gain.setTargetAtTime(0, now, RAMP)
+        this.noiseGain?.gain.setTargetAtTime(0, now, RAMP)
+        this.windGain?.gain.setTargetAtTime(0, now, RAMP)
+        return
+      }
       this.engineGain.gain.setTargetAtTime(gain, now, RAMP)
       if (this.noiseGain) {
         this.noiseGain.gain.setTargetAtTime(gain * 0.1 * clamp(level, 0, 1), now, RAMP)
@@ -522,6 +530,7 @@ export class GameAudio {
   setBoost(on: boolean): void {
     const ctx = this.ctx
     if (!ctx || !this.engineGain) return
+    if (!FLIGHT_AUDIO_ENABLED) return
     try {
       const now = ctx.currentTime
       // Nudge the master engine gain to make boost instantly audible even if the
@@ -536,6 +545,7 @@ export class GameAudio {
 
   /** One-shot boost ignition: pressure thump + filtered noise whoosh. */
   playBoostPunch(speedFrac = 0): void {
+    if (!FLIGHT_AUDIO_ENABLED) return
     const ctx = this.ctx
     const master = this.master
     const noiseBuffer = this.noiseBuffer

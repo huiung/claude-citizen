@@ -4,6 +4,7 @@ import { rankForCredits } from './sim/ranks'
 import { NetClient } from './net/client'
 import { activeIdentity, loadWalletSession, saveWalletSession, type WalletSession } from './net/identity'
 import { connectWallet, signMessage, hasWallet, WalletError, NO_WALLET } from './net/wallet'
+import { LandingMusic } from './audio/landingMusic'
 
 const CAPTURE_OG = new URLSearchParams(location.search).get('capture') === 'og'
 
@@ -43,8 +44,16 @@ let walletSession: WalletSession | null = loadWalletSession(localStorage)
 let pendingPubkey: string | null = null
 let netConnected = false
 let launchStarted = false
+const landingMusic = new LandingMusic()
 
 myCodeEl.textContent = playerToken
+
+function startLandingMusic(): void {
+  landingMusic.start()
+}
+
+window.addEventListener('pointerdown', startLandingMusic, { once: true })
+window.addEventListener('keydown', startLandingMusic, { once: true })
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c)
@@ -176,6 +185,7 @@ function setLaunchStatus(text: string): void {
 async function beginLaunch(): Promise<void> {
   if (launchStarted) return
   launchStarted = true
+  landingMusic.start()
   const callsign = nicknameEl.value.trim() || 'PILOT'
   localStorage.setItem('callsign', callsign)
   launchEl.disabled = true
@@ -192,6 +202,7 @@ async function beginLaunch(): Promise<void> {
     const game = await import('./main')
     setLaunchStatus('Entering sector...')
     await nextPaint()
+    landingMusic.stop()
     game.launchGame(callsign)
   } catch (e) {
     launchStarted = false
