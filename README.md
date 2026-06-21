@@ -48,6 +48,8 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Quantum travel:** pick a destination with `[N]` or open the **Solar Atlas** with `[M]` and click a planet, charge the drive, and jump to any planet in the system — warp streaks, a wide-FOV cruise, and a named arrival
 - **A cinematic sky:** bloom glow, sunlit planet atmospheres (bright day limb, a warm sunset terminator, dark night side), a procedural nebula backdrop, slowly rotating worlds, and parallax dust that streams past for a sense of speed
 - **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor (detailed 3D models), each trading cargo/speed/toughness, unlocked as you climb the ranks
+- **Holder cosmetics:** verified token holders get tiered nameplate/chat colors, and T3 holders can equip the Void Interceptor visual from the Hangar. Cosmetic only: no stat advantage
+- **Orbit camera:** press `C` to inspect your ship from every angle, then use the mouse wheel to zoom the orbit view in and out
 - **A capital ship:** a procedural dreadnought ~120× your fighter, its hull aglow with hundreds of windows — fly its length for the scale
 - **Game feel:** a chase camera that carries G-force weight, a boost ignition punch (FOV kick + exhaust flare + whoosh), and an air-rush layer that swells with speed
 - **Combat HUD:** target brackets + range, off-screen threat arrows (know where you're being shot from), and a lead indicator so you can actually land hits on pirates
@@ -56,7 +58,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
 - **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours. Grab a **Pilot Code** to restore your pilot on another device (one live session per code)
-- 147 tests, because "built with AI" shouldn't mean "built badly"
+- 214 tests, because "built with AI" shouldn't mean "built badly"
 
 ## Controls
 
@@ -77,6 +79,8 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | N | Cycle the quantum destination (Mercury → Saturn) |
 | J | Quantum jump to the selected planet |
 | L | Toggle the leaderboard |
+| C | Toggle orbit camera |
+| Mouse wheel | Zoom orbit camera (while orbit camera is active) |
 
 ## Roadmap
 
@@ -92,7 +96,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | 7 | Low-poly planet surfaces + cinematic sky (bloom, atmospheres, nebula, warp) | ✅ shipped |
 | 8 | Game feel + 3D ship models + capital ship + combat HUD + leaderboard | ✅ shipped |
 | 9 | Detailed earth-type surfaces, day/night atmosphere, low-altitude terrain-following flight | ✅ shipped |
-| 10 | Co-op combat — fight pirates together | next |
+| 10 | PvP combat — pilot-vs-pilot systems and risk/reward loops | next |
 | 11 | Full planetary landings — touch down, walk the surface, take off | planned |
 | … | … | … |
 | 42 | Getting out of bed animation *(took the original 6 years — we'll take a weekend)* | someday |
