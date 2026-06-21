@@ -41,10 +41,7 @@ import { inject as injectAnalytics } from '@vercel/analytics'
 injectAnalytics() // Vercel Web Analytics (no-op off Vercel / in dev)
 
 const INTERP_DELAY_MS = 120
-const captureMode = new URLSearchParams(location.search).get('capture')
-const CAPTURE_OG = captureMode === 'og'
-const CAPTURE_HOLDER = captureMode === 'holder'
-const CAPTURE_CLEAN = CAPTURE_OG || CAPTURE_HOLDER
+const CAPTURE_OG = new URLSearchParams(location.search).get('capture') === 'og'
 
 // --- DOM
 const appEl = document.getElementById('app')!
@@ -98,7 +95,7 @@ const navHintEl = document.getElementById('nav-hint')!
 const objectiveEl = document.getElementById('objective')!
 // Onboarding: show a "next objective" only to brand-new pilots. localStorage gate (this device
 // hasn't onboarded) is the fast path; a returning token with saved progress also disables it.
-let onboardingActive = !CAPTURE_CLEAN && !localStorage.getItem('scc.onboarded')
+let onboardingActive = !CAPTURE_OG && !localStorage.getItem('scc.onboarded')
 let sessionKicked = false // signed in elsewhere — freeze the objective HUD on the warning
 // Onboarding progress is persisted so a refresh keeps your step (and graduating sticks),
 // even without a relay connection.
@@ -535,7 +532,7 @@ function saveHangar(): void {
 // Scatter spawns near the origin so pilots don't all stack on the same point (#1).
 // Well inside the 1600 safe-zone radius, so you never spawn into pirates.
 function randomSpawn(): THREE.Vector3 {
-  if (CAPTURE_CLEAN) return new THREE.Vector3(320, -18, 220)
+  if (CAPTURE_OG) return new THREE.Vector3(320, -18, 220)
   const a = Math.random() * Math.PI * 2
   const r = 200 + Math.random() * 400 // 200–600: visibly different, still well inside the 1600 safe zone
   return new THREE.Vector3(Math.cos(a) * r, (Math.random() - 0.5) * 100, Math.sin(a) * r)
@@ -1059,7 +1056,7 @@ document.body.appendChild(stationMenu.root)
 
 // --- Remote ships
 interface RemoteShip { mesh: THREE.Group; peer: PeerState; label: CSS2DObject }
-let selfTier = CAPTURE_HOLDER ? 3 : 0 // token-holder tier → tinted engine trail (cosmetic only)
+let selfTier = 0 // token-holder tier → tinted engine trail (cosmetic only)
 /** Set a peer's nameplate text + holder flair by tier (1 gold · 2 cyan · 3 whale). */
 function applyHolderNameplate(el: HTMLElement, name: string, tier: number): void {
   el.className = tier > 0 ? `nameplate holder t${tier}` : 'nameplate'
@@ -1067,39 +1064,6 @@ function applyHolderNameplate(el: HTMLElement, name: string, tier: number): void
 }
 const remotes = new Map<string, RemoteShip>()
 const PALETTE = [0xc75d5d, 0x5d8ac7, 0xc7a85d, 0x9b5dc7, 0x5dc7b8, 0xc75da6]
-let holderShowcasePeersReady = false
-const holderShowcaseSpecs = [
-  { id: 'holder-tier-1', name: 'TIER 1 HOLDER', tier: 1, color: 2, offset: new THREE.Vector3(-52, 8, -104) },
-  { id: 'holder-tier-2', name: 'TIER 2 HOLDER', tier: 2, color: 4, offset: new THREE.Vector3(0, 14, -128) },
-  { id: 'holder-tier-3', name: 'WHALE HOLDER', tier: 3, color: 3, offset: new THREE.Vector3(52, 8, -104) },
-]
-const _holderShowcasePos = new THREE.Vector3()
-function ensureHolderShowcasePeers(): void {
-  if (holderShowcasePeersReady) return
-  holderShowcasePeersReady = true
-  for (const spec of holderShowcaseSpecs) {
-    const mesh = buildCraft('hauler', PALETTE[spec.color % PALETTE.length])
-    const label = document.createElement('div')
-    const labelObj = new CSS2DObject(label)
-    labelObj.position.set(0, 2.4, 0)
-    mesh.add(labelObj)
-    _holderShowcasePos.copy(spec.offset).applyQuaternion(ship.quaternion).add(ship.position)
-    mesh.position.copy(_holderShowcasePos)
-    mesh.quaternion.copy(ship.quaternion)
-    const peer: PeerState = {
-      id: spec.id,
-      name: spec.name,
-      color: spec.color,
-      p: [mesh.position.x, mesh.position.y, mesh.position.z],
-      q: [mesh.quaternion.x, mesh.quaternion.y, mesh.quaternion.z, mesh.quaternion.w],
-      receivedAt: performance.now(),
-      tier: spec.tier,
-    }
-    scene.add(mesh)
-    remotes.set(peer.id, { mesh, peer, label: labelObj })
-    applyHolderNameplate(label, peer.name, peer.tier ?? 0)
-  }
-}
 
 const solarMap = new SolarSystemMap({
   getSnapshot: () => ({
@@ -1332,7 +1296,10 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   onPeerLeave(id) {
     const remote = remotes.get(id)
     if (remote) {
+      remote.mesh.remove(remote.label)
+      remote.label.element.remove() // CSS2D label lives in the DOM — drop it or the name lingers
       scene.remove(remote.mesh)
+      disposeObject(remote.mesh)
       remotes.delete(id)
     }
   },
@@ -1616,12 +1583,12 @@ function launch(): void {
   if (statsTimer) clearInterval(statsTimer)
   overlayEl.hidden = true
   overlayEl.style.display = 'none'
-  hudEl.hidden = CAPTURE_CLEAN
-  statusEl.hidden = CAPTURE_CLEAN
-  helpEl.hidden = CAPTURE_CLEAN
-  crosshairEl.hidden = CAPTURE_CLEAN
-  walletEl.hidden = CAPTURE_CLEAN
-  minimapWrapEl.hidden = CAPTURE_CLEAN
+  hudEl.hidden = CAPTURE_OG
+  statusEl.hidden = CAPTURE_OG
+  helpEl.hidden = CAPTURE_OG
+  crosshairEl.hidden = CAPTURE_OG
+  walletEl.hidden = CAPTURE_OG
+  minimapWrapEl.hidden = CAPTURE_OG
   leaderboardPanelEl.hidden = true
   updateWalletHUD() // HUD only — don't net.saveProgress before onProgress restores, or we'd overwrite saved data
   hullBarEl.style.width = '100%'
@@ -1636,7 +1603,7 @@ function launch(): void {
 }
 launchEl.addEventListener('click', launch)
 nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') launch() })
-if (CAPTURE_CLEAN) {
+if (CAPTURE_OG) {
   nicknameEl.value = 'test'
   requestAnimationFrame(() => launch())
 }
@@ -1959,7 +1926,6 @@ function frame(now: number): void {
   }
 
   if (running) {
-    if (CAPTURE_HOLDER) ensureHolderShowcasePeers()
     updateRemotes()
     updateCamera(dt)
     drawMinimap()
@@ -2010,7 +1976,7 @@ function frame(now: number): void {
   boostFlare.rotateX(Math.PI / 2) // cone tip trails back along the ship's +z
   const flareMat = boostFlare.material as THREE.ShaderMaterial
   const flareTarget = running && quantum.phase === 'idle'
-    ? (CAPTURE_HOLDER ? 0.62 : 0) + camThrust * 0.3 + (camBoost ? 0.45 : 0) // thrust glow + boost punch
+    ? camThrust * 0.3 + (camBoost ? 0.45 : 0) // thrust glow + boost punch
     : 0
   const flareOp = flareMat.uniforms.uOpacity.value as number
   flareMat.uniforms.uOpacity.value = flareOp + (flareTarget - flareOp) * (1 - Math.exp(-12 * dt))
