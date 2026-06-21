@@ -34,6 +34,7 @@ import { type Pirate, PIRATE_REWARD, spawnPirate, spawnPositionAround, stepPirat
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { SolarSystemMap, type SolarMapDestinationResult, type SolarMapNavigationTarget } from './ui/solarSystemMap'
+import { holderNameplateClass, holderNameplateText } from './ui/nameplate'
 import { activeIdentity, loadWalletSession, saveWalletSession } from './net/identity'
 import { connectWallet, signMessage, hasWallet, WalletError, NO_WALLET } from './net/wallet'
 import { inject as injectAnalytics } from '@vercel/analytics'
@@ -1140,8 +1141,8 @@ interface RemoteShip { mesh: THREE.Group; peer: PeerState; label: CSS2DObject }
 let selfTier = 0 // token-holder tier → tinted engine trail (cosmetic only)
 /** Set a peer's nameplate text + holder flair by tier (1 gold · 2 cyan · 3 whale). */
 function applyHolderNameplate(el: HTMLElement, name: string, tier: number): void {
-  el.className = tier > 0 ? `nameplate holder t${tier}` : 'nameplate'
-  el.textContent = tier > 0 ? `◆ ${name}` : name
+  el.className = holderNameplateClass(tier)
+  el.textContent = holderNameplateText(name, tier)
 }
 const remotes = new Map<string, RemoteShip>()
 const PALETTE = [0xc75d5d, 0x5d8ac7, 0xc7a85d, 0x9b5dc7, 0x5dc7b8, 0xc75da6]
