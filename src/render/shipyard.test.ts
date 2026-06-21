@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { capitalCarrierModelUrl, capitalModelUrl, pirateModelUrl } from './shipyard'
+import * as THREE from 'three'
+import {
+  addCraftEngineGlowRig,
+  buildCraft,
+  capitalCarrierModelUrl,
+  capitalModelUrl,
+  collectCraftEngineGlows,
+  craftModelUrl,
+  craftModelUrlForHolderVisual,
+  pirateModelUrl,
+} from './shipyard'
 
 describe('pirate model asset', () => {
+  it('points player craft at their generated GLB assets', () => {
+    expect(craftModelUrl('hauler')).toBe('/assets/ships/hauler.glb')
+    expect(craftModelUrl('interceptor')).toBe('/assets/ships/interceptor.glb')
+  })
+
+  it('uses the void interceptor visual only when selected and unlocked', () => {
+    expect(craftModelUrlForHolderVisual('hauler', 'void-interceptor', 2)).toBe('/assets/ships/hauler.glb')
+    expect(craftModelUrlForHolderVisual('hauler', 'standard', 3)).toBe('/assets/ships/hauler.glb')
+    expect(craftModelUrlForHolderVisual('fighter', 'void-interceptor', 3)).toBe('/assets/ships/holder-void-interceptor.glb')
+  })
+
   it('points pirates at their dedicated raider GLB', () => {
     expect(pirateModelUrl()).toBe('/assets/ships/pirate-raider.glb')
   })
@@ -12,5 +33,24 @@ describe('pirate model asset', () => {
 
   it('points the carrier capital at its dedicated GLB', () => {
     expect(capitalCarrierModelUrl()).toBe('/assets/ships/capital-carrier.glb')
+  })
+})
+
+describe('craft engine glow mounts', () => {
+  it('tags procedural engine bells so holder bloom can animate without a trail object', () => {
+    const fighter = buildCraft('fighter', 0x33aaff)
+    const glows = collectCraftEngineGlows(fighter)
+
+    expect(glows.filter((glow) => glow.role === 'disc')).toHaveLength(2)
+    expect(glows.filter((glow) => glow.role === 'core')).toHaveLength(2)
+  })
+
+  it('can attach compact engine bells to loaded GLB hulls', () => {
+    const group = new THREE.Group()
+    addCraftEngineGlowRig(group, 'miner')
+
+    const glows = collectCraftEngineGlows(group)
+    expect(glows.filter((glow) => glow.role === 'disc')).toHaveLength(4)
+    expect(glows.filter((glow) => glow.role === 'core')).toHaveLength(4)
   })
 })

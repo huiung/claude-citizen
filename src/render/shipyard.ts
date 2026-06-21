@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import type { ShipType } from '../sim/shipTypes'
+import type { HolderShipVisualId } from '../ui/holderShipVisual'
 
 const gltfLoader = new GLTFLoader()
 
@@ -10,6 +11,7 @@ const CRAFT_MODEL_URLS: Record<ShipType, string> = {
   miner: '/assets/ships/miner.glb',
   interceptor: '/assets/ships/interceptor.glb',
 }
+const HOLDER_VOID_INTERCEPTOR_MODEL_URL = '/assets/ships/holder-void-interceptor.glb'
 
 const CRAFT_MODEL_TARGET_SIZES: Record<ShipType, number> = {
   hauler: 9.5,
@@ -24,8 +26,58 @@ const CAPITAL_MODEL_URL = '/assets/ships/capital-dreadnought.glb'
 const CAPITAL_CARRIER_MODEL_URL = '/assets/ships/capital-carrier.glb'
 const CAPITAL_MODEL_TARGET_SIZE = 620
 
+export type CraftEngineGlowRole = 'disc' | 'core'
+
+export interface CraftEngineGlow {
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>
+  role: CraftEngineGlowRole
+}
+
+interface EngineGlowUserData {
+  craftEngineGlow?: {
+    role: CraftEngineGlowRole
+  }
+}
+
+interface EngineGlowMount {
+  x: number
+  y: number
+  z: number
+  color: number
+  r: number
+}
+
+const CRAFT_ENGINE_GLOW_MOUNTS: Record<ShipType, readonly EngineGlowMount[]> = {
+  hauler: [
+    { x: -1.95, y: 0, z: 1.71, color: 0x7fd4ff, r: 0.4 },
+    { x: 1.95, y: 0, z: 1.71, color: 0x7fd4ff, r: 0.4 },
+    { x: -0.6, y: 0.45, z: 2.95, color: 0x9fe0ff, r: 0.32 },
+    { x: 0.6, y: 0.45, z: 2.95, color: 0x9fe0ff, r: 0.32 },
+    { x: -0.6, y: -0.45, z: 2.95, color: 0x9fe0ff, r: 0.32 },
+    { x: 0.6, y: -0.45, z: 2.95, color: 0x9fe0ff, r: 0.32 },
+  ],
+  fighter: [
+    { x: -0.4, y: 0, z: 2.36, color: 0x9fe0ff, r: 0.26 },
+    { x: 0.4, y: 0, z: 2.36, color: 0x9fe0ff, r: 0.26 },
+  ],
+  miner: [
+    { x: -0.9, y: 0.5, z: 3.82, color: 0xffb24d, r: 0.32 },
+    { x: 0.9, y: 0.5, z: 3.82, color: 0xffb24d, r: 0.32 },
+    { x: -0.9, y: -0.5, z: 3.82, color: 0xffb24d, r: 0.32 },
+    { x: 0.9, y: -0.5, z: 3.82, color: 0xffb24d, r: 0.32 },
+  ],
+  interceptor: [
+    { x: -0.55, y: 0, z: 2.66, color: 0xff5a3c, r: 0.4 },
+    { x: 0.55, y: 0, z: 2.66, color: 0xff5a3c, r: 0.4 },
+  ],
+}
+
 export function craftModelUrl(type: ShipType): string {
   return CRAFT_MODEL_URLS[type]
+}
+
+export function craftModelUrlForHolderVisual(type: ShipType, visual: HolderShipVisualId, holderTier: number): string {
+  return visual === 'void-interceptor' && holderTier >= 3 ? HOLDER_VOID_INTERCEPTOR_MODEL_URL : CRAFT_MODEL_URLS[type]
 }
 
 export function pirateModelUrl(): string {
@@ -38,6 +90,22 @@ export function capitalModelUrl(): string {
 
 export function capitalCarrierModelUrl(): string {
   return CAPITAL_CARRIER_MODEL_URL
+}
+
+export function addCraftEngineGlowRig(group: THREE.Group, type: ShipType): void {
+  for (const mount of CRAFT_ENGINE_GLOW_MOUNTS[type]) {
+    addEngineGlow(group, mount.x, mount.y, mount.z, mount.color, mount.r)
+  }
+}
+
+export function collectCraftEngineGlows(root: THREE.Object3D): CraftEngineGlow[] {
+  const glows: CraftEngineGlow[] = []
+  root.traverse((child) => {
+    const meta = (child.userData as EngineGlowUserData).craftEngineGlow
+    if (!meta || !(child instanceof THREE.Mesh) || !(child.material instanceof THREE.MeshBasicMaterial)) return
+    glows.push({ mesh: child as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>, role: meta.role })
+  })
+  return glows
 }
 
 /** Load a generated GLB hull, normalized to game scale (by bounding box) and wrapped in a
@@ -61,8 +129,10 @@ export async function loadCraftModel(url: string, targetSize = 8): Promise<THREE
   }
 }
 
-export async function loadCraftModelForType(type: ShipType): Promise<THREE.Group | null> {
-  return loadCraftModel(CRAFT_MODEL_URLS[type], CRAFT_MODEL_TARGET_SIZES[type])
+export async function loadCraftModelForType(type: ShipType, holderTier = 0, visual: HolderShipVisualId = 'standard'): Promise<THREE.Group | null> {
+  const usingVoid = visual === 'void-interceptor' && holderTier >= 3
+  const targetSize = usingVoid ? 10.5 : CRAFT_MODEL_TARGET_SIZES[type]
+  return loadCraftModel(craftModelUrlForHolderVisual(type, visual, holderTier), targetSize)
 }
 
 export async function loadPirateModel(): Promise<THREE.Group | null> {
@@ -119,11 +189,27 @@ function makeMaterials(color: number): {
 
 /** Glowing engine bell: a coloured disc with a white-hot core — pops under bloom. */
 function addEngineGlow(group: THREE.Group, x: number, y: number, z: number, color: number, r: number): void {
-  const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 14), new THREE.MeshBasicMaterial({ color }))
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 14), new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.58,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  }))
   disc.position.set(x, y, z)
+  ;(disc.userData as EngineGlowUserData).craftEngineGlow = { role: 'disc' }
   group.add(disc)
-  const core = new THREE.Mesh(new THREE.CircleGeometry(r * 0.5, 10), new THREE.MeshBasicMaterial({ color: 0xffffff }))
+  const core = new THREE.Mesh(new THREE.CircleGeometry(r * 0.5, 10), new THREE.MeshBasicMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.82,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  }))
   core.position.set(x, y, z + 0.02)
+  ;(core.userData as EngineGlowUserData).craftEngineGlow = { role: 'core' }
   group.add(core)
 }
 

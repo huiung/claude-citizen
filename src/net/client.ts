@@ -28,7 +28,7 @@ export interface NetEvents {
   /** Server returned saved progress for our token (server is the source of truth). */
   onProgress(progress: PlayerProgress): void
   /** A chat line arrived (including our own, echoed by the server). */
-  onChat(name: string, text: string): void
+  onChat(name: string, text: string, tier: number): void
   /** This Pilot Code signed in elsewhere — the server closed us and we won't reconnect. */
   onKicked?(): void
   /** Server issued a nonce message to sign. */
@@ -147,7 +147,7 @@ export class NetClient {
         if (msg.data) this.events.onProgress(msg.data as PlayerProgress)
         break
       case 'chat':
-        if (typeof msg.text === 'string') this.events.onChat(String(msg.name ?? '?'), msg.text)
+        if (typeof msg.text === 'string') this.events.onChat(String(msg.name ?? '?'), msg.text, Number(msg.tier) || 0)
         break
       case 'holder':
         this.events.onHolder?.(Number(msg.tier) || 0)

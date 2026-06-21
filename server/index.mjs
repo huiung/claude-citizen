@@ -278,7 +278,7 @@ wss.on('connection', (ws) => {
       client.lastChat = now
       const text = msg.text.slice(0, 160).trim()
       if (text) {
-        const out = { t: 'chat', name: client.name, text }
+        const out = { t: 'chat', name: client.name, text, tier: client.tier ?? 0 }
         broadcast(ws, out)
         ws.send(JSON.stringify(out)) // echo to sender so they see their own line
       }

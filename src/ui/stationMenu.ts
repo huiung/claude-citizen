@@ -11,9 +11,22 @@ import { abandon, accept, completeContract, type Contract } from '../sim/contrac
 import { SHIP_RANK_REQ, SHIP_STATS, SHIP_TYPES, type ShipType } from '../sim/shipTypes'
 import { rankForCredits, RANKS } from '../sim/ranks'
 import type { GameAudio } from '../audio/sound'
+import { HOLDER_SHIP_VISUALS, resolveHolderShipVisual, type HolderShipVisualId } from './holderShipVisual'
 
 const COMMODITY_ORDER: CommodityId[] = ['ORE', 'ALLOY']
-type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard'
+type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard' | 'hangar'
+
+export interface HolderIdentityKit {
+  tier: number
+  name: string
+  description: string
+}
+
+export const HOLDER_IDENTITY_KITS: readonly HolderIdentityKit[] = [
+  { tier: 1, name: 'Holder Name Color', description: 'Gold callsign styling on nameplates and chat.' },
+  { tier: 2, name: 'Elite Name Color', description: 'Cyan callsign styling on nameplates and chat.' },
+  { tier: 3, name: 'T3 Name Color', description: 'Purple callsign styling on nameplates and chat.' },
+]
 
 export interface StationContext {
   outpostId: string
@@ -31,6 +44,10 @@ export interface StationContext {
   shipPrices: Record<ShipType, number>
   onBuyShip: (type: ShipType) => void
   onSelectShip: (type: ShipType) => void
+  /** Verified token-holder tier, cosmetic only. */
+  holderTier: () => number
+  selectedHolderShipVisual: () => HolderShipVisualId
+  onSelectHolderShipVisual: (id: HolderShipVisualId) => void
 }
 
 /**
@@ -70,6 +87,7 @@ export class StationMenu {
           <button data-tab="trade">TRADE</button>
           <button data-tab="upgrades">UPGRADES</button>
           <button data-tab="shipyard">SHIPYARD</button>
+          <button data-tab="hangar">HANGAR</button>
           <button data-tab="contracts">CONTRACTS</button>
         </div>
         <div id="station-body"></div>
@@ -121,6 +139,7 @@ export class StationMenu {
       case 'trade': return 'Buy low here, sell high at the other outpost. Mine ORE from asteroids for free.'
       case 'upgrades': return 'Spend credits to fly faster and haul more.'
       case 'shipyard': return 'Buy a hull and switch to it. Each trades cargo, speed, and toughness differently.'
+      case 'hangar': return 'Holder ship visuals are cosmetic only: no speed, combat, or economy advantage.'
       case 'contracts': return 'Accept a haul, deliver to its destination outpost for the reward.'
     }
   }
@@ -211,6 +230,7 @@ export class StationMenu {
     if (this.tab === 'trade') this.renderTrade()
     else if (this.tab === 'upgrades') this.renderUpgrades()
     else if (this.tab === 'shipyard') this.renderShipyard()
+    else if (this.tab === 'hangar') this.renderHangar()
     else this.renderContracts()
   }
 
@@ -321,6 +341,45 @@ export class StationMenu {
           this.onChange()
           this.render()
         }))
+      }
+      this.bodyEl.appendChild(row)
+    }
+  }
+
+  private renderHangar(): void {
+    const tier = this.ctx.holderTier()
+    const selected = resolveHolderShipVisual(this.ctx.selectedHolderShipVisual(), tier)
+    for (const kit of HOLDER_IDENTITY_KITS) {
+      const unlocked = tier >= kit.tier
+      const row = this.rowEl(kit.name, kit.description, unlocked ? 'ACTIVE' : `HOLDER T${kit.tier}`)
+      const actions = row.querySelector('.s-actions')!
+      const span = document.createElement('span')
+      span.className = 'maxed'
+      span.textContent = unlocked ? 'AUTO' : 'LOCKED'
+      actions.appendChild(span)
+      this.bodyEl.appendChild(row)
+    }
+    for (const visual of HOLDER_SHIP_VISUALS) {
+      const unlocked = tier >= visual.requiredTier
+      const active = selected.id === visual.id
+      const row = this.rowEl(visual.name, visual.description, active ? 'ACTIVE' : unlocked ? 'UNLOCKED' : `HOLDER T${visual.requiredTier}`)
+      const actions = row.querySelector('.s-actions')!
+      if (active) {
+        const span = document.createElement('span')
+        span.className = 'maxed'
+        span.textContent = 'SELECTED'
+        actions.appendChild(span)
+      } else if (unlocked) {
+        actions.appendChild(this.btn('Select', 'buy', false, () => {
+          this.ctx.onSelectHolderShipVisual(visual.id)
+          this.ctx.audio.blip('trade')
+          this.render()
+        }))
+      } else {
+        const span = document.createElement('span')
+        span.className = 'maxed'
+        span.textContent = 'LOCKED'
+        actions.appendChild(span)
       }
       this.bodyEl.appendChild(row)
     }

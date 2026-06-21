@@ -6,7 +6,16 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { createShipState, stepShip, type ControlInput } from './sim/physics'
-import { buildCraft, loadCapitalCarrierModel, loadCapitalModel, loadCraftModelForType, loadPirateModel } from './render/shipyard'
+import {
+  addCraftEngineGlowRig,
+  buildCraft,
+  collectCraftEngineGlows,
+  loadCapitalCarrierModel,
+  loadCapitalModel,
+  loadCraftModelForType,
+  loadPirateModel,
+  type CraftEngineGlow,
+} from './render/shipyard'
 import { SHIP_STATS, type ShipType } from './sim/shipTypes'
 import { nextRank, rankForCredits, rankProgress } from './sim/ranks'
 import {
@@ -25,6 +34,7 @@ import { boostMultiplier, cargoCapacity, loadUpgrades, miningYield, saveUpgrades
 import { type Celestial, queryCelestials } from './sim/galaxy'
 import { generatePlanetTextures, samplePlanetSurface, type PlanetTextureKind } from './render/planetTextures'
 import { makeAsteroidMaterial } from './render/asteroidTextures'
+import { engineGlowStyle, type EngineGlowStyle } from './render/engineGlow'
 import { cancelTravel, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
   canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
@@ -34,7 +44,22 @@ import { type Pirate, PIRATE_REWARD, spawnPirate, spawnPositionAround, stepPirat
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { SolarSystemMap, type SolarMapDestinationResult, type SolarMapNavigationTarget } from './ui/solarSystemMap'
-import { holderNameplateClass, holderNameplateText } from './ui/nameplate'
+import { holderChatNameClass, holderNameplateClass, holderNameplateText } from './ui/nameplate'
+import {
+  loadHolderShipVisual,
+  resolveHolderShipVisual,
+  saveHolderShipVisual,
+  type HolderShipVisualId,
+} from './ui/holderShipVisual'
+import {
+  defaultOrbitDistance,
+  nextCameraMode,
+  orbitCameraOffset,
+  queueOrbitZoomDelta,
+  rearCameraOffset,
+  zoomOrbitDistance,
+  type CameraMode,
+} from './ui/cameraView'
 import { activeIdentity, loadWalletSession, saveWalletSession } from './net/identity'
 import { connectWallet, signMessage, hasWallet, WalletError, NO_WALLET } from './net/wallet'
 import { inject as injectAnalytics } from '@vercel/analytics'
@@ -42,7 +67,9 @@ import { inject as injectAnalytics } from '@vercel/analytics'
 injectAnalytics() // Vercel Web Analytics (no-op off Vercel / in dev)
 
 const INTERP_DELAY_MS = 120
-const CAPTURE_OG = new URLSearchParams(location.search).get('capture') === 'og'
+const URL_PARAMS = new URLSearchParams(location.search)
+const CAPTURE_OG = URL_PARAMS.get('capture') === 'og'
+const SHOWCASE_HOLDER = URL_PARAMS.get('showcase') === 'holder'
 
 // --- DOM
 const appEl = document.getElementById('app')!
@@ -253,7 +280,11 @@ refreshLandingStats()
 statsTimer = setInterval(refreshLandingStats, 6000)
 
 // --- Renderer / scene
-const renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true })
+const renderer = new THREE.WebGLRenderer({
+  antialias: true,
+  logarithmicDepthBuffer: true,
+  preserveDrawingBuffer: SHOWCASE_HOLDER,
+})
 renderer.setSize(innerWidth, innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.toneMapping = THREE.ACESFilmicToneMapping // filmic highlights — plays well with bloom
@@ -273,6 +304,150 @@ labelRenderer.domElement.style.position = 'fixed'
 labelRenderer.domElement.style.top = '0'
 labelRenderer.domElement.style.pointerEvents = 'none'
 appEl.appendChild(labelRenderer.domElement)
+
+type HolderShowcaseStep = {
+  tier: number
+  callsign: string
+  label: string
+  color: string
+  chat: string
+}
+const HOLDER_SHOWCASE_STEPS: HolderShowcaseStep[] = [
+  { tier: 0, callsign: 'PILOT', label: 'STANDARD', color: '#d9ecff', chat: '#9fffb0' },
+  { tier: 1, callsign: 'AURIC', label: 'TIER 1 / NAME COLOR', color: '#ffd24a', chat: '#ffd24a' },
+  { tier: 2, callsign: 'ION', label: 'TIER 2 / CHAT COLOR', color: '#4ef0ff', chat: '#4ef0ff' },
+  { tier: 3, callsign: 'VOID', label: 'TIER 3 / VOID INTERCEPTOR', color: '#c08aff', chat: '#c08aff' },
+]
+const HOLDER_SHOWCASE_STEP_MS = 3000
+const showcaseCanvas = SHOWCASE_HOLDER ? document.createElement('canvas') : null
+const showcaseCtx = showcaseCanvas?.getContext('2d') ?? null
+if (showcaseCanvas) {
+  showcaseCanvas.width = 1280
+  showcaseCanvas.height = 720
+}
+let showcaseStart = 0
+let showcaseStepIdx = -1
+
+function holderShowcaseElapsed(now: number): number {
+  if (!showcaseStart) showcaseStart = now
+  return Math.max(0, now - showcaseStart)
+}
+
+function holderShowcaseStepIndex(now: number): number {
+  return Math.min(HOLDER_SHOWCASE_STEPS.length - 1, Math.floor(holderShowcaseElapsed(now) / HOLDER_SHOWCASE_STEP_MS))
+}
+
+function activeHolderShowcaseStep(now: number): HolderShowcaseStep {
+  return HOLDER_SHOWCASE_STEPS[holderShowcaseStepIndex(now)]
+}
+
+function roundRect2d(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+  ctx.beginPath()
+  ctx.moveTo(x + r, y)
+  ctx.arcTo(x + w, y, x + w, y + h, r)
+  ctx.arcTo(x + w, y + h, x, y + h, r)
+  ctx.arcTo(x, y + h, x, y, r)
+  ctx.arcTo(x, y, x + w, y, r)
+  ctx.closePath()
+}
+
+function updateHolderShowcase(now: number): void {
+  if (!SHOWCASE_HOLDER || !running) return
+  const idx = holderShowcaseStepIndex(now)
+  const step = HOLDER_SHOWCASE_STEPS[idx]
+  selfTier = step.tier
+  camThrust = Math.max(camThrust, 0.82)
+  camBoost = true
+  if (idx !== showcaseStepIdx) {
+    showcaseStepIdx = idx
+    nicknameEl.value = step.callsign
+    setPlayerCraft(selectedShipType)
+    addChatLine(step.callsign, 'holder cosmetics online', step.tier)
+  }
+}
+
+function drawHolderShowcaseComposite(now: number): void {
+  if (!SHOWCASE_HOLDER || !showcaseCanvas || !showcaseCtx) return
+  const step = activeHolderShowcaseStep(now)
+  const w = showcaseCanvas.width
+  const h = showcaseCanvas.height
+  showcaseCtx.clearRect(0, 0, w, h)
+  showcaseCtx.drawImage(renderer.domElement, 0, 0, w, h)
+  const vignette = showcaseCtx.createRadialGradient(w / 2, h / 2, 90, w / 2, h / 2, 720)
+  vignette.addColorStop(0, 'rgba(0,0,0,0)')
+  vignette.addColorStop(1, 'rgba(0,0,0,.52)')
+  showcaseCtx.fillStyle = vignette
+  showcaseCtx.fillRect(0, 0, w, h)
+
+  showcaseCtx.save()
+  showcaseCtx.fillStyle = '#f2f8ff'
+  showcaseCtx.font = '700 28px Orbitron, Segoe UI, sans-serif'
+  showcaseCtx.fillText('CLAUDE CITIZEN HOLDER COSMETICS', 42, 54)
+  showcaseCtx.fillStyle = '#9bb6d7'
+  showcaseCtx.font = '14px Segoe UI, sans-serif'
+  showcaseCtx.fillText('Actual gameplay capture: name color, chat nickname, and prestige ship kit by holder tier.', 44, 80)
+
+  showcaseCtx.shadowColor = step.tier > 0 ? step.color : 'rgba(0,0,0,.9)'
+  showcaseCtx.shadowBlur = step.tier > 0 ? 16 : 6
+  roundRect2d(showcaseCtx, 42, 108, 250, 58, 8)
+  showcaseCtx.fillStyle = step.tier > 0 ? 'rgba(20, 16, 28, .72)' : 'rgba(5, 10, 22, .72)'
+  showcaseCtx.strokeStyle = step.tier > 0 ? step.color : 'rgba(160, 190, 255, .32)'
+  showcaseCtx.lineWidth = 1.2
+  showcaseCtx.fill()
+  showcaseCtx.stroke()
+  showcaseCtx.shadowBlur = 0
+  showcaseCtx.fillStyle = step.color
+  showcaseCtx.font = '700 12px Orbitron, Segoe UI, sans-serif'
+  showcaseCtx.fillText(step.label, 58, 130)
+  showcaseCtx.font = '700 22px Orbitron, Segoe UI, sans-serif'
+  showcaseCtx.fillText(step.callsign, 58, 156)
+
+  roundRect2d(showcaseCtx, 42, h - 88, 340, 48, 7)
+  showcaseCtx.fillStyle = 'rgba(5, 10, 24, .78)'
+  showcaseCtx.strokeStyle = 'rgba(120, 160, 255, .22)'
+  showcaseCtx.fill()
+  showcaseCtx.stroke()
+  showcaseCtx.shadowColor = step.tier > 0 ? step.chat : 'transparent'
+  showcaseCtx.shadowBlur = step.tier > 0 ? 10 : 0
+  showcaseCtx.fillStyle = step.chat
+  showcaseCtx.font = '700 14px Segoe UI, sans-serif'
+  showcaseCtx.fillText(`${step.callsign}:`, 58, h - 58)
+  showcaseCtx.shadowBlur = 0
+  showcaseCtx.fillStyle = '#d8ebff'
+  showcaseCtx.font = '14px Segoe UI, sans-serif'
+  showcaseCtx.fillText('holder cosmetics online', 128, h - 58)
+  showcaseCtx.restore()
+}
+
+;(window as unknown as { renderGameplayShowcase?: (durationMs?: number) => Promise<string> }).renderGameplayShowcase = (durationMs = 14000) => {
+  return new Promise((resolve, reject) => {
+    if (!showcaseCanvas) {
+      reject(new Error('showcase canvas is only available with ?showcase=holder'))
+      return
+    }
+    showcaseStart = performance.now()
+    showcaseStepIdx = -1
+    const chunks: BlobPart[] = []
+    const stream = showcaseCanvas.captureStream(30)
+    const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E')
+      ? 'video/mp4;codecs=avc1.42E01E'
+      : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+        ? 'video/webm;codecs=vp9'
+        : 'video/webm'
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 6500000 })
+    recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
+    recorder.onerror = () => reject(new Error('MediaRecorder failed'))
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: mimeType })
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(blob)
+    }
+    recorder.start(250)
+    setTimeout(() => recorder.stop(), durationMs)
+  })
+}
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x010206)
@@ -564,6 +739,17 @@ function disposeObject(obj: THREE.Object3D): void {
   })
 }
 
+function applyEngineGlowStyle(glows: CraftEngineGlow[], style: EngineGlowStyle): void {
+  for (const glow of glows) {
+    const mat = glow.mesh.material
+    const isCore = glow.role === 'core'
+    mat.color.setHex(isCore ? 0xffffff : style.color)
+    mat.color.multiplyScalar(isCore ? style.coreIntensity : style.discIntensity)
+    mat.opacity = isCore ? style.coreOpacity : style.discOpacity
+    glow.mesh.scale.setScalar(style.scale * (isCore ? 0.92 : 1))
+  }
+}
+
 function streamCelestials(now: number): void {
   if (now - lastStream < 800) return
   lastStream = now
@@ -605,6 +791,7 @@ function loadHangar(): { selected: ShipType; owned: ShipType[] } {
 const hangar = loadHangar()
 let selectedShipType: ShipType = hangar.selected
 const ownedShips = new Set<ShipType>(hangar.owned)
+let shipLoadSeq = 0
 function saveHangar(): void {
   try {
     localStorage.setItem('scc.hangar.v1', JSON.stringify({ selected: selectedShipType, owned: [...ownedShips] }))
@@ -615,60 +802,29 @@ function saveHangar(): void {
 // Well inside the 1600 safe-zone radius, so you never spawn into pirates.
 function randomSpawn(): THREE.Vector3 {
   if (CAPTURE_OG) return new THREE.Vector3(320, -18, 220)
+  if (SHOWCASE_HOLDER) return new THREE.Vector3(220, -18, 120)
   const a = Math.random() * Math.PI * 2
   const r = 200 + Math.random() * 400 // 200–600: visibly different, still well inside the 1600 safe zone
   return new THREE.Vector3(Math.cos(a) * r, (Math.random() - 0.5) * 100, Math.sin(a) * r)
 }
 const _spawnUp = new THREE.Vector3(0, 1, 0)
 const _spawnMat = new THREE.Matrix4()
+const _showcaseAway = new THREE.Vector3()
 
 const ship = createShipState(randomSpawn())
 /** Aim the ship at the refinery on spawn, so new pilots open on somewhere to go. */
 function faceRefinery(): void {
-  _spawnMat.lookAt(ship.position, REFINERY_POS, _spawnUp)
+  const target = SHOWCASE_HOLDER
+    ? _showcaseAway.copy(ship.position).sub(SUN_POSITION).normalize().add(ship.position)
+    : REFINERY_POS
+  _spawnMat.lookAt(ship.position, target, _spawnUp)
   ship.quaternion.setFromRotationMatrix(_spawnMat)
 }
 faceRefinery()
 let shipMesh = buildCraft(selectedShipType, PLAYER_TINT)
 scene.add(shipMesh)
 
-// Boost flare — an additive cone of exhaust that follows the ship (independent of which
-// hull is equipped). Flares up on boost; stretches on the ignition kick. Bloom makes it pop.
-const boostFlare = new THREE.Mesh(
-  new THREE.ConeGeometry(0.7, 4, 14, 1, true),
-  new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uOpacity: { value: 0 }, uTier: { value: 0 } },
-    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-    vertexShader: `
-      varying float vT;
-      void main() {
-        vT = (position.y + 2.0) / 4.0; // 0 = nozzle (base), 1 = tail (tip)
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      uniform float uTime;
-      uniform float uOpacity;
-      uniform float uTier; // holder tier 0..3 → tinted exhaust (cosmetic only)
-      varying float vT;
-      void main() {
-        float flick = 0.78 + 0.22 * sin(uTime * 20.0 + vT * 10.0); // plasma flicker
-        // Tail tint per tier: 0 cyan (default) · 1 gold · 2 cyan-bright · 3 violet.
-        vec3 cool = vec3(0.28, 0.60, 1.0);
-        if (uTier > 2.5) cool = vec3(0.72, 0.36, 1.0);      // whale: violet
-        else if (uTier > 1.5) cool = vec3(0.30, 0.95, 1.0); // cyan
-        else if (uTier > 0.5) cool = vec3(1.0, 0.62, 0.12);  // gold/amber
-        vec3 hot = mix(vec3(0.85, 0.96, 1.0), cool * 0.6 + vec3(0.5), step(0.5, uTier)); // brighten core for holders
-        vec3 col = mix(hot, cool, vT);
-        float a = uOpacity * (1.0 - vT) * flick; // bright at the nozzle, fades down the tail
-        gl_FragColor = vec4(col, a);
-      }
-    `,
-  }),
-)
-boostFlare.frustumCulled = false
-scene.add(boostFlare)
-const _flareBack = new THREE.Vector3()
+let playerEngineGlows: CraftEngineGlow[] = collectCraftEngineGlows(shipMesh)
 
 // --- Mining VFX: cyan laser beam + impact glow + floating +ORE text
 const beamMat = new THREE.MeshBasicMaterial({
@@ -1084,19 +1240,24 @@ function setPlayerCraft(type: ShipType): void {
   shipMesh.position.copy(ship.position)
   shipMesh.quaternion.copy(ship.quaternion)
   scene.add(shipMesh)
+  playerEngineGlows = collectCraftEngineGlows(shipMesh)
   selectedShipType = type
   playerHealth.max = SHIP_STATS[type].hull
   playerHealth.hull = playerHealth.max
   saveHangar()
   // Upgrade to the generated GLB model if available (async; keeps the procedural hull on failure).
-  loadCraftModelForType(type).then((model) => {
-    if (!model || selectedShipType !== type) return // asset missing, or the type changed mid-load
+  const holderVisual = activeHolderShipVisual()
+  const loadSeq = ++shipLoadSeq
+  loadCraftModelForType(type, selfTier, holderVisual).then((model) => {
+    if (!model || selectedShipType !== type || loadSeq !== shipLoadSeq) return // asset missing, or state changed mid-load
     scene.remove(shipMesh)
     disposeObject(shipMesh)
+    addCraftEngineGlowRig(model, type)
     shipMesh = model
     shipMesh.position.copy(ship.position)
     shipMesh.quaternion.copy(ship.quaternion)
     scene.add(shipMesh)
+    playerEngineGlows = collectCraftEngineGlows(shipMesh)
   })
 }
 
@@ -1138,7 +1299,11 @@ document.body.appendChild(stationMenu.root)
 
 // --- Remote ships
 interface RemoteShip { mesh: THREE.Group; peer: PeerState; label: CSS2DObject }
-let selfTier = 0 // token-holder tier → tinted engine trail (cosmetic only)
+let selfTier = 0 // token-holder tier, cosmetic only
+let selectedHolderShipVisual = loadHolderShipVisual(localStorage)
+function activeHolderShipVisual(): HolderShipVisualId {
+  return resolveHolderShipVisual(selectedHolderShipVisual, selfTier).id
+}
 /** Set a peer's nameplate text + holder flair by tier (1 gold · 2 cyan · 3 whale). */
 function applyHolderNameplate(el: HTMLElement, name: string, tier: number): void {
   el.className = holderNameplateClass(tier)
@@ -1210,6 +1375,13 @@ function dock(id: string): void {
     onSelectShip: (type) => {
       if (ownedShips.has(type)) setPlayerCraft(type)
     },
+    holderTier: () => selfTier,
+    selectedHolderShipVisual: () => selectedHolderShipVisual,
+    onSelectHolderShipVisual: (id: HolderShipVisualId) => {
+      selectedHolderShipVisual = id
+      saveHolderShipVisual(localStorage, id)
+      setPlayerCraft(selectedShipType)
+    },
   })
 }
 
@@ -1224,6 +1396,17 @@ const keys = new Set<string>()
 let mousePitch = 0
 let mouseYaw = 0
 let assist = true
+let cameraMode: CameraMode = 'rear'
+let cameraOrbitElapsed = 0
+let cameraOrbitDistance = defaultOrbitDistance()
+let cameraOrbitWheelDelta = 0
+function cycleCameraView(): void {
+  cameraMode = nextCameraMode(cameraMode)
+  if (cameraMode === 'rear') {
+    cameraOrbitElapsed = 0
+    cameraOrbitWheelDelta = 0
+  }
+}
 
 addEventListener('keydown', (e) => {
   if (chatOpen) return // chat input owns the keyboard while open
@@ -1249,6 +1432,10 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyV') {
     assist = !assist
     assistEl.textContent = assist ? 'COUPLED' : 'DECOUPLED'
+  }
+  if (e.code === 'KeyC' && running && !docked) {
+    cycleCameraView()
+    audio.blip('nav')
   }
   if (e.code === 'Space' && running && !docked && dockable) dock(dockable)
   if (e.code === 'KeyN' && running && !docked && quantum.phase === 'idle') {
@@ -1282,6 +1469,11 @@ addEventListener('mousemove', (e) => {
   mouseYaw = THREE.MathUtils.clamp(mouseYaw, -1, 1)
   mousePitch = THREE.MathUtils.clamp(mousePitch, -1, 1)
 })
+renderer.domElement.addEventListener('wheel', (e) => {
+  if (!(running && !docked && cameraMode === 'orbit')) return
+  e.preventDefault()
+  cameraOrbitWheelDelta = queueOrbitZoomDelta(cameraOrbitWheelDelta, e.deltaY)
+}, { passive: false })
 // Left mouse = mining laser, right mouse = weapon (only while flying, mouse captured).
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault())
 renderer.domElement.addEventListener('mousedown', (e) => {
@@ -1374,7 +1566,10 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
       applyHolderNameplate(remote.label.element as HTMLElement, remote.peer.name, tier)
     }
   },
-  onHolder(tier) { selfTier = tier }, // drives our own tinted engine trail
+  onHolder(tier) {
+    selfTier = tier
+    setPlayerCraft(selectedShipType)
+  },
   onPeerLeave(id) {
     const remote = remotes.get(id)
     if (remote) {
@@ -1395,8 +1590,8 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
       setTimeout(refreshLandingStats, 500)
     }
   },
-  onChat(name, text) {
-    addChatLine(name, text)
+  onChat(name, text, tier) {
+    addChatLine(name, text, tier)
   },
   onKicked() {
     // Same Pilot Code launched elsewhere — this tab is now read-only to avoid save conflicts.
@@ -1413,10 +1608,11 @@ net.connect() // connect on page load as a viewer (presence) — counts toward "
 let chatOpen = false
 const chatLines: HTMLElement[] = []
 
-function addChatLine(name: string, text: string): void {
+function addChatLine(name: string, text: string, tier = 0): void {
   const line = document.createElement('div')
   line.className = 'chat-line'
   const who = document.createElement('b')
+  who.className = holderChatNameClass(tier)
   who.textContent = `${name}: `
   line.append(who, document.createTextNode(text)) // textContent — never innerHTML (no XSS)
   chatLogEl.appendChild(line)
@@ -1451,7 +1647,7 @@ chatInputEl.addEventListener('keydown', (e) => {
   e.stopPropagation()
   if (e.code === 'Enter') {
     const text = chatInputEl.value.trim()
-    if (text && !net.sendChat(text)) addChatLine(nicknameEl.value || 'PILOT', text) // offline: echo locally
+    if (text && !net.sendChat(text)) addChatLine(nicknameEl.value || 'PILOT', text, selfTier) // offline: echo locally
     closeChat()
   } else if (e.code === 'Escape') {
     closeChat()
@@ -1635,6 +1831,8 @@ const prevCamVel = new THREE.Vector3()
 const gSway = new THREE.Vector3()
 const _accel = new THREE.Vector3()
 const _gTarget = new THREE.Vector3()
+const _cameraLookAt = new THREE.Vector3()
+const _cameraLookAtOffset = new THREE.Vector3()
 const G_SWAY_K = 0.03   // accel (m/s²) → offset (m)
 const G_SWAY_MAX = 2.6  // clamp so it never gets nauseating
 const G_SWAY_RESP = 6   // spring stiffness
@@ -1647,12 +1845,32 @@ function updateCamera(dt: number): void {
   gSway.lerp(_gTarget, 1 - Math.exp(-G_SWAY_RESP * dt))
 
   // Ignition kick: pull the camera back along its boom and punch FOV for a beat.
-  camOffset.set(0, 3.2, 9.5 + boostKick * 4).applyQuaternion(ship.quaternion)
+  if (SHOWCASE_HOLDER) {
+    camOffset.set(4.6, 1.95, 3.2 + boostKick * 1.1).applyQuaternion(ship.quaternion)
+  } else {
+    if (cameraMode === 'orbit') {
+      cameraOrbitElapsed += dt
+      if (cameraOrbitWheelDelta !== 0) {
+        cameraOrbitDistance = zoomOrbitDistance(cameraOrbitDistance, cameraOrbitWheelDelta)
+        cameraOrbitWheelDelta = 0
+      }
+      camOffset.copy(orbitCameraOffset(cameraOrbitElapsed, boostKick, cameraOrbitDistance))
+    } else {
+      camOffset.copy(rearCameraOffset(boostKick))
+    }
+    camOffset.applyQuaternion(ship.quaternion)
+  }
   camTarget.copy(ship.position).add(camOffset).add(gSway)
   camera.position.lerp(camTarget, 1 - Math.exp(-8 * dt))
-  camera.quaternion.slerp(ship.quaternion, 1 - Math.exp(-10 * dt))
+  if (!SHOWCASE_HOLDER && cameraMode === 'orbit') {
+    _cameraLookAtOffset.set(0, 0.18, 0).applyQuaternion(ship.quaternion)
+    _cameraLookAt.copy(ship.position).add(_cameraLookAtOffset)
+    camera.lookAt(_cameraLookAt)
+  } else {
+    camera.quaternion.slerp(ship.quaternion, 1 - Math.exp(-10 * dt))
+  }
   // FOV gives a gentle sense of speed: a touch wider under boost / quantum travel. No hard punches.
-  const targetFov = (quantum.phase === 'traveling' ? 78 : camBoost ? 82 : 72) + boostKick * 6
+  const targetFov = SHOWCASE_HOLDER ? 48 : (quantum.phase === 'traveling' ? 78 : camBoost ? 82 : 72) + boostKick * 6
   camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-6 * dt))
   camera.updateProjectionMatrix()
 }
@@ -1691,8 +1909,8 @@ export function launchGame(callsign?: string): void {
   if (callsign) nicknameEl.value = callsign
   launch()
 }
-if (CAPTURE_OG) {
-  nicknameEl.value = 'test'
+if (CAPTURE_OG || SHOWCASE_HOLDER) {
+  nicknameEl.value = SHOWCASE_HOLDER ? HOLDER_SHOWCASE_STEPS[0].callsign : 'test'
   requestAnimationFrame(() => launch())
 }
 renderer.domElement.addEventListener('click', () => {
@@ -2056,23 +2274,18 @@ function frame(now: number): void {
 
   if (running && !docked) updateLootCrates(now, dt) // spin / magnet / collect loot crates
 
-  // Engine flare: reacts to thrust (a soft glow when accelerating, #2), flares hard on
-  // boost, and stretches on the ignition kick. Rides the ship's tail.
+  // Engine bloom lives on the craft's own engine bells. Holder cosmetics stay on
+  // name/chat styling and prestige hull parts, so the drive color remains stock.
   boostKick = Math.max(0, boostKick - dt * 3.5)
-  _flareBack.set(0, 0, 3.2).applyQuaternion(shipMesh.quaternion)
-  boostFlare.position.copy(shipMesh.position).add(_flareBack)
-  boostFlare.quaternion.copy(shipMesh.quaternion)
-  boostFlare.rotateX(Math.PI / 2) // cone tip trails back along the ship's +z
-  const flareMat = boostFlare.material as THREE.ShaderMaterial
-  const flareTarget = running && quantum.phase === 'idle'
-    ? camThrust * 0.3 + (camBoost ? 0.45 : 0) // thrust glow + boost punch
-    : 0
-  const flareOp = flareMat.uniforms.uOpacity.value as number
-  flareMat.uniforms.uOpacity.value = flareOp + (flareTarget - flareOp) * (1 - Math.exp(-12 * dt))
-  flareMat.uniforms.uTime.value = performance.now() * 0.001
-  flareMat.uniforms.uTier.value = selfTier // tinted exhaust by holder tier
-  boostFlare.visible = (flareMat.uniforms.uOpacity.value as number) > 0.01
-  boostFlare.scale.set(1, 1 + boostKick * 1.2 + camThrust * 0.4, 1) // stretches with thrust too
+  updateHolderShowcase(now)
+  const speedFrac = ship.velocity.length() / Math.max(1, effSpeed())
+  applyEngineGlowStyle(playerEngineGlows, engineGlowStyle({
+    thrust: camThrust,
+    boost: camBoost,
+    speedFrac,
+    cosmeticTier: 0,
+    time: now * 0.001,
+  }))
 
   // Onboarding objective — new pilots get a "next step" until they hunt their first pirate.
   // (Frozen if kicked: the objective slot shows the "signed in elsewhere" warning instead.)
@@ -2084,5 +2297,6 @@ function frame(now: number): void {
 
   composer.render()
   labelRenderer.render(scene, camera)
+  drawHolderShowcaseComposite(now)
 }
 requestAnimationFrame(frame)

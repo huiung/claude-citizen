@@ -5,8 +5,9 @@ import { NetClient } from './net/client'
 import { activeIdentity, loadWalletSession, saveWalletSession, type WalletSession } from './net/identity'
 import { connectWallet, signMessage, hasWallet, WalletError, NO_WALLET } from './net/wallet'
 import { LandingMusic } from './audio/landingMusic'
+import { holderCaptureLaunchConfig } from './ui/landingCapture'
 
-const CAPTURE_OG = new URLSearchParams(location.search).get('capture') === 'og'
+const CAPTURE_LAUNCH = holderCaptureLaunchConfig(new URLSearchParams(location.search))
 
 const nicknameEl = document.getElementById('nickname') as HTMLInputElement
 const launchEl = document.getElementById('launch') as HTMLButtonElement
@@ -216,7 +217,7 @@ async function beginLaunch(): Promise<void> {
 launchEl.addEventListener('click', () => { void beginLaunch() })
 nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') void beginLaunch() })
 
-if (CAPTURE_OG) {
-  nicknameEl.value = 'test'
+if (CAPTURE_LAUNCH.autoLaunch) {
+  nicknameEl.value = CAPTURE_LAUNCH.callsign ?? 'PILOT'
   requestAnimationFrame(() => { void beginLaunch() })
 }
