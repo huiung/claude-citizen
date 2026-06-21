@@ -284,6 +284,11 @@
     }
     .lb-prev:disabled, .lb-next:disabled { cursor: default; opacity: .28; }
     .lb-prev:not(:disabled):hover, .lb-next:not(:disabled):hover { border-color: rgba(159, 255, 176, .65); color: #fff; }
+    #overlay .lb-prev, #overlay .lb-next {
+      padding: 0; letter-spacing: 0; width: 24px; height: 20px;
+      border: 1px solid rgba(159, 255, 176, .28); background: rgba(0, 18, 8, .55);
+      color: #9fffb0; font: 700 13px "Share Tech Mono", ui-monospace, monospace;
+    }
     #leaderboard-panel {
       position: fixed; top: 50%; right: 24px; transform: translateY(-50%);
       background: rgba(2, 8, 12, .82); border: 1px solid rgba(159, 255, 176, .25);
