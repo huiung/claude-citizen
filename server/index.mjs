@@ -10,6 +10,24 @@ import {
 } from './auth.mjs'
 import { fetchHolderTier, createHolderCache } from './holders.mjs'
 
+function loadEnvFile(path = '.env') {
+  let text
+  try { text = readFileSync(path, 'utf8') } catch { return }
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(trimmed)
+    if (!match || process.env[match[1]] !== undefined) continue
+    let value = match[2].trim()
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
+    }
+    process.env[match[1]] = value
+  }
+}
+
+loadEnvFile()
+
 const PORT = process.env.PORT ?? 8080
 const STORE_FILE = process.env.STORE_FILE ?? './progress.json'
 // Verified sessions persist beside the progress store (same volume) so a relay restart

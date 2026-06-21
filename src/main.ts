@@ -359,15 +359,96 @@ sunLight.position.copy(SUN_POSITION)
 scene.add(sunLight)
 const planetLODs: THREE.LOD[] = []
 const planetGroups: THREE.Group[] = []
-for (const planet of PLANETS) {
-  const mesh = buildSolarPlanet(planet.radius, planet.color, planet.hasRings, planet.surface, planet.seed)
+const planetUpgraded = new Set<number>()
+const PLANET_UPGRADE_START_DELAY_MS = 6000
+const PLANET_UPGRADE_IDLE_MS = 1800
+const PLANET_UPGRADE_RETRY_MS = 1500
+const PLANET_UPGRADE_BETWEEN_MS = 6000
+const PLANET_UPGRADE_MAX_SPEED_SQ = 16
+let planetUpgradeInFlight = false
+let nextPlanetUpgradeAt = Infinity
+let planetUpgradeIdleSince = 0
+for (const [idx, planet] of PLANETS.entries()) {
+  const mesh = buildSolarPlanet(planet.radius, planet.color, planet.hasRings, planet.surface, planet.seed, {
+    startupTextureSize: planet.name === 'Earth' ? 1024 : 512,
+  })
   mesh.position.copy(planet.position)
   mesh.userData.spin = 0.004 + ((planet.seed % 100) / 100) * 0.012 // gentle, per-planet rotation
+  mesh.userData.planetIdx = idx
   scene.add(mesh)
   planetGroups.push(mesh)
   mesh.traverse((o) => { if (o instanceof THREE.LOD) planetLODs.push(o) })
 }
 buildLights(scene)
+
+function rebuildPlanetLODs(): void {
+  planetLODs.length = 0
+  for (const mesh of planetGroups) mesh.traverse((o) => { if (o instanceof THREE.LOD) planetLODs.push(o) })
+}
+
+function schedulePlanetUpgrades(startDelay = PLANET_UPGRADE_START_DELAY_MS): void {
+  planetUpgradeIdleSince = 0
+  nextPlanetUpgradeAt = performance.now() + startDelay
+}
+
+function canUpgradePlanetNow(now: number): boolean {
+  if (!running || planetUpgradeInFlight) return false
+  if (docked) return true
+  const busy =
+    chatOpen ||
+    solarMap.isOpen ||
+    quantum.phase !== 'idle' ||
+    miningActive ||
+    weaponActive ||
+    keys.size > 0 ||
+    ship.velocity.lengthSq() > PLANET_UPGRADE_MAX_SPEED_SQ
+  if (busy) {
+    planetUpgradeIdleSince = 0
+    return false
+  }
+  if (!planetUpgradeIdleSince) planetUpgradeIdleSince = now
+  return now - planetUpgradeIdleSince >= PLANET_UPGRADE_IDLE_MS
+}
+
+function upgradeNextPlanet(now: number): void {
+  if (planetUpgradeInFlight || now < nextPlanetUpgradeAt || planetUpgraded.size >= PLANETS.length) return
+  if (!canUpgradePlanetNow(now)) {
+    nextPlanetUpgradeAt = now + PLANET_UPGRADE_RETRY_MS
+    return
+  }
+  const candidates = PLANETS
+    .map((planet, idx) => ({ planet, idx, d: planet.position.distanceToSquared(ship.position) }))
+    .filter(({ idx }) => !planetUpgraded.has(idx))
+    .sort((a, b) => a.d - b.d)
+  const next = candidates[0]
+  if (!next) return
+  planetUpgradeInFlight = true
+  nextPlanetUpgradeAt = Infinity
+  setTimeout(() => {
+    const old = planetGroups[next.idx]
+    const upgraded = buildSolarPlanet(
+      next.planet.radius,
+      next.planet.color,
+      next.planet.hasRings,
+      next.planet.surface,
+      next.planet.seed,
+      { quality: 'high' },
+    )
+    upgraded.position.copy(next.planet.position)
+    upgraded.rotation.copy(old.rotation)
+    upgraded.userData.spin = old.userData.spin
+    upgraded.userData.planetIdx = next.idx
+    scene.remove(old)
+    disposeObject(old)
+    scene.add(upgraded)
+    planetGroups[next.idx] = upgraded
+    planetUpgraded.add(next.idx)
+    rebuildPlanetLODs()
+    planetUpgradeInFlight = false
+    planetUpgradeIdleSince = 0
+    nextPlanetUpgradeAt = performance.now() + PLANET_UPGRADE_BETWEEN_MS
+  }, 0)
+}
 
 // Mineable ore — a dynamic pool that follows the player: depleted or distant rocks are
 // removed and fresh veins respawn nearby, so no single spot is an infinite mine.
@@ -1577,6 +1658,7 @@ function updateCamera(dt: number): void {
 
 // --- Launch flow
 function launch(): void {
+  if (running) return
   const callsign = nicknameEl.value.trim() || 'PILOT'
   localStorage.setItem('callsign', callsign)
   net.enterGame(callsign) // promote from viewer (presence) to an active pilot
@@ -1600,9 +1682,14 @@ function launch(): void {
   selectedJumpIdx = nearestPlanetIdx() // start aimed at the closest planet
   customJumpDestination = null
   setPlayerCraft(selectedShipType) // apply hull (and load its GLB model) on launch
+  schedulePlanetUpgrades()
 }
 launchEl.addEventListener('click', launch)
 nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') launch() })
+export function launchGame(callsign?: string): void {
+  if (callsign) nicknameEl.value = callsign
+  launch()
+}
 if (CAPTURE_OG) {
   nicknameEl.value = 'test'
   requestAnimationFrame(() => launch())
@@ -1760,6 +1847,7 @@ function frame(now: number): void {
   ;(sun.userData.sunMat as THREE.ShaderMaterial).uniforms.uTime.value = now * 0.001 // boil the star surface
   if (running) {
     streamCelestials(now)
+    upgradeNextPlanet(now)
     for (const lod of planetLODs) lod.update(camera) // swap planet detail by distance
   }
 

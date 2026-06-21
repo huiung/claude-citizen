@@ -101,6 +101,16 @@ export class NetClient {
     this.ws.onmessage = (ev) => this.handle(JSON.parse(ev.data as string))
   }
 
+  disconnect(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = null
+    }
+    this.kicked = true
+    this.ws?.close()
+    this.ws = null
+  }
+
   private handle(msg: any): void {
     switch (msg.t) {
       case 'kicked':

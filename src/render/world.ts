@@ -155,7 +155,7 @@ export const SPAWN_PLANET = { position: new THREE.Vector3(12800, 5400, 400), rad
 
 export function buildPlanet(): THREE.Group {
   const group = new THREE.Group()
-  group.add(makePlanetSurface(SPAWN_PLANET.radius, 0xc25433, SPAWN_PLANET.surface, 7, 6, 1.2))
+  group.add(makePlanetSurface(SPAWN_PLANET.radius, 0xc25433, SPAWN_PLANET.surface, 7, 4, 0.8, 1024))
   group.add(makeAtmosphere(SPAWN_PLANET.radius, 0x9fb4c8, 3.2))
   group.position.copy(SPAWN_PLANET.position)
   return group
@@ -617,6 +617,7 @@ export function buildSun(radius: number, color: number): THREE.Group {
  *  Higher `dispScale` raises mountains/valleys (close-up detail); lower flattens (far away). */
 function makePlanetSurface(
   radius: number, color: number, surface: SurfaceKind, seed: number, detail: number, dispScale: number,
+  textureSize?: number,
 ): THREE.Mesh {
   const isGas = surface === 'gas'
   const segments = detail >= 8 ? 192 : detail >= 6 ? 96 : 56
@@ -635,7 +636,7 @@ function makePlanetSurface(
 
   geo.computeVertexNormals()
   // Solid, detailed bodies (earth/mars/mercury) get extra resolution for crisp close-ups.
-  const mapSize = surface === 'earth' || surface === 'mars' || surface === 'rocky' ? 2048 : radius >= 4000 || isGas ? 1024 : 512
+  const mapSize = textureSize ?? (surface === 'earth' || surface === 'mars' || surface === 'rocky' ? 2048 : radius >= 4000 || isGas ? 1024 : 512)
   const maps = generatePlanetTextures(surface, seed, color, mapSize, radius)
   const material = new THREE.MeshStandardMaterial({
     map: maps.colorMap,
@@ -650,19 +651,29 @@ function makePlanetSurface(
 /** A named-solar-system planet: LOD surface (detailed terrain up close, low-poly far) + atmosphere (+ rings).
  *  Rocky/earthy bodies get an LOD; gas giants are a single banded sphere. Returned group holds the LOD —
  *  the caller must call .update(camera) on it each frame. */
+export interface SolarPlanetOptions {
+  quality?: 'startup' | 'high'
+  startupTextureSize?: number
+}
+
 export function buildSolarPlanet(
   radius: number, color: number, hasRings: boolean, surface: SurfaceKind, seed: number,
+  options: SolarPlanetOptions = {},
 ): THREE.Group {
   const group = new THREE.Group()
   const isGas = surface === 'gas'
+  const quality = options.quality ?? 'startup'
+  const startupTextureSize = options.startupTextureSize ?? 512
   if (isGas) {
-    group.add(makePlanetSurface(radius, color, surface, seed, 4, 1))
-  } else {
+    group.add(makePlanetSurface(radius, color, surface, seed, 4, 1, quality === 'high' ? undefined : startupTextureSize))
+  } else if (quality === 'high') {
     const lod = new THREE.LOD()
     lod.addLevel(makePlanetSurface(radius, color, surface, seed, 8, 1.6), 0) // up close: highest tessellation + tallest terrain
     lod.addLevel(makePlanetSurface(radius, color, surface, seed, 6, 1.4), radius * 1.8) // mid
     lod.addLevel(makePlanetSurface(radius, color, surface, seed, 4, 0.5), radius * 4.5) // far: low-poly, flatter
     group.add(lod)
+  } else {
+    group.add(makePlanetSurface(radius, color, surface, seed, 4, 0.8, startupTextureSize))
   }
 
   // Fresnel atmosphere — glowing limb tinted by kind (denser air ⇒ softer, wider falloff)
@@ -671,7 +682,8 @@ export function buildSolarPlanet(
   group.add(makeAtmosphere(radius, atmoColor, atmoPower))
 
   // Earth-type bodies get a translucent cloud shell drifting just above the surface.
-  const clouds = generateCloudTexture(surface, seed, radius >= 4000 ? 1024 : 512, radius)
+  const startupCloudSize = startupTextureSize > 512 ? 512 : 256
+  const clouds = generateCloudTexture(surface, seed, quality === 'high' ? (radius >= 4000 ? 1024 : 512) : startupCloudSize, radius)
   if (clouds) {
     group.add(new THREE.Mesh(
       new THREE.SphereGeometry(radius * 1.018, 72, 36),

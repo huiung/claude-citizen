@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "server": "node --env-file-if-exists=.env server/index.mjs",
+    "server": "node server/index.mjs",
     "test": "vitest run"
   },
   "dependencies": {
