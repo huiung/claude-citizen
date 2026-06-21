@@ -39,9 +39,10 @@ export function createChallengeStore(ttlMs = 5 * 60 * 1000) {
   }
 }
 
-/** Maps a short-lived sessionId back to a verified pubkey (reconnect without re-signing). */
-export function createSessionStore() {
-  const m = new Map()
+/** Maps a sessionId back to a verified pubkey (reconnect without re-signing). Seeds from a
+ *  saved snapshot so verified sessions survive a relay restart. */
+export function createSessionStore(initial = {}) {
+  const m = new Map(Object.entries(initial ?? {}))
   return {
     create(pubkey) {
       const id = randomBytes(24).toString('base64url')
@@ -50,6 +51,10 @@ export function createSessionStore() {
     },
     resolve(id) {
       return m.get(id) ?? null
+    },
+    /** Plain object for persistence — survives a relay restart so sessions don't drop. */
+    snapshot() {
+      return Object.fromEntries(m)
     },
   }
 }

@@ -73,6 +73,18 @@ describe('createSessionStore', () => {
   it('returns null for an unknown session', () => {
     expect(createSessionStore().resolve('missing')).toBeNull()
   })
+  it('seeds from a saved snapshot (survives a restart)', () => {
+    const s = createSessionStore({ 'sid-1': 'PK1', 'sid-2': 'PK2' })
+    expect(s.resolve('sid-1')).toBe('PK1')
+    expect(s.resolve('sid-2')).toBe('PK2')
+  })
+  it('snapshot() returns a persistable plain object including new sessions', () => {
+    const s = createSessionStore({ 'sid-1': 'PK1' })
+    const id = s.create('PK2')
+    const snap = s.snapshot()
+    expect(snap['sid-1']).toBe('PK1')
+    expect(snap[id]).toBe('PK2')
+  })
 })
 
 describe('resolveClaim', () => {

@@ -12,6 +12,9 @@ import { fetchHolderTier, createHolderCache } from './holders.mjs'
 
 const PORT = process.env.PORT ?? 8080
 const STORE_FILE = process.env.STORE_FILE ?? './progress.json'
+// Verified sessions persist beside the progress store (same volume) so a relay restart
+// doesn't drop wallet logins — otherwise reconnects fall back to anonymous + lose holder flair.
+const SESSION_FILE = process.env.SESSION_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'sessions.json')
 // Token-holder cosmetics (flair only, never gameplay). Verified pubkeys are checked against
 // the mint via Helius; a missing key just means no flair anywhere.
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY
@@ -72,9 +75,14 @@ const httpServer = createServer((req, res) => {
 })
 const wss = new WebSocketServer({ server: httpServer })
 
-// Wallet auth: short-lived nonce challenges + verified-session lookup (in-memory).
+// Wallet auth: short-lived nonce challenges (in-memory) + verified-session lookup (persisted).
 const challenges = createChallengeStore()
-const sessions = createSessionStore()
+let sessionSeed = {}
+try { sessionSeed = JSON.parse(readFileSync(SESSION_FILE, 'utf8')) } catch { sessionSeed = {} }
+const sessions = createSessionStore(sessionSeed)
+function flushSessions() {
+  try { writeFileSync(SESSION_FILE, JSON.stringify(sessions.snapshot())) } catch { /* disk unavailable */ }
+}
 
 /** The progress key for a client: verified pubkey if authed, else the raw token. */
 function identityKey(client) {
@@ -217,6 +225,7 @@ wss.on('connection', (ws) => {
       resolveClaim(store, pubkey, anonToken)
       flush()
       const sessionId = sessions.create(pubkey)
+      flushSessions() // persist so this login survives a relay restart
       ws.send(JSON.stringify({ t: 'auth-ok', pubkey, sessionId }))
       if (store[pubkey]) ws.send(JSON.stringify({ t: 'progress', data: store[pubkey] }))
       void refreshHolder(ws, client) // grant holder flair if this wallet holds the token
