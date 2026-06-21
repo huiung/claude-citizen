@@ -21,6 +21,12 @@ export function applyDamage(h: Health, amount: number): void {
   h.hull = Math.max(0, h.hull - amount)
 }
 
+/** Repair `amount` hull, clamped at max. Mutates. */
+export function repairHull(h: Health, amount: number): void {
+  if (amount <= 0) return
+  h.hull = Math.min(h.max, h.hull + amount)
+}
+
 export function isDead(h: Health): boolean {
   return h.hull <= 0
 }

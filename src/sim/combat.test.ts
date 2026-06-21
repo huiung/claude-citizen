@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Vector3 } from 'three'
 import {
   applyDamage, canFire, createHealth, createWeapon, fire, type HitTarget, hullFraction,
-  isDead, type Projectile, PROJECTILE_SPEED, resolveHits, spawnProjectile, stepProjectiles,
+  isDead, type Projectile, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile, stepProjectiles,
   stepWeapon,
 } from './combat'
 
@@ -28,6 +28,15 @@ describe('health', () => {
     expect(hullFraction(h)).toBe(1)
     applyDamage(h, 40)
     expect(hullFraction(h)).toBe(0.5)
+  })
+
+  it('repairs hull without exceeding max health', () => {
+    const h = createHealth(100)
+    applyDamage(h, 35)
+    repairHull(h, 20)
+    expect(h.hull).toBe(85)
+    repairHull(h, 100)
+    expect(h.hull).toBe(100)
   })
 })
 

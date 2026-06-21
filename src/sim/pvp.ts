@@ -6,6 +6,10 @@ export const PVP_ZONE_RADIUS = 1250
 export const PVP_HIT_RANGE = 900
 export const PVP_KILL_REWARD = 180
 export const PVP_REPEAT_REWARD_COOLDOWN_MS = 5 * 60 * 1000
+export const PVP_ARENA_ID = 'pvp.arena'
+export const PVP_ARENA_NAME = 'PvP Arena'
+export const PVP_ARENA_KIND = 'Combat beacon'
+export const PVP_ARENA_APPROACH_DISTANCE = Math.max(PVP_ZONE_RADIUS * 1.5, 650)
 
 export interface PvpWeaponStat {
   damage: number
@@ -26,6 +30,12 @@ export function isInPvpZone(position: Vector3): boolean {
 export function pvpZoneIntensity(position: Vector3): number {
   const d = position.distanceTo(PVP_ZONE_CENTER)
   return Math.max(0, Math.min(1, 1 - d / PVP_ZONE_RADIUS))
+}
+
+export function pvpArenaApproachPoint(from: Vector3): Vector3 {
+  const dir = from.clone().sub(PVP_ZONE_CENTER)
+  if (dir.lengthSq() < 1) dir.set(0, 0, 1)
+  return PVP_ZONE_CENTER.clone().add(dir.normalize().multiplyScalar(PVP_ARENA_APPROACH_DISTANCE))
 }
 
 export function pvpWeaponForShip(type: ShipType): PvpWeaponStat {

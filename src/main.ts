@@ -38,9 +38,18 @@ import { engineGlowStyle, type EngineGlowStyle } from './render/engineGlow'
 import { cancelTravel, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
   canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
-  isDead, type Projectile, PROJECTILE_SPEED, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
+  isDead, type Projectile, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
 } from './sim/combat'
-import { isInPvpZone, PVP_ZONE_CENTER, PVP_ZONE_RADIUS, pvpWeaponForShip } from './sim/pvp'
+import {
+  isInPvpZone,
+  PVP_ARENA_ID,
+  PVP_ARENA_KIND,
+  PVP_ARENA_NAME,
+  PVP_ZONE_CENTER,
+  PVP_ZONE_RADIUS,
+  pvpArenaApproachPoint,
+  pvpWeaponForShip,
+} from './sim/pvp'
 import { type Pirate, PIRATE_REWARD, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
@@ -946,6 +955,10 @@ const _fwd = new THREE.Vector3()
 // arriving at a station means you can breathe.
 const SAFE_RADIUS = 1600
 const SAFE_ANCHORS = [new THREE.Vector3(0, 0, 0), REFINERY_POS, COLONY_POS]
+const SAFE_REPAIR_DELAY_MS = 2000
+const SAFE_REPAIR_RATE_PER_SEC = 0.16
+let safeRepairEnteredAt: number | null = null
+let lastPlayerDamageAt = -Infinity
 function inSafeZone(pos: THREE.Vector3): boolean {
   if (SAFE_ANCHORS.some((a) => pos.distanceToSquared(a) < SAFE_RADIUS * SAFE_RADIUS)) return true
   // Near a planet's surface, hostiles break off — descend to fly/admire in peace.
@@ -983,7 +996,18 @@ function planetDestination(idx: number): QuantumDestination {
   }
 }
 
+function pvpArenaDestination(): QuantumDestination {
+  return {
+    id: PVP_ARENA_ID,
+    name: PVP_ARENA_NAME,
+    kind: PVP_ARENA_KIND,
+    position: PVP_ZONE_CENTER.clone(),
+    radius: PVP_ZONE_RADIUS,
+  }
+}
+
 function activeQuantumDestination(): QuantumDestination {
+  if (!customJumpDestination && selectedJumpIdx >= PLANETS.length) return pvpArenaDestination()
   return customJumpDestination ?? planetDestination(selectedJumpIdx)
 }
 
@@ -1000,6 +1024,10 @@ function activeDestinationSnapshot(): SolarMapNavigationTarget {
 
 /** Arrival point just OFF the selected target's surface (never inside it), plus its name + distance. */
 function destinationArrival(dest = activeQuantumDestination()): { position: THREE.Vector3; name: string; dist: number } {
+  if (dest.id === PVP_ARENA_ID) {
+    const position = pvpArenaApproachPoint(ship.position)
+    return { position, name: dest.name, dist: ship.position.distanceTo(position) }
+  }
   _navDir.copy(ship.position).sub(dest.position)
   if (_navDir.lengthSq() < 1) _navDir.set(0, 0, 1)
   _navDir.normalize()
@@ -1039,6 +1067,20 @@ function nearestPlanetIdx(): number {
     if (d < bestD) { bestD = d; idx = i }
   }
   return idx
+}
+
+function updateSafeRepair(safe: boolean, pvpActive: boolean, now: number, dt: number): boolean {
+  const peacefulSafe = safe && !pvpActive && !weaponActive
+  if (!peacefulSafe) {
+    safeRepairEnteredAt = null
+    return false
+  }
+  if (safeRepairEnteredAt === null) safeRepairEnteredAt = now
+  if (playerHealth.hull >= playerHealth.max) return false
+  const repairReadyAt = Math.max(safeRepairEnteredAt, lastPlayerDamageAt) + SAFE_REPAIR_DELAY_MS
+  if (now < repairReadyAt) return false
+  repairHull(playerHealth, playerHealth.max * SAFE_REPAIR_RATE_PER_SEC * dt)
+  return playerHealth.hull < playerHealth.max
 }
 
 const _toShip = new THREE.Vector3()
@@ -1536,7 +1578,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Space' && running && !docked && dockable) dock(dockable)
   if (e.code === 'KeyN' && running && !docked && quantum.phase === 'idle') {
     customJumpDestination = null
-    selectedJumpIdx = (selectedJumpIdx + 1) % PLANETS.length // cycle the quantum destination
+    selectedJumpIdx = (selectedJumpIdx + 1) % (PLANETS.length + 1) // cycle planets, then the PvP arena beacon
     audio.blip('nav')
   }
   if (!leaderboardPanelEl.hidden && running && !docked && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
@@ -1733,6 +1775,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   onPvpDamage(attackerName, hull, maxHull, damage, killed) {
     playerHealth.max = maxHull
     playerHealth.hull = THREE.MathUtils.clamp(hull, 0, maxHull)
+    lastPlayerDamageAt = performance.now()
     damageFlash()
     addChatLine('PVP', `${attackerName} hit you for ${Math.round(damage)}`, 3)
     if (killed) respawnPlayer(performance.now())
@@ -2336,7 +2379,9 @@ function frame(now: number): void {
 
     // Safe zone: near an outpost, hostiles break off and leave you alone.
     const safe = inSafeZone(ship.position)
+    const repairing = updateSafeRepair(safe, pvpActive, now, dt)
     safeEl.hidden = !safe
+    safeEl.textContent = repairing ? 'SAFE ZONE · HULL REPAIRING' : 'SAFE ZONE'
     if (safe && pirates.length) {
       for (const p of pirates) {
         const mesh = pirateMeshes.get(p.id)
@@ -2378,6 +2423,7 @@ function frame(now: number): void {
     for (const h of hits) {
       audio.blip('hit')
       if (h.target.faction === 'player') damageFlash()
+      if (h.target.faction === 'player') lastPlayerDamageAt = now
       if (h.target.faction === 'peer' && h.target.id) net.sendPvpHit(h.target.id)
     }
 

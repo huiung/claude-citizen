@@ -5,8 +5,13 @@ import {
   PVP_KILL_REWARD,
   PVP_REPEAT_REWARD_COOLDOWN_MS,
   PVP_WEAPONS,
+  PVP_ARENA_APPROACH_DISTANCE,
+  PVP_ARENA_ID,
+  PVP_ARENA_KIND,
+  PVP_ARENA_NAME,
   PVP_ZONE_CENTER,
   PVP_ZONE_RADIUS,
+  pvpArenaApproachPoint,
   pvpKillReward,
   pvpWeaponForShip,
   pvpZoneIntensity,
@@ -21,6 +26,19 @@ describe('pvp zone rules', () => {
   it('reports strongest intensity at the center and zero outside', () => {
     expect(pvpZoneIntensity(PVP_ZONE_CENTER.clone())).toBe(1)
     expect(pvpZoneIntensity(PVP_ZONE_CENTER.clone().add(new Vector3(PVP_ZONE_RADIUS, 0, 0)))).toBe(0)
+  })
+
+  it('defines a quantum beacon that drops pilots outside the arena edge', () => {
+    expect(PVP_ARENA_ID).toBe('pvp.arena')
+    expect(PVP_ARENA_NAME).toBe('PvP Arena')
+    expect(PVP_ARENA_KIND).toBe('Combat beacon')
+
+    const approach = pvpArenaApproachPoint(new Vector3(0, 0, 0))
+    const distFromCenter = approach.distanceTo(PVP_ZONE_CENTER)
+
+    expect(distFromCenter).toBeCloseTo(PVP_ARENA_APPROACH_DISTANCE, 5)
+    expect(distFromCenter).toBeGreaterThan(PVP_ZONE_RADIUS)
+    expect(approach.z).toBeGreaterThan(PVP_ZONE_CENTER.z)
   })
 })
 
