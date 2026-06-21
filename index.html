@@ -27,8 +27,16 @@
     .nameplate {
       color: #9fffb0; font-size: 12px; text-shadow: 0 0 4px #000;
       background: rgba(0, 20, 8, 0.55); padding: 1px 6px; border-radius: 3px;
-      font-family: inherit;
+      font-family: inherit; text-align: center; min-width: 44px;
     }
+    .nameplate .np-name { display: block; white-space: nowrap; }
+    .nameplate .np-hull {
+      display: block; width: 54px; height: 4px; margin: 3px auto 0;
+      border-radius: 3px; overflow: hidden; background: rgba(255, 80, 110, .25);
+      border: 1px solid rgba(255, 120, 160, .35);
+    }
+    .nameplate .np-hull[hidden] { display: none; }
+    .nameplate .np-hull i { display: block; height: 100%; width: 100%; background: #ff5d8f; box-shadow: 0 0 8px rgba(255, 93, 143, .7); }
     /* Token-holder flair — tiered nameplate colors (cosmetic only). */
     .nameplate.holder { background: rgba(20, 16, 4, 0.62); border: 1px solid currentColor; }
     .nameplate.t1 { color: #ffd24a; text-shadow: 0 0 6px #000, 0 0 10px rgba(255, 210, 74, .6); }   /* gold */
@@ -106,6 +114,7 @@
     #hull-bar { display: block; height: 100%; width: 100%; background: #6fdc8c; transition: width .15s linear; }
     #enemies { color: #ff8a6b; }
     #safe-zone { color: #6fdc8c; letter-spacing: 2px; text-shadow: 0 0 8px rgba(110, 220, 140, .5); }
+    #pvp-zone { color: #ff5dff; letter-spacing: 2px; text-shadow: 0 0 10px rgba(255, 93, 255, .7); }
     #damage-flash {
       position: fixed; inset: 0; pointer-events: none; z-index: 5; opacity: 0;
       transition: opacity .13s ease-out; box-shadow: inset 0 0 130px 30px rgba(255, 40, 40, .55);
@@ -373,6 +382,7 @@
     <div><span id="online">1</span> PILOT(S) IN SECTOR</div>
     <div><span id="enemies">0</span> HOSTILE(S)</div>
     <div id="safe-zone" hidden>◇ SAFE ZONE</div>
+    <div id="pvp-zone" hidden>PVP ENABLED</div>
   </div>
   <div id="damage-flash"></div>
   <div id="atmo-veil"></div>

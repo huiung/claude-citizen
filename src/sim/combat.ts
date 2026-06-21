@@ -3,7 +3,7 @@
 
 import { Vector3 } from 'three'
 
-export type Faction = 'player' | 'pirate'
+export type Faction = 'player' | 'pirate' | 'peer'
 
 // --- Health
 export interface Health {
@@ -70,6 +70,7 @@ export function stepProjectiles(projectiles: Projectile[], dt: number): void {
 
 // --- Hit resolution
 export interface HitTarget {
+  id?: string
   position: Vector3
   radius: number
   health: Health

@@ -10,6 +10,7 @@ import {
 } from './auth.mjs'
 import { fetchHolderTier, createHolderCache } from './holders.mjs'
 import { leaderboardPage, parseLeaderboardParams } from './leaderboard.mjs'
+import { applyPvpHit, isInPvpZone, normalizeShip, resetPvpHull } from './pvp.mjs'
 
 function loadEnvFile(path = '.env') {
   let text
@@ -43,6 +44,7 @@ const holderCache = createHolderCache()
 // O(N^2) state broadcast to O(N*k) as players spread out across the sector.
 const AOI_RADIUS = 3000
 const AOI_RADIUS2 = AOI_RADIUS * AOI_RADIUS
+const pvpRewardMemory = new Map()
 
 let nextColor = 0
 const clients = new Map() // ws -> { id, name, color, p, q, token, active, authed, pubkey }
@@ -144,6 +146,17 @@ function broadcast(from, msg) {
   }
 }
 
+function send(ws, msg) {
+  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg))
+}
+
+function broadcastAll(msg) {
+  const data = JSON.stringify(msg)
+  for (const ws of clients.keys()) {
+    if (ws.readyState === ws.OPEN) ws.send(data)
+  }
+}
+
 wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
     let msg
@@ -158,6 +171,7 @@ wss.on('connection', (ws) => {
         name: null, color: -1, p: [0, 0, 0], q: [0, 0, 0, 1], token,
         active: false, authed: false, pubkey: null, tier: 0,
       }
+      resetPvpHull(client, 'hauler')
       applySession(client, msg.sessionId)
       clients.set(ws, client)
       const key = identityKey(client)
@@ -176,6 +190,7 @@ wss.on('connection', (ws) => {
         client.name = String(msg.name ?? 'PILOT').slice(0, 16)
         client.color = nextColor++
         if (token) client.token = token
+        resetPvpHull(client, normalizeShip(msg.ship))
       } else {
         client = {
           id: Math.random().toString(36).slice(2, 10),
@@ -183,6 +198,7 @@ wss.on('connection', (ws) => {
           color: nextColor++, p: [0, 0, 0], q: [0, 0, 0, 1], token,
           active: true, authed: false, pubkey: null, tier: 0,
         }
+        resetPvpHull(client, normalizeShip(msg.ship))
         clients.set(ws, client)
       }
       if (!client.authed) applySession(client, msg.sessionId)
@@ -203,7 +219,7 @@ wss.on('connection', (ws) => {
         if (store[key]) ws.send(JSON.stringify({ t: 'progress', data: store[key] }))
         else if (!(key in store)) { store[key] = null; flush() }
       }
-      broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q, tier: client.tier ?? 0 })
+      broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q, tier: client.tier ?? 0, ship: client.ship, hull: client.hull, maxHull: client.maxHull })
       void refreshHolder(ws, client) // (re)check holder flair now that we're an active, visible pilot
       console.log(`[join] ${client.name} (${client.id})${client.token ? ' +token' : ''} — ${clients.size} online`)
       return
@@ -249,13 +265,42 @@ wss.on('connection', (ws) => {
     if (msg.t === 'state' && client.active && Array.isArray(msg.p) && Array.isArray(msg.q)) {
       client.p = msg.p.slice(0, 3).map(Number)
       client.q = msg.q.slice(0, 4).map(Number)
+      const ship = normalizeShip(msg.ship)
+      if (ship !== client.ship && !isInPvpZone(client.p)) resetPvpHull(client, ship)
       // Relay only to active pilots within AOI_RADIUS (distant pilots aren't visible anyway).
-      const out = JSON.stringify({ t: 'peer-state', id: client.id, p: client.p, q: client.q })
+      const out = JSON.stringify({ t: 'peer-state', id: client.id, p: client.p, q: client.q, ship: client.ship, hull: client.hull, maxHull: client.maxHull })
       const [px, py, pz] = client.p
       for (const [ws2, c2] of clients) {
         if (ws2 === ws || !c2.active || ws2.readyState !== ws2.OPEN) continue
         const dx = c2.p[0] - px, dy = c2.p[1] - py, dz = c2.p[2] - pz
         if (dx * dx + dy * dy + dz * dz <= AOI_RADIUS2) ws2.send(out)
+      }
+      return
+    }
+
+    if (msg.t === 'pvp-hit' && client.active) {
+      const targetId = typeof msg.targetId === 'string' ? msg.targetId.slice(0, 16) : ''
+      let targetWs = null
+      let target = null
+      for (const [ws2, c2] of clients) {
+        if (c2.id === targetId) { targetWs = ws2; target = c2; break }
+      }
+      const result = applyPvpHit({ attacker: client, target, now: Date.now(), rewardMemory: pvpRewardMemory })
+      if (!result.ok) return
+      broadcastAll({ t: 'pvp-health', id: target.id, hull: target.hull, maxHull: target.maxHull })
+      send(ws, { t: 'pvp-hit', targetId: target.id, hull: result.hull, maxHull: result.maxHull, damage: result.damage, killed: result.killed })
+      send(targetWs, { t: 'pvp-damage', attackerId: client.id, attackerName: client.name, hull: result.hull, maxHull: result.maxHull, damage: result.damage, killed: result.killed })
+      if (result.killed) {
+        if (result.reward > 0) send(ws, { t: 'pvp-reward', credits: result.reward, victimId: target.id, victimName: target.name })
+        broadcastAll({
+          t: 'pvp-kill',
+          killerId: client.id,
+          killerName: client.name,
+          victimId: target.id,
+          victimName: target.name,
+          reward: result.reward,
+        })
+        broadcastAll({ t: 'pvp-health', id: target.id, hull: target.hull, maxHull: target.maxHull })
       }
       return
     }

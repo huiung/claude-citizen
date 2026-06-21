@@ -54,7 +54,7 @@ describe('projectiles', () => {
 })
 
 describe('resolveHits', () => {
-  function target(faction: 'player' | 'pirate', pos = new Vector3()): HitTarget {
+  function target(faction: 'player' | 'pirate' | 'peer', pos = new Vector3()): HitTarget {
     return { position: pos, radius: 10, health: createHealth(100), faction }
   }
 
@@ -74,6 +74,14 @@ describe('resolveHits', () => {
     expect(hits.length).toBe(0)
     expect(friendly.health.hull).toBe(100)
     expect(proj.length).toBe(1)
+  })
+
+  it('lets player shots hit peer targets for PvP', () => {
+    const proj = [spawnProjectile(new Vector3(), new Vector3(0, 0, -1), 'player')]
+    const peer = target('peer')
+    const hits = resolveHits(proj, [peer])
+    expect(hits.length).toBe(1)
+    expect(hits[0].target.faction).toBe('peer')
   })
 
   it('misses targets outside the radius', () => {

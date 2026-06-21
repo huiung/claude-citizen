@@ -6,6 +6,9 @@ export interface PeerState {
   color: number
   p: [number, number, number]
   q: [number, number, number, number]
+  ship?: string
+  hull?: number
+  maxHull?: number
   receivedAt: number
   prev?: { p: [number, number, number]; q: [number, number, number, number]; receivedAt: number }
   tier?: number // token-holder cosmetic tier: 0 none · 1 gold · 2 cyan · 3 whale
@@ -41,6 +44,11 @@ export interface NetEvents {
   onHolder?(tier: number): void
   /** A peer's holder tier arrived/updated after they joined. */
   onPeerHolder?(id: string, tier: number): void
+  onPvpHealth?(id: string, hull: number, maxHull: number, self: boolean): void
+  onPvpHit?(targetId: string, hull: number, maxHull: number, damage: number, killed: boolean): void
+  onPvpDamage?(attackerName: string, hull: number, maxHull: number, damage: number, killed: boolean): void
+  onPvpKill?(killerName: string, victimName: string, reward: number, killerIsSelf: boolean, victimIsSelf: boolean): void
+  onPvpReward?(credits: number, victimName: string): void
 }
 
 const SEND_HZ = 10
@@ -55,6 +63,8 @@ export class NetClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private kicked = false // signed in elsewhere — stop reconnecting
 
+  private id: string | null = null
+  private activeShip: string | undefined
   private sessionId: string | null = null
 
   constructor(private name: string, private token: string, private events: NetEvents) {}
@@ -86,7 +96,7 @@ export class NetClient {
       this.reconnectDelay = 2000 // connected — reset backoff
       // Viewer presence by default; a full 'join' once the player launches.
       this.ws?.send(JSON.stringify(this.active
-        ? { t: 'join', name: this.name, token: this.token, sessionId: this.sessionId }
+        ? { t: 'join', name: this.name, token: this.token, sessionId: this.sessionId, ship: this.activeShip }
         : { t: 'hello', token: this.token, sessionId: this.sessionId }))
       this.events.onStatus(true, this.online)
     }
@@ -119,6 +129,7 @@ export class NetClient {
         this.ws?.close()
         break
       case 'welcome':
+        this.id = typeof msg.id === 'string' ? msg.id : this.id
         for (const peer of msg.peers) this.addPeer(peer)
         this.online = msg.peers.length + 1
         this.events.onStatus(true, this.online)
@@ -133,6 +144,9 @@ export class NetClient {
         if (!peer) return
         peer.prev = { p: peer.p, q: peer.q, receivedAt: peer.receivedAt }
         peer.p = msg.p; peer.q = msg.q; peer.receivedAt = performance.now()
+        peer.ship = typeof msg.ship === 'string' ? msg.ship : peer.ship
+        peer.hull = Number.isFinite(Number(msg.hull)) ? Number(msg.hull) : peer.hull
+        peer.maxHull = Number.isFinite(Number(msg.maxHull)) ? Number(msg.maxHull) : peer.maxHull
         this.events.onPeerState(peer)
         break
       }
@@ -159,6 +173,34 @@ export class NetClient {
         this.events.onPeerHolder?.(String(msg.id), tier)
         break
       }
+      case 'pvp-health': {
+        const id = String(msg.id ?? '')
+        const hull = Number(msg.hull)
+        const maxHull = Number(msg.maxHull)
+        if (!id || !Number.isFinite(hull) || !Number.isFinite(maxHull)) return
+        const peer = this.peers.get(id)
+        if (peer) { peer.hull = hull; peer.maxHull = maxHull }
+        this.events.onPvpHealth?.(id, hull, maxHull, id === this.id)
+        break
+      }
+      case 'pvp-hit':
+        this.events.onPvpHit?.(String(msg.targetId ?? ''), Number(msg.hull) || 0, Number(msg.maxHull) || 1, Number(msg.damage) || 0, Boolean(msg.killed))
+        break
+      case 'pvp-damage':
+        this.events.onPvpDamage?.(String(msg.attackerName ?? 'PILOT'), Number(msg.hull) || 0, Number(msg.maxHull) || 1, Number(msg.damage) || 0, Boolean(msg.killed))
+        break
+      case 'pvp-kill':
+        this.events.onPvpKill?.(
+          String(msg.killerName ?? 'PILOT'),
+          String(msg.victimName ?? 'PILOT'),
+          Number(msg.reward) || 0,
+          String(msg.killerId ?? '') === this.id,
+          String(msg.victimId ?? '') === this.id,
+        )
+        break
+      case 'pvp-reward':
+        this.events.onPvpReward?.(Number(msg.credits) || 0, String(msg.victimName ?? 'PILOT'))
+        break
       case 'challenge':
         if (typeof msg.message === 'string') this.events.onChallenge?.(msg.message)
         break
@@ -178,6 +220,9 @@ export class NetClient {
     const peer: PeerState = {
       id: raw.id, name: raw.name, color: raw.color,
       p: raw.p ?? [0, 0, 0], q: raw.q ?? [0, 0, 0, 1],
+      ship: typeof raw.ship === 'string' ? raw.ship : undefined,
+      hull: Number.isFinite(Number(raw.hull)) ? Number(raw.hull) : undefined,
+      maxHull: Number.isFinite(Number(raw.maxHull)) ? Number(raw.maxHull) : undefined,
       receivedAt: performance.now(),
       tier: Number(raw.tier) || 0,
     }
@@ -185,11 +230,12 @@ export class NetClient {
     this.events.onPeerJoin(peer)
   }
 
-  sendState(p: [number, number, number], q: [number, number, number, number], now: number): void {
+  sendState(p: [number, number, number], q: [number, number, number, number], now: number, ship?: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
     if (now - this.lastSend < 1000 / SEND_HZ) return
     this.lastSend = now
-    this.ws.send(JSON.stringify({ t: 'state', p, q }))
+    if (ship) this.activeShip = ship
+    this.ws.send(JSON.stringify({ t: 'state', p, q, ship: this.activeShip }))
   }
 
   /** Update the callsign sent on join (call before connect once the player picks one). */
@@ -198,11 +244,12 @@ export class NetClient {
   }
 
   /** Promote from viewer (presence) to an active in-game pilot — call on LAUNCH. */
-  enterGame(name: string): void {
+  enterGame(name: string, ship?: string): void {
     this.name = name
+    if (ship) this.activeShip = ship
     this.active = true
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ t: 'join', name, token: this.token, sessionId: this.sessionId }))
+      this.ws.send(JSON.stringify({ t: 'join', name, token: this.token, sessionId: this.sessionId, ship: this.activeShip }))
     }
     // If the socket isn't open yet, onopen will send 'join' since active is now true.
   }
@@ -229,6 +276,12 @@ export class NetClient {
   sendChat(text: string): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
     this.ws.send(JSON.stringify({ t: 'chat', text }))
+    return true
+  }
+
+  sendPvpHit(targetId: string): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    this.ws.send(JSON.stringify({ t: 'pvp-hit', targetId }))
     return true
   }
 

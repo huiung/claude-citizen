@@ -40,6 +40,7 @@ import {
   canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
   isDead, type Projectile, PROJECTILE_SPEED, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
 } from './sim/combat'
+import { isInPvpZone, PVP_ZONE_CENTER, PVP_ZONE_RADIUS, pvpWeaponForShip } from './sim/pvp'
 import { type Pirate, PIRATE_REWARD, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
@@ -160,6 +161,7 @@ function currentObjective(): string | null {
   return goal.track ? `${goal.label}  ·  ${goal.track()}` : goal.label
 }
 const safeEl = document.getElementById('safe-zone')!
+const pvpEl = document.getElementById('pvp-zone')!
 const chatInputEl = document.getElementById('chat-input') as HTMLInputElement
 const chatLogEl = document.getElementById('chat-log')!
 const statOnlineEl = document.getElementById('stat-online')!
@@ -496,6 +498,27 @@ function drawHolderShowcaseComposite(now: number): void {
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x010206)
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.5, 500000)
+
+function buildPvpArenaMarker(): THREE.LineLoop {
+  const points: THREE.Vector3[] = []
+  for (let i = 0; i < 128; i++) {
+    const a = (i / 128) * Math.PI * 2
+    points.push(new THREE.Vector3(Math.cos(a) * PVP_ZONE_RADIUS, 0, Math.sin(a) * PVP_ZONE_RADIUS))
+  }
+  const geo = new THREE.BufferGeometry().setFromPoints(points)
+  const mat = new THREE.LineBasicMaterial({
+    color: 0xff5dff,
+    transparent: true,
+    opacity: 0.38,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  })
+  const ring = new THREE.LineLoop(geo, mat)
+  ring.position.copy(PVP_ZONE_CENTER)
+  return ring
+}
+
+scene.add(buildPvpArenaMarker())
 
 // Bloom post-processing: make the sun, engines, lasers and lit windows actually glow.
 const composer = new EffectComposer(renderer)
@@ -1217,7 +1240,7 @@ function syncProjectileMeshes(): void {
   for (const proj of projectiles) {
     let mesh = projectileMeshes.get(proj)
     if (!mesh) {
-      mesh = makeBolt(proj.faction)
+      mesh = makeBolt(proj.faction === 'pirate' ? 'pirate' : 'player')
       scene.add(mesh)
       projectileMeshes.set(proj, mesh)
     }
@@ -1342,19 +1365,47 @@ const stationMenu = new StationMenu({
 document.body.appendChild(stationMenu.root)
 
 // --- Remote ships
-interface RemoteShip { mesh: THREE.Group; peer: PeerState; label: CSS2DObject }
+interface RemoteShip { mesh: THREE.Group; peer: PeerState; label: CSS2DObject; health: ReturnType<typeof createHealth> }
 let selfTier = 0 // token-holder tier, cosmetic only
 let selectedHolderShipVisual = loadHolderShipVisual(localStorage)
 function activeHolderShipVisual(): HolderShipVisualId {
   return resolveHolderShipVisual(selectedHolderShipVisual, selfTier).id
 }
+function nameplateParts(el: HTMLElement): { name: HTMLElement; hull: HTMLElement; fill: HTMLElement } {
+  let name = el.querySelector<HTMLElement>('.np-name')
+  let hull = el.querySelector<HTMLElement>('.np-hull')
+  let fill = hull?.querySelector<HTMLElement>('i') ?? null
+  if (!name) {
+    name = document.createElement('span')
+    name.className = 'np-name'
+    el.appendChild(name)
+  }
+  if (!hull) {
+    hull = document.createElement('span')
+    hull.className = 'np-hull'
+    hull.hidden = true
+    fill = document.createElement('i')
+    hull.appendChild(fill)
+    el.appendChild(hull)
+  }
+  return { name, hull, fill: fill! }
+}
 /** Set a peer's nameplate text + holder flair by tier (1 gold · 2 cyan · 3 whale). */
 function applyHolderNameplate(el: HTMLElement, name: string, tier: number): void {
   el.className = holderNameplateClass(tier)
-  el.textContent = holderNameplateText(name, tier)
+  nameplateParts(el).name.textContent = holderNameplateText(name, tier)
+}
+function updateNameplateHealth(el: HTMLElement, hull: number, maxHull: number, visible: boolean): void {
+  const parts = nameplateParts(el)
+  parts.hull.hidden = !visible
+  const frac = maxHull > 0 ? THREE.MathUtils.clamp(hull / maxHull, 0, 1) : 0
+  parts.fill.style.width = `${Math.round(frac * 100)}%`
 }
 const remotes = new Map<string, RemoteShip>()
 const PALETTE = [0xc75d5d, 0x5d8ac7, 0xc7a85d, 0x9b5dc7, 0x5dc7b8, 0xc75da6]
+function peerShipType(peer: PeerState): ShipType {
+  return peer.ship && peer.ship in SHIP_STATS ? peer.ship as ShipType : 'hauler'
+}
 
 const solarMap = new SolarSystemMap({
   getSnapshot: () => ({
@@ -1397,6 +1448,7 @@ function dock(id: string): void {
   beam.visible = false
   impact.visible = false
   safeEl.hidden = true
+  pvpEl.hidden = true
   weaponActive = false
   ship.velocity.set(0, 0, 0)
   audio.setThrust(0, false)
@@ -1602,17 +1654,25 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     finishOnboarding() // a returning token already knows the ropes
   },
   onPeerJoin(peer) {
-    const mesh = buildCraft('hauler', PALETTE[peer.color % PALETTE.length])
+    const mesh = buildCraft(peerShipType(peer), PALETTE[peer.color % PALETTE.length])
     const label = document.createElement('div')
     const labelObj = new CSS2DObject(label)
     labelObj.position.set(0, 2.2, 0)
     mesh.add(labelObj)
     mesh.position.fromArray(peer.p)
     scene.add(mesh)
-    remotes.set(peer.id, { mesh, peer, label: labelObj })
+    const maxHull = peer.maxHull ?? SHIP_STATS[peerShipType(peer)].hull
+    const health = createHealth(maxHull)
+    health.hull = peer.hull ?? maxHull
+    remotes.set(peer.id, { mesh, peer, label: labelObj, health })
     applyHolderNameplate(label, peer.name, peer.tier ?? 0)
   },
-  onPeerState() { /* interpolation reads peer buffers each frame */ },
+  onPeerState(peer) {
+    const remote = remotes.get(peer.id)
+    if (!remote) return
+    if (typeof peer.maxHull === 'number') remote.health.max = peer.maxHull
+    if (typeof peer.hull === 'number') remote.health.hull = THREE.MathUtils.clamp(peer.hull, 0, remote.health.max)
+  },
   onPeerHolder(id, tier) {
     const remote = remotes.get(id)
     if (remote) {
@@ -1646,6 +1706,48 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   },
   onChat(name, text, tier) {
     addChatLine(name, text, tier)
+  },
+  onPvpHealth(id, hull, maxHull, self) {
+    if (self) {
+      playerHealth.max = maxHull
+      playerHealth.hull = THREE.MathUtils.clamp(hull, 0, maxHull)
+      return
+    }
+    const remote = remotes.get(id)
+    if (!remote) return
+    remote.health.max = maxHull
+    remote.health.hull = THREE.MathUtils.clamp(hull, 0, maxHull)
+    remote.peer.hull = remote.health.hull
+    remote.peer.maxHull = maxHull
+  },
+  onPvpHit(targetId, hull, maxHull, damage, killed) {
+    const remote = remotes.get(targetId)
+    if (remote) {
+      remote.health.max = maxHull
+      remote.health.hull = THREE.MathUtils.clamp(hull, 0, maxHull)
+      remote.peer.hull = remote.health.hull
+      remote.peer.maxHull = maxHull
+      spawnFloat(killed ? 'PVP KILL' : `-${Math.round(damage)}`, remote.mesh.position, performance.now(), killed ? '#ff5dff' : '#ff8ab8')
+    }
+  },
+  onPvpDamage(attackerName, hull, maxHull, damage, killed) {
+    playerHealth.max = maxHull
+    playerHealth.hull = THREE.MathUtils.clamp(hull, 0, maxHull)
+    damageFlash()
+    addChatLine('PVP', `${attackerName} hit you for ${Math.round(damage)}`, 3)
+    if (killed) respawnPlayer(performance.now())
+  },
+  onPvpKill(killerName, victimName, reward, killerIsSelf, victimIsSelf) {
+    const suffix = reward > 0 ? ` (+${reward} cr)` : ''
+    addChatLine('PVP', `${killerName} destroyed ${victimName}${suffix}`, 3)
+    if (killerIsSelf) audio.blip('trade')
+    if (victimIsSelf) damageFlash()
+  },
+  onPvpReward(credits, victimName) {
+    gainCredits(econ, credits)
+    refreshWallet()
+    spawnFloat(`+${credits} cr`, ship.position, performance.now(), '#ff5dff')
+    addChatLine('PVP', `Bounty claimed from ${victimName}: +${credits} cr`, 3)
   },
   onKicked() {
     // Same Pilot Code launched elsewhere — this tab is now read-only to avoid save conflicts.
@@ -1718,7 +1820,7 @@ const NAMEPLATE_FADE_NEAR = 1200
 const NAMEPLATE_FADE_FAR = 2600
 function updateRemotes(): void {
   const renderTime = performance.now() - INTERP_DELAY_MS
-  for (const { mesh, peer, label } of remotes.values()) {
+  for (const { mesh, peer, label, health } of remotes.values()) {
     if (peer.prev && peer.receivedAt > peer.prev.receivedAt) {
       const span = peer.receivedAt - peer.prev.receivedAt
       const alpha = THREE.MathUtils.clamp((renderTime - peer.prev.receivedAt) / span, 0, 1.25)
@@ -1735,6 +1837,7 @@ function updateRemotes(): void {
     const op = 1 - THREE.MathUtils.clamp((d - NAMEPLATE_FADE_NEAR) / (NAMEPLATE_FADE_FAR - NAMEPLATE_FADE_NEAR), 0, 1)
     label.visible = op > 0.02
     ;(label.element as HTMLElement).style.opacity = String(op)
+    updateNameplateHealth(label.element as HTMLElement, peer.hull ?? health.hull, peer.maxHull ?? health.max, isInPvpZone(ship.position) && isInPvpZone(mesh.position))
   }
 }
 
@@ -1934,7 +2037,7 @@ function launch(): void {
   if (running) return
   const callsign = nicknameEl.value.trim() || 'PILOT'
   localStorage.setItem('callsign', callsign)
-  net.enterGame(callsign) // promote from viewer (presence) to an active pilot
+  net.enterGame(callsign, selectedShipType) // promote from viewer (presence) to an active pilot
   if (statsTimer) clearInterval(statsTimer)
   overlayEl.hidden = true
   overlayEl.style.display = 'none'
@@ -2090,6 +2193,7 @@ function drawMinimap(): void {
   for (const planet of PLANETS) plot(planet.position.x, planet.position.z, '#9bb8e0', 2, true)
   plot(REFINERY_POS.x, REFINERY_POS.z, '#6fdc8c', 3.4, true, true)
   plot(COLONY_POS.x, COLONY_POS.z, '#ffb347', 3.4, true, true)
+  plot(PVP_ZONE_CENTER.x, PVP_ZONE_CENTER.z, '#ff5dff', 3.2, true, true)
   for (const p of pirates) plot(p.position.x, p.position.z, '#ff5d5d', 2.2, false)
 
   // player heading arrow at center
@@ -2126,6 +2230,7 @@ function frame(now: number): void {
 
   if (running && !docked && quantum.phase !== 'idle') {
     // Quantum jump in progress: the drive flies the ship; normal flight/combat is suspended.
+    pvpEl.hidden = true
     const qr = stepQuantum(quantum, ship.position, ship.velocity, dt)
     shipMesh.position.copy(ship.position)
     if (ship.velocity.lengthSq() > 1) {
@@ -2148,6 +2253,7 @@ function frame(now: number): void {
       [ship.position.x, ship.position.y, ship.position.z],
       [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],
       now,
+      selectedShipType,
     )
   } else if (running && !docked) {
     // Idle: small nav hint under the minimap (no big banner).
@@ -2212,13 +2318,18 @@ function frame(now: number): void {
       [ship.position.x, ship.position.y, ship.position.z],
       [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],
       now,
+      selectedShipType,
     )
 
     // --- Combat
+    const pvpActive = isInPvpZone(ship.position)
+    pvpEl.hidden = !pvpActive
+    const pvpWeapon = pvpWeaponForShip(selectedShipType)
+    playerWeapon.interval = pvpActive ? pvpWeapon.interval : 0.16
     stepWeapon(playerWeapon, dt)
     if (weaponActive && canFire(playerWeapon)) {
       _fwd.set(0, 0, -1).applyQuaternion(ship.quaternion)
-      projectiles.push(spawnProjectile(ship.position, _fwd, 'player'))
+      projectiles.push(spawnProjectile(ship.position, _fwd, 'player', PROJECTILE_SPEED, pvpActive ? pvpWeapon.damage : undefined))
       fireWeapon(playerWeapon)
       audio.blip('fire')
     }
@@ -2257,11 +2368,17 @@ function frame(now: number): void {
     const targets: HitTarget[] = [
       { position: ship.position, radius: 4, health: playerHealth, faction: 'player' },
       ...pirates.map((p) => ({ position: p.position, radius: 5, health: p.health, faction: 'pirate' as const })),
+      ...(pvpActive
+        ? [...remotes.entries()]
+            .filter(([, r]) => isInPvpZone(r.mesh.position))
+            .map(([id, r]) => ({ id, position: r.mesh.position, radius: 7, health: r.health, faction: 'peer' as const }))
+        : []),
     ]
     const hits = resolveHits(projectiles, targets)
     for (const h of hits) {
       audio.blip('hit')
       if (h.target.faction === 'player') damageFlash()
+      if (h.target.faction === 'peer' && h.target.id) net.sendPvpHit(h.target.id)
     }
 
     for (let i = pirates.length - 1; i >= 0; i--) {

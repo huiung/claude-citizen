@@ -41,6 +41,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Upgrade your craft:** cargo hold, top speed, boost, and mining yield — five tiers each, a credit sink that scales with your rank
 - **Delivery contracts:** accept haul missions, deliver to the destination outpost for the reward
 - **Pirates:** hostiles hunt you in the sector — shoot back, watch your hull, collect the bounty
+- **PvP Phase 1:** enter the violet arena marker to enable pilot-vs-pilot fire, server-authoritative hull damage, peer health bars, kill feed, and a small credit bounty
 - **An endless procedural galaxy:** fly any direction and planets, moons, stations, and derelicts keep appearing — some planets are vast
 - **Deep space:** the farther you fly from the core, the more rare gold ore veins (credit jackpots) and tougher, higher-bounty pirates appear — a HUD gauge tracks how deep (and dangerous) you are. Risk and reward scale together
 - **A named solar system:** Sun + Mercury through Saturn at a compressed scale, each with a procedurally textured surface (oceans/continents, gas bands, ice caps) — and they're solid, so you fly *around* them, not through
@@ -58,7 +59,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
 - **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours. Grab a **Pilot Code** to restore your pilot on another device (one live session per code)
-- 214 tests, because "built with AI" shouldn't mean "built badly"
+- 223 tests, because "built with AI" shouldn't mean "built badly"
 
 ## Controls
 
@@ -96,7 +97,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | 7 | Low-poly planet surfaces + cinematic sky (bloom, atmospheres, nebula, warp) | ✅ shipped |
 | 8 | Game feel + 3D ship models + capital ship + combat HUD + leaderboard | ✅ shipped |
 | 9 | Detailed earth-type surfaces, day/night atmosphere, low-altitude terrain-following flight | ✅ shipped |
-| 10 | PvP combat — pilot-vs-pilot systems and risk/reward loops | next |
+| 10 | PvP combat — arena opt-in, peer hull bars, kill feed, small bounty rewards | phase 1 shipped |
 | 11 | Full planetary landings — touch down, walk the surface, take off | planned |
 | … | … | … |
 | 42 | Getting out of bed animation *(took the original 6 years — we'll take a weekend)* | someday |
