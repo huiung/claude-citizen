@@ -46,6 +46,15 @@ import { StationMenu } from './ui/stationMenu'
 import { SolarSystemMap, type SolarMapDestinationResult, type SolarMapNavigationTarget } from './ui/solarSystemMap'
 import { holderChatNameClass, holderNameplateClass, holderNameplateText } from './ui/nameplate'
 import {
+  canPageLeaderboard,
+  leaderboardRangeText,
+  leaderboardUrl,
+  nextLeaderboardOffset,
+  normalizeLeaderboardPage,
+  type LeaderboardPage,
+  type LeaderboardRow,
+} from './ui/leaderboard'
+import {
   loadHolderShipVisual,
   resolveHolderShipVisual,
   saveHolderShipVisual,
@@ -248,24 +257,59 @@ const LEADERBOARD_URL = WS_URL.replace(/^ws/, 'http') + '/leaderboard'
 const lbListLandingEl = document.getElementById('lb-list-landing')!
 const lbListHudEl = document.getElementById('lb-list-hud')!
 const leaderboardPanelEl = document.getElementById('leaderboard-panel')!
+const lbPrevLandingEl = document.getElementById('lb-prev-landing') as HTMLButtonElement
+const lbNextLandingEl = document.getElementById('lb-next-landing') as HTMLButtonElement
+const lbPageLandingEl = document.getElementById('lb-page-landing')!
+const lbPrevHudEl = document.getElementById('lb-prev-hud') as HTMLButtonElement
+const lbNextHudEl = document.getElementById('lb-next-hud') as HTMLButtonElement
+const lbPageHudEl = document.getElementById('lb-page-hud')!
 let statsTimer: ReturnType<typeof setInterval> | undefined
+let landingLeaderboardOffset = 0
+let hudLeaderboardOffset = 0
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c)
 }
-function renderLeaderboard(listEl: HTMLElement, rows: Array<{ name: string; earned: number }>): void {
+function renderLeaderboardRows(listEl: HTMLElement, rows: LeaderboardRow[], offset: number): void {
   if (!rows.length) { listEl.innerHTML = '<li class="lb-empty">no pilots yet — be the first</li>'; return }
   listEl.innerHTML = rows.map((r, i) => {
     const cr = Number(r.earned) || 0
-    return `<li><span class="rank">${i + 1}</span><span class="nm">${escapeHtml(String(r.name))}</span>`
+    return `<li><span class="rank">${r.rank ?? offset + i + 1}</span><span class="nm">${escapeHtml(String(r.name))}</span>`
       + `<span class="cr">[${rankForCredits(cr).name}] ${cr.toLocaleString()} cr</span></li>`
   }).join('')
 }
-function fetchLeaderboard(listEl: HTMLElement): void {
-  fetch(LEADERBOARD_URL).then((r) => r.json())
-    .then((rows) => renderLeaderboard(listEl, Array.isArray(rows) ? rows : []))
+function renderLeaderboardPage(
+  listEl: HTMLElement,
+  rangeEl: HTMLElement,
+  prevEl: HTMLButtonElement,
+  nextEl: HTMLButtonElement,
+  page: LeaderboardPage,
+): void {
+  renderLeaderboardRows(listEl, page.rows, page.offset)
+  rangeEl.textContent = leaderboardRangeText(page)
+  const canPage = canPageLeaderboard(page)
+  prevEl.disabled = !canPage.prev
+  nextEl.disabled = !canPage.next
+}
+function fetchLeaderboard(slot: 'landing' | 'hud'): void {
+  const offset = slot === 'landing' ? landingLeaderboardOffset : hudLeaderboardOffset
+  fetch(leaderboardUrl(LEADERBOARD_URL, offset)).then((r) => r.json())
+    .then((payload) => {
+      const page = normalizeLeaderboardPage(payload, offset)
+      if (slot === 'landing') renderLeaderboardPage(lbListLandingEl, lbPageLandingEl, lbPrevLandingEl, lbNextLandingEl, page)
+      else renderLeaderboardPage(lbListHudEl, lbPageHudEl, lbPrevHudEl, lbNextHudEl, page)
+    })
     .catch(() => { /* relay offline */ })
 }
+function changeLeaderboardPage(slot: 'landing' | 'hud', dir: -1 | 1): void {
+  if (slot === 'landing') landingLeaderboardOffset = nextLeaderboardOffset(landingLeaderboardOffset, dir)
+  else hudLeaderboardOffset = nextLeaderboardOffset(hudLeaderboardOffset, dir)
+  fetchLeaderboard(slot)
+}
+lbPrevLandingEl.addEventListener('click', () => changeLeaderboardPage('landing', -1))
+lbNextLandingEl.addEventListener('click', () => changeLeaderboardPage('landing', 1))
+lbPrevHudEl.addEventListener('click', () => changeLeaderboardPage('hud', -1))
+lbNextHudEl.addEventListener('click', () => changeLeaderboardPage('hud', 1))
 function refreshLandingStats(): void {
   fetch(STATS_URL)
     .then((r) => r.json())
@@ -274,7 +318,7 @@ function refreshLandingStats(): void {
       statRegisteredEl.textContent = String(d.registered ?? '—')
     })
     .catch(() => { /* relay offline — leave placeholders */ })
-  fetchLeaderboard(lbListLandingEl)
+  fetchLeaderboard('landing')
 }
 refreshLandingStats()
 statsTimer = setInterval(refreshLandingStats, 6000)
@@ -1443,10 +1487,20 @@ addEventListener('keydown', (e) => {
     selectedJumpIdx = (selectedJumpIdx + 1) % PLANETS.length // cycle the quantum destination
     audio.blip('nav')
   }
+  if (!leaderboardPanelEl.hidden && running && !docked && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
+    e.preventDefault()
+    changeLeaderboardPage('hud', e.code === 'ArrowLeft' ? -1 : 1)
+    return
+  }
   if (e.code === 'KeyL' && running && !docked) {
     const willShow = leaderboardPanelEl.hidden
     leaderboardPanelEl.hidden = !willShow
-    if (willShow) fetchLeaderboard(lbListHudEl) // refresh standings each time it opens
+    if (willShow) {
+      if (document.pointerLockElement) document.exitPointerLock()
+      fetchLeaderboard('hud') // refresh standings each time it opens
+    } else {
+      requestFlightPointerLock()
+    }
   }
   if (e.code === 'KeyJ' && running && !docked) {
     if (quantum.phase === 'idle') {

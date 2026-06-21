@@ -53,7 +53,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **A capital ship:** a procedural dreadnought ~120× your fighter, its hull aglow with hundreds of windows — fly its length for the scale
 - **Game feel:** a chase camera that carries G-force weight, a boost ignition punch (FOV kick + exhaust flare + whoosh), and an air-rush layer that swells with speed
 - **Combat HUD:** target brackets + range, off-screen threat arrows (know where you're being shot from), and a lead indicator so you can actually land hits on pirates
-- **A leaderboard:** top pilots by *lifetime* credits earned — on the landing screen and in-game (`[L]`)
+- **A leaderboard:** top 100 pilots by *lifetime* credits earned — page through it on the landing screen and in-game (`[L]`)
 - **Pilot ranks:** six tiers (Cadet → Admiral) earned by *lifetime* credits, so spending never demotes you — each rank brings a growing **earnings bonus** (+0% → +50% on every payout) and **unlocks new ships**, so there's always a reason to keep flying. HUD progress track, promotion banner, and rank tags on the leaderboard
 - Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)

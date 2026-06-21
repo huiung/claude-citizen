@@ -272,6 +272,18 @@
     .lb li .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .lb li .cr { color: #ffe08a; flex: none; }
     .lb-empty { opacity: .5; justify-content: center; }
+    .lb-pager {
+      margin-top: 6px; display: flex; align-items: center; justify-content: center; gap: 8px;
+      color: #9fffb0; font-size: 11px; opacity: .88;
+    }
+    .lb-page { min-width: 74px; text-align: center; color: #aee9ff; opacity: .85; }
+    .lb-prev, .lb-next {
+      pointer-events: auto; cursor: pointer; width: 24px; height: 20px; border-radius: 4px;
+      border: 1px solid rgba(159, 255, 176, .28); background: rgba(0, 18, 8, .55);
+      color: #9fffb0; font: 700 13px "Share Tech Mono", ui-monospace, monospace;
+    }
+    .lb-prev:disabled, .lb-next:disabled { cursor: default; opacity: .28; }
+    .lb-prev:not(:disabled):hover, .lb-next:not(:disabled):hover { border-color: rgba(159, 255, 176, .65); color: #fff; }
     #leaderboard-panel {
       position: fixed; top: 50%; right: 24px; transform: translateY(-50%);
       background: rgba(2, 8, 12, .82); border: 1px solid rgba(159, 255, 176, .25);
@@ -337,8 +349,13 @@
     <div class="lb">
       <div class="lb-title">◆ TOP PILOTS · credits</div>
       <ol id="lb-list-hud"><li class="lb-empty">—</li></ol>
+      <div class="lb-pager" data-lb="hud">
+        <button class="lb-prev" id="lb-prev-hud" type="button" aria-label="Previous leaderboard page">‹</button>
+        <span class="lb-page" id="lb-page-hud">1-10 / 10</span>
+        <button class="lb-next" id="lb-next-hud" type="button" aria-label="Next leaderboard page">›</button>
+      </div>
     </div>
-    <div class="lb-hint">[L] to close</div>
+    <div class="lb-hint">[L] close · [←/→] page</div>
   </div>
   <div id="hud" hidden>
     <div class="big"><span id="speed">0</span> m/s</div>
@@ -380,6 +397,11 @@
     <div id="leaderboard-landing" class="lb">
       <div class="lb-title">◆ TOP PILOTS</div>
       <ol id="lb-list-landing"><li class="lb-empty">—</li></ol>
+      <div class="lb-pager" data-lb="landing">
+        <button class="lb-prev" id="lb-prev-landing" type="button" aria-label="Previous leaderboard page">‹</button>
+        <span class="lb-page" id="lb-page-landing">1-10 / 10</span>
+        <button class="lb-next" id="lb-next-landing" type="button" aria-label="Next leaderboard page">›</button>
+      </div>
     </div>
     <div id="mobile-notice">⌨️ Best experienced on desktop — Claude Citizen flies with a keyboard + mouse. Open <b>claudecitizen.com</b> on a computer to play. (Code &amp; details on GitHub below.)</div>
     <input id="nickname" maxlength="16" placeholder="CALLSIGN" autocomplete="off" />

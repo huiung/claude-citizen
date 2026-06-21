@@ -9,6 +9,7 @@ import {
   resolveClaim, issueChallenge,
 } from './auth.mjs'
 import { fetchHolderTier, createHolderCache } from './holders.mjs'
+import { leaderboardPage, parseLeaderboardParams } from './leaderboard.mjs'
 
 function loadEnvFile(path = '.env') {
   let text
@@ -76,16 +77,11 @@ const httpServer = createServer((req, res) => {
     res.end(JSON.stringify({ online: clients.size, registered: Object.keys(store).length, helius: !!HELIUS_API_KEY }))
     return
   }
-  if (req.url === '/leaderboard') {
+  if (req.url?.startsWith('/leaderboard')) {
     // Top pilots by credits — every activity (mining, bounties, contracts) settles into credits.
-    const score = (e) => (typeof e.earned === 'number' ? e.earned : (e.credits || 0))
-    const top = Object.values(store)
-      .filter((e) => e && typeof e.credits === 'number')
-      .sort((a, b) => score(b) - score(a))
-      .slice(0, 10)
-      .map((e) => ({ name: e.name ?? 'PILOT', earned: score(e) }))
+    const top = leaderboardPage(store, parseLeaderboardParams(req.url))
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
-    res.end(JSON.stringify(top))
+    res.end(JSON.stringify(req.url.includes('?') ? top : top.rows))
     return
   }
   res.writeHead(200, { 'Content-Type': 'text/plain' })

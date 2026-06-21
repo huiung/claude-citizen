@@ -6,6 +6,14 @@ import { activeIdentity, loadWalletSession, saveWalletSession, type WalletSessio
 import { connectWallet, signMessage, hasWallet, WalletError, NO_WALLET } from './net/wallet'
 import { LandingMusic } from './audio/landingMusic'
 import { holderCaptureLaunchConfig } from './ui/landingCapture'
+import {
+  canPageLeaderboard,
+  leaderboardRangeText,
+  leaderboardUrl,
+  nextLeaderboardOffset,
+  normalizeLeaderboardPage,
+  type LeaderboardRow,
+} from './ui/leaderboard'
 
 const CAPTURE_LAUNCH = holderCaptureLaunchConfig(new URLSearchParams(location.search))
 
@@ -16,6 +24,9 @@ const launchLoadingTextEl = document.getElementById('launch-loading-text')!
 const statOnlineEl = document.getElementById('stat-online')!
 const statRegisteredEl = document.getElementById('stat-registered')!
 const lbListLandingEl = document.getElementById('lb-list-landing')!
+const lbPrevLandingEl = document.getElementById('lb-prev-landing') as HTMLButtonElement
+const lbNextLandingEl = document.getElementById('lb-next-landing') as HTMLButtonElement
+const lbPageLandingEl = document.getElementById('lb-page-landing')!
 const myCodeEl = document.getElementById('my-code')!
 const copyCodeBtn = document.getElementById('copy-code')!
 const restoreCodeEl = document.getElementById('restore-code') as HTMLInputElement
@@ -45,6 +56,7 @@ let walletSession: WalletSession | null = loadWalletSession(localStorage)
 let pendingPubkey: string | null = null
 let netConnected = false
 let launchStarted = false
+let leaderboardOffset = 0
 const landingMusic = new LandingMusic()
 
 myCodeEl.textContent = playerToken
@@ -60,17 +72,39 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c)
 }
 
-function renderLeaderboard(rows: Array<{ name: string; earned: number }>): void {
+function renderLeaderboard(rows: LeaderboardRow[], offset: number): void {
   if (!rows.length) {
     lbListLandingEl.innerHTML = '<li class="lb-empty">no pilots yet - be the first</li>'
     return
   }
   lbListLandingEl.innerHTML = rows.map((r, i) => {
     const cr = Number(r.earned) || 0
-    return `<li><span class="rank">${i + 1}</span><span class="nm">${escapeHtml(String(r.name))}</span>`
+    return `<li><span class="rank">${r.rank ?? offset + i + 1}</span><span class="nm">${escapeHtml(String(r.name))}</span>`
       + `<span class="cr">[${rankForCredits(cr).name}] ${cr.toLocaleString()} cr</span></li>`
   }).join('')
 }
+
+function fetchLeaderboard(): void {
+  fetch(leaderboardUrl(LEADERBOARD_URL, leaderboardOffset))
+    .then((r) => r.json())
+    .then((payload) => {
+      const page = normalizeLeaderboardPage(payload, leaderboardOffset)
+      renderLeaderboard(page.rows, page.offset)
+      lbPageLandingEl.textContent = leaderboardRangeText(page)
+      const canPage = canPageLeaderboard(page)
+      lbPrevLandingEl.disabled = !canPage.prev
+      lbNextLandingEl.disabled = !canPage.next
+    })
+    .catch(() => { /* relay offline */ })
+}
+
+function changeLeaderboardPage(dir: -1 | 1): void {
+  leaderboardOffset = nextLeaderboardOffset(leaderboardOffset, dir)
+  fetchLeaderboard()
+}
+
+lbPrevLandingEl.addEventListener('click', () => changeLeaderboardPage(-1))
+lbNextLandingEl.addEventListener('click', () => changeLeaderboardPage(1))
 
 function refreshLandingStats(): void {
   fetch(STATS_URL)
@@ -81,10 +115,7 @@ function refreshLandingStats(): void {
     })
     .catch(() => { /* relay offline - leave placeholders */ })
 
-  fetch(LEADERBOARD_URL)
-    .then((r) => r.json())
-    .then((rows) => renderLeaderboard(Array.isArray(rows) ? rows : []))
-    .catch(() => { /* relay offline */ })
+  fetchLeaderboard()
 }
 
 refreshLandingStats()
