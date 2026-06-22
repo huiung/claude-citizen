@@ -41,7 +41,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Upgrade your craft:** cargo hold, top speed, boost, and mining yield — five tiers each, a credit sink that scales with your rank
 - **Delivery contracts:** accept haul missions, deliver to the destination outpost for the reward
 - **Pirates:** hostiles hunt you in the sector — shoot back, watch your hull, collect the bounty
-- **PvP Phase 1:** cycle to the deep-space Practice Arena or Ranked Arena beacon with `[N]`, quantum-jump beyond the named solar system, then enter the arena marker to enable pilot-vs-pilot fire, server-authoritative hull damage, peer health bars, kill feed, and a small credit bounty. Practice is open; Ranked requires a verified 1,000+ token balance and pushes under-threshold pilots back at the boundary
+- **PvP Phase 1:** cycle to the deep-space Practice Arena or Ranked Arena beacon with `[N]`, quantum-jump beyond the named solar system, then enter the arena marker to enable pilot-vs-pilot fire, server-authoritative hull damage, peer health bars, kill feed, and a small credit bounty. Practice is open; Ranked requires a verified 1,000+ token balance, uses a wallet-only Ranked PvP leaderboard, and pushes under-threshold pilots back at the boundary. The expanded deep-space arenas give dogfights more room before the bloodbath starts
 - **An endless procedural galaxy:** fly any direction and planets, moons, stations, and derelicts keep appearing — some planets are vast
 - **Deep space:** the farther you fly from the core, the more rare gold ore veins (credit jackpots) and tougher, higher-bounty pirates appear — a HUD gauge tracks how deep (and dangerous) you are. Risk and reward scale together
 - **A named solar system:** Sun + Mercury through Saturn at a compressed scale, each with a procedurally textured surface (oceans/continents, gas bands, ice caps) — and they're solid, so you fly *around* them, not through
@@ -49,17 +49,17 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Quantum travel:** pick a destination with `[N]` or open the **Solar Atlas** with `[M]` and click a planet, charge the drive, and jump to any planet in the system or the deep-space PvP arena approach lanes — warp streaks, a wide-FOV cruise, and a named arrival
 - **A cinematic sky:** bloom glow, sunlit planet atmospheres (bright day limb, a warm sunset terminator, dark night side), a procedural nebula backdrop, slowly rotating worlds, and parallax dust that streams past for a sense of speed
 - **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor (detailed 3D models), each trading cargo/speed/toughness, unlocked as you climb the ranks
-- **Holder cosmetics:** verified token holders get tiered nameplate/chat colors, and T3 holders can equip the Void Interceptor visual from the Hangar. Cosmetic only: no stat advantage
+- **Holder cosmetics:** verified token holders get tiered nameplate/chat colors. Holder-only HANGAR visuals unlock by tier: T2 gets Doge Runner Mk II; T3 gets Void Interceptor and Sovereign Wraith. Cosmetic only: no stat advantage
 - **Orbit camera:** press `C` to inspect your ship from every angle, then use the mouse wheel to zoom the orbit view in and out
 - **A capital ship:** a procedural dreadnought ~120× your fighter, its hull aglow with hundreds of windows — fly its length for the scale
 - **Game feel:** a chase camera that carries G-force weight, a boost ignition punch (FOV kick + exhaust flare + whoosh), and an air-rush layer that swells with speed
 - **Combat HUD:** target brackets + range, off-screen threat arrows (know where you're being shot from), and a lead indicator so you can actually land hits on pirates
-- **A leaderboard:** top 100 pilots by *lifetime* credits earned — page through it on the landing screen and in-game (`[L]`)
+- **Leaderboards:** Career ranks the top 100 pilots by *lifetime* credits earned; Ranked PvP tracks ranked arena kills. Wallet-connected pilots display as callsign (short wallet), while anonymous Career pilots keep their callsign only. Page through both on the landing screen and in-game (`[L]`)
 - **Pilot ranks:** six tiers (Cadet → Admiral) earned by *lifetime* credits, so spending never demotes you — each rank brings a growing **earnings bonus** (+0% → +50% on every payout) and **unlocks new ships**, so there's always a reason to keep flying. HUD progress track, promotion banner, and rank tags on the leaderboard
 - Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
-- **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours. Grab a **Pilot Code** to restore your pilot on another device (one live session per code)
-- 243 tests, because "built with AI" shouldn't mean "built badly"
+- **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours. Grab a **Pilot Code** to restore your pilot on another device (one live session per code). Optional wallet linking can claim your anonymous progress to a verified wallet identity; claimed anonymous tokens are retired server-side so old localStorage saves cannot resurrect duplicate leaderboard rows
+- 287 tests, because "built with AI" shouldn't mean "built badly"
 
 ## Controls
 
@@ -97,7 +97,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | 7 | Low-poly planet surfaces + cinematic sky (bloom, atmospheres, nebula, warp) | ✅ shipped |
 | 8 | Game feel + 3D ship models + capital ship + combat HUD + leaderboard | ✅ shipped |
 | 9 | Detailed earth-type surfaces, day/night atmosphere, low-altitude terrain-following flight | ✅ shipped |
-| 10 | PvP combat — practice/ranked arena opt-in, peer hull bars, kill feed, small bounty rewards | phase 1 shipped |
+| 10 | PvP combat — practice/ranked arenas, 1,000+ token Ranked gate, peer hull bars, kill feed, Ranked PvP leaderboard | phase 1 shipped |
 | 11 | Full planetary landings — touch down, walk the surface, take off | planned |
 | … | … | … |
 | 42 | Getting out of bed animation *(took the original 6 years — we'll take a weekend)* | someday |
