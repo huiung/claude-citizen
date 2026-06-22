@@ -1430,7 +1430,7 @@ function spawnPirateWave(now: number): void {
   const depth = deepFactor()
   if (pirates.length >= MAX_PIRATES + Math.round(depth * 2)) return // up to +2 more in deep space
   if (inSafeZone(ship.position)) return
-  if (!allowsPveHostiles(ship.position)) return
+  if (!allowsPveHostiles(ship.position, MOBILE_COMPANION)) return
   const pos = spawnPositionAround(ship.position, 600, pirateSpawnCount++)
   // Deeper space: tankier pirates worth a bigger bounty (risk scales with reward).
   const pirate = spawnPirate(`pir-${pirateSpawnCount}`, pos, 1 + depth * 1.6, Math.round(PIRATE_REWARD * (1 + depth * 2)))
@@ -2768,11 +2768,12 @@ function frame(now: number): void {
     safeEl.hidden = !safe
     safeEl.textContent = repairing ? 'SAFE ZONE · HULL REPAIRING' : 'SAFE ZONE'
     const pirateProjectileCount = projectiles.reduce((count, projectile) => count + (projectile.faction === 'pirate' ? 1 : 0), 0)
-    if (shouldClearPveHostiles({ safe, pvpActive: pvpProtected, pirates: pirates.length, pirateProjectiles: pirateProjectileCount })) {
+    const pveHostilesAllowed = allowsPveHostiles(ship.position, MOBILE_COMPANION)
+    if (shouldClearPveHostiles({ safe, pvpActive: pvpProtected, mobileCivilian: MOBILE_COMPANION, pirates: pirates.length, pirateProjectiles: pirateProjectileCount })) {
       clearPirates()
     }
 
-    if (!safe && !pvpProtected && now >= nextSpawnAt) {
+    if (!safe && pveHostilesAllowed && now >= nextSpawnAt) {
       spawnPirateWave(now)
       nextSpawnAt = now + 19000
     }

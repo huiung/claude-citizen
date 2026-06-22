@@ -111,22 +111,24 @@ export function rankedPvpAccess(holderBalance: number): boolean {
   return Number(holderBalance) >= PVP_RANKED_MIN_TOKEN_BALANCE
 }
 
-export function allowsPveHostiles(position: Vector3): boolean {
-  return !isInPvpZone(position)
+export function allowsPveHostiles(position: Vector3, isMobileCivilian = false): boolean {
+  return !isMobileCivilian && !isInPvpZone(position)
 }
 
 export function shouldClearPveHostiles({
   safe,
   pvpActive,
+  mobileCivilian = false,
   pirates,
   pirateProjectiles,
 }: {
   safe: boolean
   pvpActive: boolean
+  mobileCivilian?: boolean
   pirates: number
   pirateProjectiles: number
 }): boolean {
-  return (safe || pvpActive) && (pirates > 0 || pirateProjectiles > 0)
+  return (safe || pvpActive || mobileCivilian) && (pirates > 0 || pirateProjectiles > 0)
 }
 
 export function pvpZoneIntensity(position: Vector3): number {
