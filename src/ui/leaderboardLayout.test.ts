@@ -31,9 +31,16 @@ describe('landing leaderboard layout CSS', () => {
   })
 
   it('keeps leaderboard and wallet visible in mobile companion mode', () => {
-    expect(html).toContain('.is-mobile #nickname, .is-mobile #launch, .is-mobile .foot, .is-mobile #pilot-code { display: none; }')
+    expect(html).toContain('.is-mobile .foot, .is-mobile #pilot-code { display: none; }')
     expect(html).not.toContain('.is-mobile #leaderboard-landing, .is-mobile #pilot-code')
     expect(html).not.toContain('.is-mobile #wallet-box { display: none; }')
-    expect(html).toContain('Mobile Command Deck')
+    expect(html).toContain('Mobile Civilian Mode')
+  })
+
+  it('exposes mobile civilian flight controls without hiding launch', () => {
+    expect(html).toContain('id="mobile-controls"')
+    expect(html).toContain('id="mobile-thrust"')
+    expect(html).toContain('id="mobile-mine"')
+    expect(html).not.toContain('.is-mobile #nickname, .is-mobile #launch')
   })
 })

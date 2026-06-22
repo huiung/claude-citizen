@@ -54,6 +54,7 @@ import {
   PVP_ZONE_CENTER,
   PVP_ZONE_RADIUS,
   pvpArenaApproachPoint,
+  pvpCombatActive,
   pvpWeaponForShip,
   pvpZoneProximity,
   pvpZoneAt,
@@ -96,6 +97,7 @@ import {
   zoomRearDistance,
   type CameraMode,
 } from './ui/cameraView'
+import { mobileFlightInput, type MobileFlightState } from './ui/mobileFlight'
 import { activeIdentity, loadWalletSession, saveWalletSession } from './net/identity'
 import { connectWallet, signMessage, hasWallet, WalletError, NO_WALLET } from './net/wallet'
 import { inject as injectAnalytics } from '@vercel/analytics'
@@ -117,6 +119,17 @@ const hudEl = document.getElementById('hud')!
 const statusEl = document.getElementById('status')!
 const helpEl = document.getElementById('help')!
 const crosshairEl = document.getElementById('crosshair')!
+const mobileControlsEl = document.getElementById('mobile-controls')!
+const mobileStickEl = document.getElementById('mobile-stick')!
+const mobileStickKnobEl = document.getElementById('mobile-stick-knob')!
+const mobileThrustEl = document.getElementById('mobile-thrust') as HTMLButtonElement
+const mobileBoostEl = document.getElementById('mobile-boost') as HTMLButtonElement
+const mobileBrakeEl = document.getElementById('mobile-brake') as HTMLButtonElement
+const mobileMineEl = document.getElementById('mobile-mine') as HTMLButtonElement
+const mobileDockEl = document.getElementById('mobile-dock') as HTMLButtonElement
+const mobileJumpEl = document.getElementById('mobile-jump') as HTMLButtonElement
+const mobileNextEl = document.getElementById('mobile-next') as HTMLButtonElement
+const mobileCameraEl = document.getElementById('mobile-camera') as HTMLButtonElement
 const combatCanvas = document.getElementById('combat-overlay') as HTMLCanvasElement
 const cctx = combatCanvas.getContext('2d')!
 combatCanvas.width = innerWidth
@@ -438,6 +451,7 @@ renderer.toneMappingExposure = 1.15
 appEl.appendChild(renderer.domElement)
 
 function requestFlightPointerLock(): void {
+  if (MOBILE_COMPANION) return
   if (document.pointerLockElement === renderer.domElement) return
   if (typeof renderer.domElement.requestPointerLock !== 'function') return
   const lockRequest = renderer.domElement.requestPointerLock()
@@ -1186,6 +1200,30 @@ function destinationArrival(dest = activeQuantumDestination()): { position: THRE
   return { position, name: dest.name, dist: ship.position.distanceTo(position) }
 }
 
+function quantumDestinationCount(): number {
+  return PLANETS.length + (MOBILE_COMPANION ? 0 : PVP_ARENA_DESTINATIONS.length)
+}
+
+function cycleQuantumDestination(): void {
+  customJumpDestination = null
+  selectedJumpIdx = (selectedJumpIdx + 1) % quantumDestinationCount()
+  audio.blip('nav')
+}
+
+function toggleQuantumTravel(): void {
+  if (!running || docked) return
+  if (quantum.phase === 'idle') {
+    const dest = destinationArrival()
+    const started = startTravel(quantum, dest.position)
+    if (started.ok) {
+      jumpTargetName = dest.name
+      audio.blip('nav')
+    }
+  } else {
+    cancelTravel(quantum)
+  }
+}
+
 function setQuantumDestinationFromAtlas(target: SolarMapNavigationTarget): SolarMapDestinationResult {
   if (target.id === 'player' || target.id === 'sun' || target.id.startsWith('peer.')) {
     return { ok: false, reason: 'moving or reference-only target' }
@@ -1198,6 +1236,7 @@ function setQuantumDestinationFromAtlas(target: SolarMapNavigationTarget): Solar
   }
   const arenaIdx = pvpArenaDestinationIndex(target.id)
   if (arenaIdx >= 0) {
+    if (MOBILE_COMPANION) return { ok: false, reason: 'PvP beacons are desktop-only' }
     selectedJumpIdx = PLANETS.length + arenaIdx
     customJumpDestination = null
     return { ok: true }
@@ -1597,6 +1636,21 @@ function enforceRankedArenaAccess(now: number): void {
   pvpEl.textContent = `RANKED LOCKED - HOLD ${PVP_RANKED_MIN_TOKEN_BALANCE.toLocaleString()} TOKENS`
   audio.blip('error')
 }
+
+function enforceMobilePvpExclusion(now: number): void {
+  if (!MOBILE_COMPANION) return
+  const zone = pvpZoneAt(ship.position)
+  if (!zone) return
+  _rankedBounceDir.copy(ship.position).sub(zone.center)
+  if (_rankedBounceDir.lengthSq() < 1) _rankedBounceDir.set(0, 0, 1).applyQuaternion(ship.quaternion)
+  _rankedBounceDir.normalize()
+  ship.position.copy(zone.center).addScaledVector(_rankedBounceDir, zone.radius + 180)
+  ship.velocity.copy(_rankedBounceDir).multiplyScalar(Math.max(360, ship.velocity.length() * 0.7))
+  rankedPvpDeniedUntil = now + 2200
+  pvpEl.hidden = false
+  pvpEl.textContent = 'PVP DESKTOP ONLY'
+  audio.blip('error')
+}
 function nameplateParts(el: HTMLElement): { name: HTMLElement; hull: HTMLElement; fill: HTMLElement } {
   let name = el.querySelector<HTMLElement>('.np-name')
   let hull = el.querySelector<HTMLElement>('.np-hull')
@@ -1657,6 +1711,7 @@ const solarMap = new SolarSystemMap({
     activeDestination: activeDestinationSnapshot(),
   }),
   onClose: () => {
+    if (MOBILE_COMPANION && running && !docked && !chatOpen) mobileControlsEl.hidden = false
     if (running && !docked && !chatOpen) requestFlightPointerLock()
   },
   onSetDestination: setQuantumDestinationFromAtlas,
@@ -1677,6 +1732,7 @@ function dock(id: string): void {
   impact.visible = false
   safeEl.hidden = true
   pvpEl.hidden = true
+  if (MOBILE_COMPANION) mobileControlsEl.hidden = true
   weaponActive = false
   ship.velocity.set(0, 0, 0)
   audio.setThrust(0, false)
@@ -1716,6 +1772,7 @@ function undock(): void {
   dockOpenRequest++
   stationMenu.close()
   docked = false
+  if (MOBILE_COMPANION) mobileControlsEl.hidden = false
   requestFlightPointerLock()
 }
 
@@ -1730,6 +1787,15 @@ let cameraRearWheelDelta = 0
 let cameraOrbitElapsed = 0
 let cameraOrbitDistance = defaultOrbitDistance()
 let cameraOrbitWheelDelta = 0
+const mobileFlightState: MobileFlightState = {
+  stickX: 0,
+  stickY: 0,
+  thrustHeld: false,
+  boostHeld: false,
+  brakeHeld: false,
+}
+let mobileMineHeld = false
+let mobileStickPointerId: number | null = null
 function cycleCameraView(): void {
   cameraMode = nextCameraMode(cameraMode)
   if (cameraMode === 'rear') {
@@ -1738,6 +1804,82 @@ function cycleCameraView(): void {
   } else {
     cameraRearWheelDelta = 0
   }
+}
+
+function setMobileHeld(btn: HTMLButtonElement, held: boolean): void {
+  btn.classList.toggle('held', held)
+}
+
+function bindMobileHold(btn: HTMLButtonElement, setHeld: (held: boolean) => void): void {
+  const down = (event: PointerEvent) => {
+    if (!MOBILE_COMPANION) return
+    event.preventDefault()
+    setHeld(true)
+    setMobileHeld(btn, true)
+    btn.setPointerCapture?.(event.pointerId)
+  }
+  const up = (event: PointerEvent) => {
+    if (!MOBILE_COMPANION) return
+    event.preventDefault()
+    setHeld(false)
+    setMobileHeld(btn, false)
+  }
+  btn.addEventListener('pointerdown', down)
+  btn.addEventListener('pointerup', up)
+  btn.addEventListener('pointercancel', up)
+  btn.addEventListener('pointerleave', up)
+}
+
+function updateMobileStick(event: PointerEvent): void {
+  const rect = mobileStickEl.getBoundingClientRect()
+  const radius = Math.max(1, rect.width / 2)
+  const dx = event.clientX - (rect.left + radius)
+  const dy = event.clientY - (rect.top + radius)
+  const len = Math.hypot(dx, dy)
+  const scale = len > radius ? radius / len : 1
+  const x = dx * scale
+  const y = dy * scale
+  mobileFlightState.stickX = x / radius
+  mobileFlightState.stickY = y / radius
+  mobileStickKnobEl.style.transform = `translate(${x}px, ${y}px)`
+}
+
+function resetMobileStick(): void {
+  mobileStickPointerId = null
+  mobileFlightState.stickX = 0
+  mobileFlightState.stickY = 0
+  mobileStickKnobEl.style.transform = 'translate(0, 0)'
+}
+
+if (MOBILE_COMPANION) {
+  mobileStickEl.addEventListener('pointerdown', (event) => {
+    event.preventDefault()
+    mobileStickPointerId = event.pointerId
+    mobileStickEl.setPointerCapture?.(event.pointerId)
+    updateMobileStick(event)
+  })
+  mobileStickEl.addEventListener('pointermove', (event) => {
+    if (event.pointerId === mobileStickPointerId) updateMobileStick(event)
+  })
+  mobileStickEl.addEventListener('pointerup', (event) => {
+    if (event.pointerId === mobileStickPointerId) resetMobileStick()
+  })
+  mobileStickEl.addEventListener('pointercancel', (event) => {
+    if (event.pointerId === mobileStickPointerId) resetMobileStick()
+  })
+
+  bindMobileHold(mobileThrustEl, (held) => { mobileFlightState.thrustHeld = held })
+  bindMobileHold(mobileBoostEl, (held) => { mobileFlightState.boostHeld = held })
+  bindMobileHold(mobileBrakeEl, (held) => { mobileFlightState.brakeHeld = held })
+  bindMobileHold(mobileMineEl, (held) => { mobileMineHeld = held })
+  mobileDockEl.addEventListener('click', () => { if (running && !docked && dockable) dock(dockable) })
+  mobileJumpEl.addEventListener('click', toggleQuantumTravel)
+  mobileNextEl.addEventListener('click', cycleQuantumDestination)
+  mobileCameraEl.addEventListener('click', () => {
+    if (!running || docked) return
+    cycleCameraView()
+    audio.blip('nav')
+  })
 }
 
 addEventListener('keydown', (e) => {
@@ -1752,6 +1894,7 @@ addEventListener('keydown', (e) => {
     beam.visible = false
     impact.visible = false
     leaderboardPanelEl.hidden = true
+    if (MOBILE_COMPANION) mobileControlsEl.hidden = true
     audio.setMining(false, false)
     if (document.pointerLockElement) document.exitPointerLock()
     solarMap.open()
@@ -1771,9 +1914,7 @@ addEventListener('keydown', (e) => {
   }
   if (e.code === 'Space' && running && !docked && dockable) dock(dockable)
   if (e.code === 'KeyN' && running && !docked && quantum.phase === 'idle') {
-    customJumpDestination = null
-    selectedJumpIdx = (selectedJumpIdx + 1) % (PLANETS.length + PVP_ARENA_DESTINATIONS.length) // cycle planets, then PvP arena beacons
-    audio.blip('nav')
+    cycleQuantumDestination()
   }
   if (!leaderboardPanelEl.hidden && running && !docked && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
     e.preventDefault()
@@ -1785,22 +1926,15 @@ addEventListener('keydown', (e) => {
     leaderboardPanelEl.hidden = !willShow
     if (willShow) {
       if (document.pointerLockElement) document.exitPointerLock()
+      if (MOBILE_COMPANION) mobileControlsEl.hidden = true
       fetchLeaderboard('hud') // refresh standings each time it opens
     } else {
+      if (MOBILE_COMPANION) mobileControlsEl.hidden = false
       requestFlightPointerLock()
     }
   }
   if (e.code === 'KeyJ' && running && !docked) {
-    if (quantum.phase === 'idle') {
-      const dest = destinationArrival()
-      const started = startTravel(quantum, dest.position)
-      if (started.ok) {
-        jumpTargetName = dest.name
-        audio.blip('nav')
-      }
-    } else {
-      cancelTravel(quantum)
-    }
+    toggleQuantumTravel()
   }
 })
 addEventListener('keyup', (e) => keys.delete(e.code))
@@ -1836,6 +1970,8 @@ addEventListener('mouseup', (e) => {
 // (e^(-5/60) ≈ 0.92), but now frame-rate independent so it feels identical at any refresh rate.
 const MOUSE_DECAY = 5
 function readInput(dt: number): ControlInput {
+  if (MOBILE_COMPANION) return mobileFlightInput(mobileFlightState)
+
   // Mouse deflection decays toward center — feels like a virtual joystick (frame-rate independent)
   const keep = Math.exp(-MOUSE_DECAY * dt)
   mousePitch *= keep
@@ -2026,6 +2162,7 @@ function openChat(): void {
   if (chatOpen || !running || docked) return
   chatOpen = true
   document.exitPointerLock()
+  if (MOBILE_COMPANION) mobileControlsEl.hidden = true
   chatLogEl.classList.add('open') // expand into the scrollable history
   chatLogEl.scrollTop = chatLogEl.scrollHeight
   chatInputEl.hidden = false
@@ -2038,6 +2175,7 @@ function closeChat(): void {
   chatLogEl.classList.remove('open')
   chatInputEl.hidden = true
   chatInputEl.blur()
+  if (MOBILE_COMPANION && running && !docked) mobileControlsEl.hidden = false
   if (running && !docked) requestFlightPointerLock()
 }
 
@@ -2289,10 +2427,14 @@ function launch(): void {
   overlayEl.style.display = 'none'
   hudEl.hidden = CAPTURE_OG
   statusEl.hidden = CAPTURE_OG
-  helpEl.hidden = CAPTURE_OG
+  helpEl.hidden = CAPTURE_OG || MOBILE_COMPANION
   crosshairEl.hidden = CAPTURE_OG
   walletEl.hidden = CAPTURE_OG
   minimapWrapEl.hidden = CAPTURE_OG
+  if (MOBILE_COMPANION) {
+    document.documentElement.classList.add('mobile-flight')
+    mobileControlsEl.hidden = false
+  }
   leaderboardPanelEl.hidden = true
   updateWalletHUD() // HUD only — don't net.saveProgress before onProgress restores, or we'd overwrite saved data
   hullBarEl.style.width = '100%'
@@ -2506,12 +2648,15 @@ function frame(now: number): void {
     // Idle: small nav hint under the minimap (no big banner).
     quantumEl.hidden = true
     const dest = destinationArrival()
-    navHintEl.textContent = `[N] pick planet | ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km   |   [J] jump`
+    navHintEl.textContent = MOBILE_COMPANION
+      ? `[NAV] ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km | [JUMP]`
+      : `[N] pick planet | ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km   |   [J] jump`
     const input = readInput(dt)
     stepShip(ship, input, dt, { maxSpeed: effSpeed(), boostMultiplier: effBoost() })
     resolvePlanetCollisions()
     resolveCapitalCollision()
     enforceRankedArenaAccess(now)
+    enforceMobilePvpExclusion(now)
     shipMesh.position.copy(ship.position)
     shipMesh.quaternion.copy(ship.quaternion)
 
@@ -2530,6 +2675,11 @@ function frame(now: number): void {
 
     // Market prices drift back toward base over time.
     marketStep(market, dt)
+
+    if (MOBILE_COMPANION) {
+      miningActive = mobileMineHeld
+      weaponActive = false
+    }
 
     // Mining: transfer ORE from the nearest in-range asteroid while the laser is held.
     const mineResult = mineStep(field, ship.position, econ, dt, miningActive, effCargo(), miningYield(upgrades))
@@ -2572,11 +2722,14 @@ function frame(now: number): void {
     // --- Combat
     const pvpZone = pvpZoneAt(ship.position)
     const pvpProximity = pvpZoneProximity(ship.position)
-    const pvpActive = pvpZone !== null
+    const pvpActive = pvpCombatActive(ship.position, MOBILE_COMPANION)
+    const pvpProtected = pvpZone !== null
     const rankedDenied = now < rankedPvpDeniedUntil
     pvpEl.hidden = !pvpActive && !rankedDenied && !pvpProximity
     if (rankedDenied) {
-      pvpEl.textContent = `RANKED LOCKED - HOLD ${PVP_RANKED_MIN_TOKEN_BALANCE.toLocaleString()} TOKENS`
+      pvpEl.textContent = MOBILE_COMPANION ? 'PVP DESKTOP ONLY' : `RANKED LOCKED - HOLD ${PVP_RANKED_MIN_TOKEN_BALANCE.toLocaleString()} TOKENS`
+    } else if (MOBILE_COMPANION && pvpProtected) {
+      pvpEl.textContent = 'PVP DESKTOP ONLY'
     } else if (pvpZone?.id === 'ranked') {
       pvpEl.textContent = 'RANKED PVP ENABLED'
     } else if (pvpZone?.id === 'practice') {
@@ -2584,7 +2737,9 @@ function frame(now: number): void {
     } else if (pvpProximity) {
       const entryMeters = Math.max(0, Math.ceil(pvpProximity.distanceToBoundary))
       const zoneName = pvpProximity.zone.id === 'ranked' ? 'RANKED ARENA' : 'PRACTICE ARENA'
-      if (pvpProximity.zone.id === 'ranked' && !rankedPvpAccess(selfHolderBalance)) {
+      if (MOBILE_COMPANION) {
+        pvpEl.textContent = `PVP DESKTOP ONLY - ${entryMeters}m TO ARENA`
+      } else if (pvpProximity.zone.id === 'ranked' && !rankedPvpAccess(selfHolderBalance)) {
         pvpEl.textContent = `RANKED LOCKED - ${entryMeters}m TO BARRIER`
       } else {
         pvpEl.textContent = `${zoneName} - ENTRY ${entryMeters}m`
@@ -2613,11 +2768,11 @@ function frame(now: number): void {
     safeEl.hidden = !safe
     safeEl.textContent = repairing ? 'SAFE ZONE · HULL REPAIRING' : 'SAFE ZONE'
     const pirateProjectileCount = projectiles.reduce((count, projectile) => count + (projectile.faction === 'pirate' ? 1 : 0), 0)
-    if (shouldClearPveHostiles({ safe, pvpActive, pirates: pirates.length, pirateProjectiles: pirateProjectileCount })) {
+    if (shouldClearPveHostiles({ safe, pvpActive: pvpProtected, pirates: pirates.length, pirateProjectiles: pirateProjectileCount })) {
       clearPirates()
     }
 
-    if (!safe && !pvpActive && now >= nextSpawnAt) {
+    if (!safe && !pvpProtected && now >= nextSpawnAt) {
       spawnPirateWave(now)
       nextSpawnAt = now + 19000
     }
@@ -2637,7 +2792,7 @@ function frame(now: number): void {
     const targets: HitTarget[] = [
       { position: ship.position, radius: 4, health: playerHealth, faction: 'player' },
       ...pirates.map((p) => ({ position: p.position, radius: 5, health: p.health, faction: 'pirate' as const })),
-      ...(pvpActive
+      ...(pvpActive && pvpZone
         ? [...remotes.entries()]
             .filter(([, r]) => pvpZoneAt(r.mesh.position)?.id === pvpZone.id)
             .map(([id, r]) => ({ id, position: r.mesh.position, radius: PVP_PEER_HIT_RADIUS, health: r.health, faction: 'peer' as const }))

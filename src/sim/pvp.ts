@@ -99,6 +99,10 @@ export function isInPvpZone(position: Vector3): boolean {
   return pvpZoneAt(position) !== null
 }
 
+export function pvpCombatActive(position: Vector3, isMobileCivilian: boolean): boolean {
+  return !isMobileCivilian && isInPvpZone(position)
+}
+
 export function isInRankedPvpZone(position: Vector3): boolean {
   return pvpZoneAt(position)?.id === 'ranked'
 }

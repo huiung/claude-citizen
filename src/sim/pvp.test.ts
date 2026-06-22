@@ -21,6 +21,7 @@ import {
   pvpWeaponForShip,
   pvpZoneProximity,
   pvpZoneAt,
+  pvpCombatActive,
   pvpZoneIntensity,
   rankedPvpAccess,
   allowsPveHostiles,
@@ -55,6 +56,11 @@ describe('pvp zone rules', () => {
     expect(pvpZoneAt(PVP_PRACTICE_ZONE_CENTER.clone())?.id).toBe('practice')
     expect(pvpZoneAt(PVP_RANKED_ZONE_CENTER.clone())?.id).toBe('ranked')
     expect(isInPvpZone(PVP_RANKED_ZONE_CENTER.clone())).toBe(true)
+  })
+
+  it('keeps mobile civilian pilots out of active PvP combat', () => {
+    expect(pvpCombatActive(PVP_PRACTICE_ZONE_CENTER.clone(), true)).toBe(false)
+    expect(pvpCombatActive(PVP_PRACTICE_ZONE_CENTER.clone(), false)).toBe(true)
   })
 
   it('reports nearby arena entry distance while the pilot is just outside the boundary', () => {

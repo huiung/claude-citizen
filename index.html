@@ -266,7 +266,7 @@
     #disconnect-wallet[hidden] { display: none; }
     #wallet-status { display: block; font-size: 11px; color: #ffe08a; min-height: 12px; margin-top: 4px; }
     #mobile-notice { display: none; }
-    .is-mobile #nickname, .is-mobile #launch, .is-mobile .foot, .is-mobile #pilot-code { display: none; }
+    .is-mobile .foot, .is-mobile #pilot-code { display: none; }
     .is-mobile #overlay { justify-content: flex-start; gap: 12px; overflow-y: auto; padding: 28px 16px; }
     .is-mobile #overlay h1 { font-size: 24px; letter-spacing: 3px; }
     .is-mobile #overlay p { font-size: 12px; max-width: 340px; }
@@ -276,6 +276,33 @@
     .is-mobile #mobile-notice {
       display: block; color: #ffd08a; font-size: 14px; max-width: 360px; line-height: 1.7;
       border: 1px solid rgba(255, 208, 138, .4); border-radius: 6px; padding: 14px 16px;
+    }
+    #mobile-controls {
+      display: none; position: fixed; inset: auto 0 0 0; z-index: 18; padding: 0 14px 18px;
+      pointer-events: none; touch-action: none; user-select: none;
+    }
+    .is-mobile.mobile-flight #mobile-controls { display: block; }
+    .mobile-stick {
+      position: absolute; left: 18px; bottom: 22px; width: 116px; height: 116px; border-radius: 50%;
+      border: 1px solid rgba(159,255,176,.32); background: rgba(0,18,8,.34);
+      box-shadow: inset 0 0 24px rgba(111,220,140,.08); pointer-events: auto;
+    }
+    .mobile-stick i {
+      position: absolute; left: 50%; top: 50%; width: 42px; height: 42px; margin: -21px 0 0 -21px;
+      border-radius: 50%; border: 1px solid rgba(174,233,255,.58); background: rgba(10,45,55,.72);
+      box-shadow: 0 0 16px rgba(111,232,255,.22); transform: translate(0, 0);
+    }
+    .mobile-actions {
+      position: absolute; right: 14px; bottom: 18px; width: min(224px, 48vw);
+      display: grid; grid-template-columns: repeat(2, minmax(72px, 1fr)); gap: 8px; pointer-events: auto;
+    }
+    .mobile-actions button {
+      min-height: 44px; border-radius: 7px; border: 1px solid rgba(159,255,176,.36);
+      background: rgba(0, 18, 8, .68); color: #9fffb0; font: 700 11px "Share Tech Mono", ui-monospace, monospace;
+      letter-spacing: 1px; text-transform: uppercase; touch-action: none;
+    }
+    .mobile-actions button:active, .mobile-actions button.held {
+      border-color: rgba(255,224,138,.75); color: #ffe08a; background: rgba(48, 35, 6, .75);
     }
     #landing-stats { font-size: 13px; color: #9fffb0; opacity: .9; letter-spacing: 1px; }
     #landing-stats span { color: #ffe08a; font-weight: 600; }
@@ -432,6 +459,19 @@
     LEFT-CLICK mine · RIGHT-CLICK fire · SPACE dock · N pick destination · J quantum-jump<br />
     M solar atlas · L leaderboard · ENTER chat
   </div>
+  <div id="mobile-controls" hidden aria-label="Mobile civilian flight controls">
+    <div class="mobile-stick" id="mobile-stick" aria-label="Steering control"><i id="mobile-stick-knob"></i></div>
+    <div class="mobile-actions">
+      <button id="mobile-thrust" type="button">Thrust</button>
+      <button id="mobile-boost" type="button">Boost</button>
+      <button id="mobile-brake" type="button">Brake</button>
+      <button id="mobile-mine" type="button">Mine</button>
+      <button id="mobile-dock" type="button">Dock</button>
+      <button id="mobile-jump" type="button">Jump</button>
+      <button id="mobile-next" type="button">Nav</button>
+      <button id="mobile-camera" type="button">Cam</button>
+    </div>
+  </div>
   <div id="overlay">
     <h1>CLAUDE <span>CITIZEN</span></h1>
     <p>An open-source space MMO — mine, trade, fight pirates, and jump across the galaxy with other pilots, right in your browser.<br/>Built with Claude. Not affiliated with CIG/RSI.</p>
@@ -450,7 +490,7 @@
         <button class="lb-next" id="lb-next-landing" type="button" aria-label="Next leaderboard page">›</button>
       </div>
     </div>
-    <div id="mobile-notice"><b>Mobile Command Deck</b><br/>Full flight still needs desktop keyboard + mouse. On mobile, use this page to check PvP season standings, connect wallet, and follow the live contest.</div>
+    <div id="mobile-notice"><b>Mobile Civilian Mode</b><br/>Mobile flight supports exploration, mining, docking, trading, upgrades, wallet, and leaderboards. PvP combat stays desktop-only for now.</div>
     <input id="nickname" maxlength="16" placeholder="CALLSIGN" autocomplete="off" />
     <button id="launch">LAUNCH</button>
     <div id="launch-loading" hidden>
