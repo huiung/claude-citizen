@@ -24,7 +24,7 @@ describe('holder ship visuals', () => {
     expect(holderShipVisualsForTier(0).map((visual) => visual.id)).toEqual(['standard'])
     expect(holderShipVisualsForTier(1).map((visual) => visual.id)).toEqual(['standard'])
     expect(holderShipVisualsForTier(2).map((visual) => visual.id)).toEqual(['standard', 'doge-runner'])
-    expect(holderShipVisualsForTier(3).map((visual) => visual.id)).toEqual(['standard', 'doge-runner', 'void-interceptor'])
+    expect(holderShipVisualsForTier(3).map((visual) => visual.id)).toEqual(['standard', 'doge-runner', 'void-interceptor', 'sovereign-wraith'])
   })
 
   it('falls back to the standard hull when a saved visual is locked', () => {
@@ -33,6 +33,8 @@ describe('holder ship visuals', () => {
     expect(resolveHolderShipVisual('doge-runner', 2).id).toBe('doge-runner')
     expect(resolveHolderShipVisual('void-interceptor', 2).id).toBe('standard')
     expect(resolveHolderShipVisual('void-interceptor', 3).id).toBe('void-interceptor')
+    expect(resolveHolderShipVisual('sovereign-wraith', 2).id).toBe('standard')
+    expect(resolveHolderShipVisual('sovereign-wraith', 3).id).toBe('sovereign-wraith')
     expect(resolveHolderShipVisual('missing', 3).id).toBe('standard')
   })
 
@@ -45,6 +47,9 @@ describe('holder ship visuals', () => {
     saveHolderShipVisual(storage, 'void-interceptor')
     expect(loadHolderShipVisual(storage)).toBe('void-interceptor')
 
+    saveHolderShipVisual(storage, 'sovereign-wraith')
+    expect(loadHolderShipVisual(storage)).toBe('sovereign-wraith')
+
     storage.setItem('scc.holderShipVisual.v1', 'not-real')
     expect(loadHolderShipVisual(storage)).toBe('standard')
     expect(holderShipVisualById('not-real')).toBeNull()
@@ -54,6 +59,13 @@ describe('holder ship visuals', () => {
     expect(holderShipVisualById('doge-runner')).toMatchObject({
       name: 'Doge Runner Mk II',
       description: 'T2 holder-only gold racing hull. Stats stay unchanged.',
+    })
+  })
+
+  it('presents the sovereign wraith as a T3 heavy prestige hull', () => {
+    expect(holderShipVisualById('sovereign-wraith')).toMatchObject({
+      name: 'Sovereign Wraith',
+      description: 'T3 holder-only sovereign heavy fighter. Stats stay unchanged.',
     })
   })
 })
