@@ -10,6 +10,8 @@ import {
   PVP_ARENA_DESTINATIONS,
   PVP_ARENA_CLEAR_RADIUS,
   PVP_ARENA_ENTRY_HINT_DISTANCE,
+  TRAINING_RANGE_CENTER,
+  TRAINING_RANGE_RADIUS,
   PVP_PRACTICE_ZONE_CENTER,
   PVP_PEER_HIT_RADIUS,
   PVP_PRACTICE_ZONE_RADIUS,
@@ -24,6 +26,7 @@ import {
   pvpZoneProximity,
   pvpZoneAt,
   pvpCombatActive,
+  trainingDronesActive,
   pvpZoneIntensity,
   rankedPvpAccess,
   allowsPveHostiles,
@@ -43,9 +46,9 @@ describe('pvp zone rules', () => {
   })
 
   it('defines a quantum beacon that drops pilots outside the arena edge', () => {
-    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.id)).toEqual(['pvp.practice', 'pvp.ranked'])
-    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.name)).toEqual(['Practice Arena', 'Ranked Arena'])
-    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.kind)).toEqual(['Open combat beacon', 'Holder-ranked beacon'])
+    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.id)).toEqual(['training.range', 'pvp.practice', 'pvp.ranked'])
+    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.name)).toEqual(['Training Arena', 'Practice Arena', 'Ranked Arena'])
+    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.kind)).toEqual(['Drone training arena', 'Open combat beacon', 'Holder-ranked beacon'])
 
     const approach = pvpArenaApproachPoint(new Vector3(0, 0, 0), PVP_RANKED_ZONE_CENTER)
     const distFromCenter = approach.distanceTo(PVP_RANKED_ZONE_CENTER)
@@ -55,7 +58,14 @@ describe('pvp zone rules', () => {
     expect(approach.z).toBeGreaterThan(PVP_RANKED_ZONE_CENTER.z)
   })
 
+  it('can place training arrivals inside the drone range', () => {
+    const approach = pvpArenaApproachPoint(new Vector3(0, 0, 0), TRAINING_RANGE_CENTER, TRAINING_RANGE_RADIUS * 0.45)
+
+    expect(approach.distanceTo(TRAINING_RANGE_CENTER)).toBeLessThan(TRAINING_RANGE_RADIUS)
+  })
+
   it('separates open practice combat from holder-ranked combat', () => {
+    expect(isInPvpZone(TRAINING_RANGE_CENTER.clone())).toBe(false)
     expect(pvpZoneAt(PVP_PRACTICE_ZONE_CENTER.clone())?.id).toBe('practice')
     expect(pvpZoneAt(PVP_RANKED_ZONE_CENTER.clone())?.id).toBe('ranked')
     expect(isInPvpZone(PVP_RANKED_ZONE_CENTER.clone())).toBe(true)
@@ -72,6 +82,13 @@ describe('pvp zone rules', () => {
   it('keeps mobile civilian pilots out of active PvP combat', () => {
     expect(pvpCombatActive(PVP_PRACTICE_ZONE_CENTER.clone(), true)).toBe(false)
     expect(pvpCombatActive(PVP_PRACTICE_ZONE_CENTER.clone(), false)).toBe(true)
+  })
+
+  it('runs drones only in the dedicated training arena', () => {
+    expect(trainingDronesActive(TRAINING_RANGE_CENTER.clone(), false)).toBe(true)
+    expect(trainingDronesActive(PVP_PRACTICE_ZONE_CENTER.clone(), false)).toBe(false)
+    expect(trainingDronesActive(PVP_RANKED_ZONE_CENTER.clone(), false)).toBe(false)
+    expect(trainingDronesActive(TRAINING_RANGE_CENTER.clone(), true)).toBe(false)
   })
 
   it('reports nearby arena entry distance while the pilot is just outside the boundary', () => {
@@ -101,8 +118,10 @@ describe('pvp zone rules', () => {
   })
 
   it('suppresses PvE hostiles inside the PvP combat zone', () => {
+    expect(allowsPveHostiles(TRAINING_RANGE_CENTER.clone())).toBe(false)
     expect(allowsPveHostiles(PVP_ZONE_CENTER.clone())).toBe(false)
     expect(allowsPveHostiles(PVP_RANKED_ZONE_CENTER.clone())).toBe(false)
+    expect(allowsPveHostiles(TRAINING_RANGE_CENTER.clone().add(new Vector3(TRAINING_RANGE_RADIUS + 1, 0, 0)))).toBe(true)
     expect(allowsPveHostiles(PVP_ZONE_CENTER.clone().add(new Vector3(PVP_ZONE_RADIUS + 1, 0, 0)))).toBe(true)
   })
 
@@ -116,6 +135,7 @@ describe('pvp zone rules', () => {
 
   it('clears stray pirate fire when entering protected zones', () => {
     expect(shouldClearPveHostiles({ safe: false, pvpActive: true, pirates: 0, pirateProjectiles: 1 })).toBe(true)
+    expect(shouldClearPveHostiles({ safe: false, pvpActive: false, trainingActive: true, pirates: 1, pirateProjectiles: 0 })).toBe(true)
     expect(shouldClearPveHostiles({ safe: true, pvpActive: false, pirates: 0, pirateProjectiles: 1 })).toBe(true)
     expect(shouldClearPveHostiles({ safe: false, pvpActive: false, pirates: 0, pirateProjectiles: 1 })).toBe(false)
   })

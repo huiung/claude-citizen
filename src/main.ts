@@ -36,7 +36,7 @@ import { type Celestial, queryCelestials } from './sim/galaxy'
 import { generatePlanetTextures, samplePlanetSurface, type PlanetTextureKind } from './render/planetTextures'
 import { makeAsteroidMaterial } from './render/asteroidTextures'
 import { engineGlowStyle, type EngineGlowStyle } from './render/engineGlow'
-import { cancelTravel, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
+import { cancelTravel, catchUpQuantum, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
   canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
   isDead, type Projectile, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
@@ -54,6 +54,8 @@ import {
   PVP_RANKED_ZONE_CENTER,
   PVP_RANKED_ZONE_RADIUS,
   PVP_ZONE_CENTER,
+  TRAINING_RANGE_DESTINATION,
+  isInTrainingRange,
   pvpArenaApproachPoint,
   pvpCombatActive,
   pvpWeaponForShip,
@@ -61,8 +63,15 @@ import {
   pvpZoneAt,
   rankedPvpAccess,
   shouldClearPveHostiles,
+  trainingDronesActive,
 } from './sim/pvp'
 import { type Pirate, PIRATE_REWARD, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
+import {
+  createTrainingDrones,
+  stepTrainingDrone,
+  TRAINING_DRONE_COUNT,
+  type TrainingDrone,
+} from './sim/trainingDrones'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { SolarSystemMap, type SolarMapDestinationResult, type SolarMapNavigationTarget } from './ui/solarSystemMap'
@@ -703,6 +712,8 @@ scene.add(buildPvpArenaMarker(PVP_PRACTICE_ZONE_CENTER, PVP_PRACTICE_ZONE_RADIUS
 scene.add(buildPvpArenaLights(PVP_PRACTICE_ZONE_CENTER, PVP_PRACTICE_ZONE_RADIUS, 0x5df4ff, 0xff5dff))
 scene.add(buildPvpArenaMarker(PVP_RANKED_ZONE_CENTER, PVP_RANKED_ZONE_RADIUS, 0xffd24d))
 scene.add(buildPvpArenaLights(PVP_RANKED_ZONE_CENTER, PVP_RANKED_ZONE_RADIUS, 0xffd24d, 0xff5dff))
+scene.add(buildPvpArenaMarker(TRAINING_RANGE_DESTINATION.position, TRAINING_RANGE_DESTINATION.radius, 0x9fffb0))
+scene.add(buildPvpArenaLights(TRAINING_RANGE_DESTINATION.position, TRAINING_RANGE_DESTINATION.radius, 0x9fffb0, 0x58ddff))
 
 // Bloom post-processing: make the sun, engines, lasers and lit windows actually glow.
 const composer = new EffectComposer(renderer)
@@ -1110,6 +1121,9 @@ const projectiles: Projectile[] = []
 const projectileMeshes = new Map<Projectile, THREE.Mesh>()
 const pirates: Pirate[] = []
 const pirateMeshes = new Map<string, THREE.Group>()
+const trainingDrones: TrainingDrone[] = []
+const trainingDroneMeshes = new Map<string, THREE.Group>()
+const trainingDroneWrecks: { mesh: THREE.Group; born: number; velocity: THREE.Vector3; spin: THREE.Vector3 }[] = []
 const combatFeedback = createCombatFeedbackState()
 
 // --- Loot: glowing crates dropped by pirates / floating in space. Magnet-collect for credits.
@@ -1215,7 +1229,10 @@ function activeDestinationSnapshot(): SolarMapNavigationTarget {
 /** Arrival point just OFF the selected target's surface (never inside it), plus its name + distance. */
 function destinationArrival(dest = activeQuantumDestination()): { position: THREE.Vector3; name: string; dist: number } {
   if (pvpArenaDestinationIndex(dest.id) >= 0) {
-    const position = pvpArenaApproachPoint(ship.position, dest.position)
+    const approachDistance = dest.id === TRAINING_RANGE_DESTINATION.id
+      ? Math.max((dest.radius ?? 0) * 0.45, 650)
+      : undefined
+    const position = pvpArenaApproachPoint(ship.position, dest.position, approachDistance)
     return { position, name: dest.name, dist: ship.position.distanceTo(position) }
   }
   _navDir.copy(ship.position).sub(dest.position)
@@ -1554,6 +1571,25 @@ function updateHitSparks(now: number): void {
   }
 }
 
+function updateTrainingDroneWrecks(now: number, dt: number): void {
+  for (let i = trainingDroneWrecks.length - 1; i >= 0; i--) {
+    const wreck = trainingDroneWrecks[i]
+    const age = (now - wreck.born) / 820
+    if (age >= 1) {
+      scene.remove(wreck.mesh)
+      disposeObject(wreck.mesh)
+      trainingDroneWrecks.splice(i, 1)
+      continue
+    }
+    wreck.mesh.position.addScaledVector(wreck.velocity, dt)
+    wreck.velocity.multiplyScalar(Math.max(0, 1 - dt * 1.8))
+    wreck.mesh.rotation.x += wreck.spin.x * dt
+    wreck.mesh.rotation.y += wreck.spin.y * dt
+    wreck.mesh.rotation.z += wreck.spin.z * dt
+    wreck.mesh.scale.setScalar(0.72 * (1 - age * 0.65))
+  }
+}
+
 // --- Game systems (main owns all state; modules are pure)
 const econ = loadEconomy()
 const upgrades = loadUpgrades()
@@ -1636,6 +1672,62 @@ function removePirateMesh(id: string): void {
   scene.remove(mesh)
   disposeObject(mesh)
   pirateMeshes.delete(id)
+}
+
+function ensureTrainingDrones(): void {
+  if (trainingDrones.length >= TRAINING_DRONE_COUNT) return
+  const candidates = createTrainingDrones(ship.position, TRAINING_DRONE_COUNT)
+  for (const candidate of candidates) {
+    if (trainingDrones.length >= TRAINING_DRONE_COUNT) break
+    if (trainingDrones.some((drone) => drone.id === candidate.id)) continue
+    trainingDrones.push(candidate)
+    ensureTrainingDroneMesh(candidate)
+  }
+}
+
+function ensureTrainingDroneMesh(drone: TrainingDrone): THREE.Group {
+  let mesh = trainingDroneMeshes.get(drone.id)
+  if (!mesh) {
+    mesh = buildCraft('fighter', 0x58ddff)
+    mesh.scale.setScalar(0.72)
+    mesh.position.copy(drone.position)
+    scene.add(mesh)
+    trainingDroneMeshes.set(drone.id, mesh)
+  }
+  return mesh
+}
+
+function removeTrainingDroneMesh(id: string): void {
+  const mesh = trainingDroneMeshes.get(id)
+  if (!mesh) return
+  scene.remove(mesh)
+  disposeObject(mesh)
+  trainingDroneMeshes.delete(id)
+}
+
+function destroyTrainingDroneMesh(id: string, now: number): void {
+  const mesh = trainingDroneMeshes.get(id)
+  if (!mesh) return
+  trainingDroneMeshes.delete(id)
+  trainingDroneWrecks.push({
+    mesh,
+    born: now,
+    velocity: new THREE.Vector3(
+      (Math.random() - 0.5) * 90,
+      55 + Math.random() * 45,
+      (Math.random() - 0.5) * 90,
+    ),
+    spin: new THREE.Vector3(
+      5 + Math.random() * 6,
+      4 + Math.random() * 7,
+      6 + Math.random() * 8,
+    ),
+  })
+}
+
+function clearTrainingDrones(): void {
+  for (const drone of trainingDrones) removeTrainingDroneMesh(drone.id)
+  trainingDrones.splice(0)
 }
 
 function updateWalletHUD(): void {
@@ -2476,6 +2568,7 @@ function drawCombatHud(now: number): void {
   }
 
   for (const p of pirates) drawTarget(p.position, p.velocity, '#ff5d5d', 'HOSTILE')
+  for (const drone of trainingDrones) drawTarget(drone.position, drone.velocity, '#58ddff', 'DRONE')
 
   const activePvpZone = pvpZoneAt(ship.position)
   if (activePvpZone) {
@@ -2670,6 +2763,7 @@ addEventListener('resize', () => {
 // --- Main loop
 let running = false
 let last = performance.now()
+let hiddenQuantumAt: number | null = null
 
 // --- Minimap (top-down radar, north-up, player-centered)
 const MAP_RANGE = 4500 // world units from player to minimap edge
@@ -2774,6 +2868,7 @@ function drawMinimap(): void {
   for (const planet of PLANETS) plot(planet.position.x, planet.position.z, '#9bb8e0', 2, true)
   plot(REFINERY_POS.x, REFINERY_POS.z, '#6fdc8c', 3.4, true, true)
   plot(COLONY_POS.x, COLONY_POS.z, '#ffb347', 3.4, true, true)
+  plot(TRAINING_RANGE_DESTINATION.position.x, TRAINING_RANGE_DESTINATION.position.z, '#9fffb0', 3.2, true, true)
   plot(PVP_PRACTICE_ZONE_CENTER.x, PVP_PRACTICE_ZONE_CENTER.z, '#5df4ff', 3.2, true, true)
   plot(PVP_RANKED_ZONE_CENTER.x, PVP_RANKED_ZONE_CENTER.z, '#ffd24d', 3.2, true, true)
   for (const p of pirates) plot(p.position.x, p.position.z, '#ff5d5d', 2.2, false)
@@ -2786,6 +2881,44 @@ function drawMinimap(): void {
   mctx.beginPath(); mctx.moveTo(0, -5); mctx.lineTo(3.5, 4); mctx.lineTo(-3.5, 4); mctx.closePath(); mctx.fill()
   mctx.restore()
 }
+
+function syncQuantumShipVisual(): void {
+  shipMesh.position.copy(ship.position)
+  if (ship.velocity.lengthSq() > 1) {
+    _qLook.copy(ship.position).add(ship.velocity)
+    shipMesh.lookAt(_qLook)
+    ship.quaternion.copy(shipMesh.quaternion)
+  }
+}
+
+function updateQuantumHud(qr: { phase: 'idle' | 'spooling' | 'traveling'; progress: number }): void {
+  quantumEl.hidden = qr.phase === 'idle'
+  if (qr.phase === 'idle') return
+  quantumEl.textContent = qr.phase === 'spooling'
+    ? `QUANTUM SPOOLING -> ${jumpTargetName}...`
+    : `QUANTUM TRAVEL -> ${jumpTargetName} - ${Math.round(qr.progress * 100)}%`
+}
+
+function catchUpHiddenQuantum(now = performance.now()): void {
+  if (hiddenQuantumAt === null) return
+  const elapsed = (now - hiddenQuantumAt) / 1000
+  hiddenQuantumAt = null
+  if (running && !docked && quantum.phase !== 'idle') {
+    const qr = catchUpQuantum(quantum, ship.position, ship.velocity, elapsed)
+    syncQuantumShipVisual()
+    updateQuantumHud(qr)
+  }
+  last = now
+}
+
+document.addEventListener('visibilitychange', () => {
+  const now = performance.now()
+  if (document.hidden) {
+    hiddenQuantumAt = now
+    return
+  }
+  catchUpHiddenQuantum(now)
+})
 
 function frame(now: number): void {
   requestAnimationFrame(frame)
@@ -2814,16 +2947,8 @@ function frame(now: number): void {
     // Quantum jump in progress: the drive flies the ship; normal flight/combat is suspended.
     pvpEl.hidden = true
     const qr = stepQuantum(quantum, ship.position, ship.velocity, dt)
-    shipMesh.position.copy(ship.position)
-    if (ship.velocity.lengthSq() > 1) {
-      _qLook.copy(ship.position).add(ship.velocity)
-      shipMesh.lookAt(_qLook)
-      ship.quaternion.copy(shipMesh.quaternion)
-    }
-    quantumEl.hidden = false
-    quantumEl.textContent = qr.phase === 'spooling'
-      ? `QUANTUM SPOOLING → ${jumpTargetName}…`
-      : `QUANTUM TRAVEL → ${jumpTargetName} · ${Math.round(qr.progress * 100)}%`
+    syncQuantumShipVisual()
+    updateQuantumHud(qr)
     navHintEl.textContent = ''
     audio.setThrust(qr.phase === 'traveling' ? 0.75 : 0.2, qr.phase === 'traveling', qr.phase === 'traveling' ? 0.95 : 0)
     audio.setAmbience({
@@ -2916,11 +3041,15 @@ function frame(now: number): void {
     const pvpZone = pvpZoneAt(ship.position)
     const pvpProximity = pvpZoneProximity(ship.position)
     const pvpActive = pvpCombatActive(ship.position, MOBILE_COMPANION)
+    const trainingProtected = isInTrainingRange(ship.position)
+    const dronesActive = trainingDronesActive(ship.position, MOBILE_COMPANION)
     const pvpProtected = pvpZone !== null
     const rankedDenied = now < rankedPvpDeniedUntil
-    pvpEl.hidden = !pvpActive && !rankedDenied && !pvpProximity
+    pvpEl.hidden = !pvpActive && !trainingProtected && !rankedDenied && !pvpProximity
     if (rankedDenied) {
       pvpEl.textContent = MOBILE_COMPANION ? 'PVP DESKTOP ONLY' : `RANKED LOCKED - HOLD ${PVP_RANKED_MIN_TOKEN_BALANCE.toLocaleString()} TOKENS`
+    } else if (trainingProtected) {
+      pvpEl.textContent = MOBILE_COMPANION ? 'TRAINING DESKTOP ONLY' : 'TRAINING RANGE - DRONES ACTIVE'
     } else if (MOBILE_COMPANION && pvpProtected) {
       pvpEl.textContent = 'PVP DESKTOP ONLY'
     } else if (pvpZone?.id === 'ranked') {
@@ -2939,7 +3068,8 @@ function frame(now: number): void {
       }
     }
     const pvpWeapon = pvpWeaponForShip(selectedShipType)
-    playerWeapon.interval = pvpActive ? pvpWeapon.interval : 0.16
+    const combatWeaponActive = pvpActive || dronesActive
+    playerWeapon.interval = combatWeaponActive ? pvpWeapon.interval : 0.16
     stepWeapon(playerWeapon, dt)
     if (weaponActive && canFire(playerWeapon)) {
       _fwd.set(0, 0, -1).applyQuaternion(ship.quaternion)
@@ -2948,7 +3078,7 @@ function frame(now: number): void {
         _fwd,
         'player',
         PROJECTILE_SPEED,
-        pvpActive ? pvpWeapon.damage : undefined,
+        combatWeaponActive ? pvpWeapon.damage : undefined,
         ship.velocity,
       ))
       fireWeapon(playerWeapon)
@@ -2962,13 +3092,26 @@ function frame(now: number): void {
     safeEl.textContent = repairing ? 'SAFE ZONE · HULL REPAIRING' : 'SAFE ZONE'
     const pirateProjectileCount = projectiles.reduce((count, projectile) => count + (projectile.faction === 'pirate' ? 1 : 0), 0)
     const pveHostilesAllowed = allowsPveHostiles(ship.position, MOBILE_COMPANION)
-    if (shouldClearPveHostiles({ safe, pvpActive: pvpProtected, mobileCivilian: MOBILE_COMPANION, pirates: pirates.length, pirateProjectiles: pirateProjectileCount })) {
+    if (shouldClearPveHostiles({ safe, pvpActive: pvpProtected, trainingActive: dronesActive || trainingProtected, mobileCivilian: MOBILE_COMPANION, pirates: pirates.length, pirateProjectiles: pirateProjectileCount })) {
       clearPirates()
     }
 
     if (!safe && pveHostilesAllowed && now >= nextSpawnAt) {
       spawnPirateWave(now)
       nextSpawnAt = now + 19000
+    }
+
+    if (dronesActive) {
+      ensureTrainingDrones()
+      for (const drone of trainingDrones) {
+        const result = stepTrainingDrone(drone, ship.position, dt, ship.velocity)
+        if (result.fired) projectiles.push(result.fired)
+        const mesh = ensureTrainingDroneMesh(drone)
+        mesh.position.copy(drone.position)
+        mesh.lookAt(ship.position)
+      }
+    } else if (trainingDrones.length > 0) {
+      clearTrainingDrones()
     }
 
     for (const pirate of pirates) {
@@ -2986,6 +3129,7 @@ function frame(now: number): void {
     const targets: HitTarget[] = [
       { position: ship.position, radius: 4, health: playerHealth, faction: 'player' },
       ...pirates.map((p) => ({ position: p.position, radius: 5, health: p.health, faction: 'pirate' as const })),
+      ...trainingDrones.map((drone) => ({ id: drone.id, position: drone.position, radius: drone.radius, health: drone.health, faction: 'pirate' as const })),
       ...(pvpActive && pvpZone
         ? [...remotes.entries()]
             .filter(([, r]) => pvpZoneAt(r.mesh.position)?.id === pvpZone.id)
@@ -3021,11 +3165,22 @@ function frame(now: number): void {
       }
     }
 
+    for (let i = trainingDrones.length - 1; i >= 0; i--) {
+      if (isDead(trainingDrones[i].health)) {
+        const drone = trainingDrones[i]
+        spawnExplosion(drone.position, now)
+        registerKillBanner(combatFeedback, 'DRONE DESTROYED', 'training target', now)
+        audio.blip('explosion')
+        destroyTrainingDroneMesh(drone.id, now)
+        trainingDrones.splice(i, 1)
+      }
+    }
+
     if (isDead(playerHealth)) respawnPlayer(now)
 
     syncProjectileMeshes()
     hullBarEl.style.width = `${Math.round(hullFraction(playerHealth) * 100)}%`
-    enemiesEl.textContent = String(pirates.length)
+    enemiesEl.textContent = String(pirates.length + trainingDrones.length)
   }
 
   if (running) {
@@ -3051,6 +3206,7 @@ function frame(now: number): void {
   updateOreFloats(now)
   updateExplosions(now)
   updateHitSparks(now)
+  updateTrainingDroneWrecks(now, dt)
 
   // Subtle quantum motion: faint streaks ease in during the jump (spool-up pulls them gently
   // toward the vanishing point, travel lets them drift past). Kept light — easy on the eyes.

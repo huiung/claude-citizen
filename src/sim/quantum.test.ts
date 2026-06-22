@@ -1,7 +1,7 @@
 import { Vector3 } from 'three'
 import { describe, expect, it } from 'vitest'
 import {
-  cancelTravel, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum,
+  cancelTravel, catchUpQuantum, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum,
 } from './quantum'
 
 /** Run the drive to completion, returning the number of frames and final progress. */
@@ -124,6 +124,51 @@ describe('quantum travel', () => {
     // Ship lies between origin and target (not past it).
     expect(pos.x).toBeLessThanOrEqual(target.x)
     expect(pos.x).toBeGreaterThanOrEqual(0)
+  })
+
+  it('can catch up a backgrounded quantum jump using elapsed wall-clock time', () => {
+    const q = createQuantum()
+    const pos = new Vector3(0, 0, 0)
+    const vel = new Vector3()
+    const target = new Vector3(0, 0, -9000)
+    startTravel(q, target)
+
+    const result = catchUpQuantum(q, pos, vel, 30)
+
+    expect(result.phase).toBe('idle')
+    expect(pos.distanceTo(target)).toBeCloseTo(QUANTUM_TUNING.safeRadius, 3)
+    expect(vel.lengthSq()).toBeLessThan(1e-9)
+  })
+
+  it('matches normal small-frame travel when catching up partial hidden time', () => {
+    const target = new Vector3(0, 0, -9000)
+    const hidden = createQuantum()
+    const hiddenPos = new Vector3(0, 0, 0)
+    const hiddenVel = new Vector3()
+    startTravel(hidden, target)
+
+    const framed = createQuantum()
+    const framedPos = new Vector3(0, 0, 0)
+    const framedVel = new Vector3()
+    startTravel(framed, target)
+    for (let i = 0; i < 50; i++) stepQuantum(framed, framedPos, framedVel, 0.05)
+
+    catchUpQuantum(hidden, hiddenPos, hiddenVel, 2.5)
+
+    expect(hidden.phase).toBe(framed.phase)
+    expect(hiddenPos.distanceTo(framedPos)).toBeLessThan(1e-6)
+  })
+
+  it('ignores invalid or non-positive background catch-up durations', () => {
+    const q = createQuantum()
+    const pos = new Vector3(0, 0, 0)
+    const vel = new Vector3()
+    startTravel(q, new Vector3(0, 0, -9000))
+
+    const result = catchUpQuantum(q, pos, vel, -1)
+
+    expect(result.phase).toBe('spooling')
+    expect(pos.lengthSq()).toBe(0)
   })
 
   it('reaches high cruise speed on a long trip', () => {

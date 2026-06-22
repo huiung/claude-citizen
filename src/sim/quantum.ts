@@ -170,6 +170,22 @@ export function stepQuantum(
   return { phase: 'traveling', progress: q.pathLength > 0 ? q.traveled / q.pathLength : 1 }
 }
 
+export function catchUpQuantum(
+  q: QuantumState, shipPos: Vector3, shipVel: Vector3, elapsedSeconds: number,
+): StepResult {
+  if (!Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) {
+    return { phase: q.phase, progress: q.pathLength > 0 ? q.traveled / q.pathLength : 0 }
+  }
+  let remaining = elapsedSeconds
+  let result: StepResult = { phase: q.phase, progress: q.pathLength > 0 ? q.traveled / q.pathLength : 0 }
+  while (remaining > 1e-9 && q.phase !== 'idle') {
+    const dt = Math.min(0.05, remaining)
+    result = stepQuantum(q, shipPos, shipVel, dt)
+    remaining -= dt
+  }
+  return result
+}
+
 /** Place the ship exactly on the drop-out point and reset the drive to idle. */
 function _finishAtDropout(q: QuantumState, shipPos: Vector3): void {
   if (q.pathLength > 1e-6) {
