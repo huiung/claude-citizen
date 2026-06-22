@@ -40,8 +40,8 @@ export interface NetEvents {
   onAuthOk?(pubkey: string, sessionId: string): void
   /** Auth failed or was rejected — stay anonymous. */
   onAuthError?(): void
-  /** Our own token-holder tier resolved (cosmetic flair only). */
-  onHolder?(tier: number): void
+  /** Our own token-holder status resolved. Tier drives cosmetics; balance drives holder-gated ranked PvP. */
+  onHolder?(tier: number, balance: number): void
   /** A peer's holder tier arrived/updated after they joined. */
   onPeerHolder?(id: string, tier: number): void
   onPvpHealth?(id: string, hull: number, maxHull: number, self: boolean): void
@@ -164,7 +164,7 @@ export class NetClient {
         if (typeof msg.text === 'string') this.events.onChat(String(msg.name ?? '?'), msg.text, Number(msg.tier) || 0)
         break
       case 'holder':
-        this.events.onHolder?.(Number(msg.tier) || 0)
+        this.events.onHolder?.(Number(msg.tier) || 0, Number(msg.balance) || 0)
         break
       case 'peer-holder': {
         const tier = Number(msg.tier) || 0

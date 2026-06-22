@@ -41,12 +41,12 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Upgrade your craft:** cargo hold, top speed, boost, and mining yield — five tiers each, a credit sink that scales with your rank
 - **Delivery contracts:** accept haul missions, deliver to the destination outpost for the reward
 - **Pirates:** hostiles hunt you in the sector — shoot back, watch your hull, collect the bounty
-- **PvP Phase 1:** cycle to the PvP Arena beacon with `[N]`, quantum-jump to its approach lane, then enter the violet arena marker to enable pilot-vs-pilot fire, server-authoritative hull damage, peer health bars, kill feed, and a small credit bounty
+- **PvP Phase 1:** cycle to the deep-space Practice Arena or Ranked Arena beacon with `[N]`, quantum-jump beyond the named solar system, then enter the arena marker to enable pilot-vs-pilot fire, server-authoritative hull damage, peer health bars, kill feed, and a small credit bounty. Practice is open; Ranked requires a verified 1,000+ token balance and pushes under-threshold pilots back at the boundary
 - **An endless procedural galaxy:** fly any direction and planets, moons, stations, and derelicts keep appearing — some planets are vast
 - **Deep space:** the farther you fly from the core, the more rare gold ore veins (credit jackpots) and tougher, higher-bounty pirates appear — a HUD gauge tracks how deep (and dangerous) you are. Risk and reward scale together
 - **A named solar system:** Sun + Mercury through Saturn at a compressed scale, each with a procedurally textured surface (oceans/continents, gas bands, ice caps) — and they're solid, so you fly *around* them, not through
 - **Drop to the surface:** approach an earth-type world and it resolves into continents, rivers, forests, deserts and snow-capped peaks (procedural, higher-detail up close); the sky fills in with day/night atmosphere, an altimeter kicks in, and collision follows the *real terrain* — so you can skim low over its hills and valleys instead of bouncing off a sphere
-- **Quantum travel:** pick a destination with `[N]` or open the **Solar Atlas** with `[M]` and click a planet, charge the drive, and jump to any planet in the system or the PvP Arena approach lane — warp streaks, a wide-FOV cruise, and a named arrival
+- **Quantum travel:** pick a destination with `[N]` or open the **Solar Atlas** with `[M]` and click a planet, charge the drive, and jump to any planet in the system or the deep-space PvP arena approach lanes — warp streaks, a wide-FOV cruise, and a named arrival
 - **A cinematic sky:** bloom glow, sunlit planet atmospheres (bright day limb, a warm sunset terminator, dark night side), a procedural nebula backdrop, slowly rotating worlds, and parallax dust that streams past for a sense of speed
 - **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor (detailed 3D models), each trading cargo/speed/toughness, unlocked as you climb the ranks
 - **Holder cosmetics:** verified token holders get tiered nameplate/chat colors, and T3 holders can equip the Void Interceptor visual from the Hangar. Cosmetic only: no stat advantage
@@ -59,7 +59,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
 - **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours. Grab a **Pilot Code** to restore your pilot on another device (one live session per code)
-- 223 tests, because "built with AI" shouldn't mean "built badly"
+- 243 tests, because "built with AI" shouldn't mean "built badly"
 
 ## Controls
 
@@ -77,7 +77,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | Right-click (hold) | Fire weapon at hostiles |
 | Space | Dock (when slow + near an outpost) — trade, upgrade, buy ships, take contracts |
 | M | Open the Solar Atlas (system map) — click a planet to set your quantum destination |
-| N | Cycle the quantum destination (Mercury → Saturn, then PvP Arena) |
+| N | Cycle the quantum destination (Mercury → Saturn, then Practice Arena and Ranked Arena) |
 | J | Quantum jump to the selected destination |
 | L | Toggle the leaderboard |
 | C | Toggle orbit camera |
@@ -97,7 +97,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | 7 | Low-poly planet surfaces + cinematic sky (bloom, atmospheres, nebula, warp) | ✅ shipped |
 | 8 | Game feel + 3D ship models + capital ship + combat HUD + leaderboard | ✅ shipped |
 | 9 | Detailed earth-type surfaces, day/night atmosphere, low-altitude terrain-following flight | ✅ shipped |
-| 10 | PvP combat — arena opt-in, peer hull bars, kill feed, small bounty rewards | phase 1 shipped |
+| 10 | PvP combat — practice/ranked arena opt-in, peer hull bars, kill feed, small bounty rewards | phase 1 shipped |
 | 11 | Full planetary landings — touch down, walk the surface, take off | planned |
 | … | … | … |
 | 42 | Getting out of bed animation *(took the original 6 years — we'll take a weekend)* | someday |

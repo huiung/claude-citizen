@@ -18,6 +18,7 @@ import {
 } from './render/shipyard'
 import { SHIP_STATS, type ShipType } from './sim/shipTypes'
 import { nextRank, rankForCredits, rankProgress } from './sim/ranks'
+import { shouldRenderWorldFrame, shouldRunBackgroundWorldWork } from './sim/renderCadence'
 import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
   buildCapitalShip, buildDustField, buildLootCrate, buildNebula, buildSolarPlanet, buildStarfield, buildStation,
@@ -41,14 +42,21 @@ import {
   isDead, type Projectile, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
 } from './sim/combat'
 import {
+  allowsPveHostiles,
+  isInRankedPvpZone,
   isInPvpZone,
-  PVP_ARENA_ID,
-  PVP_ARENA_KIND,
-  PVP_ARENA_NAME,
+  PVP_ARENA_CLEAR_RADIUS,
+  PVP_ARENA_DESTINATIONS,
+  PVP_PRACTICE_ZONE_CENTER,
+  PVP_RANKED_MIN_TOKEN_BALANCE,
+  PVP_RANKED_ZONE_CENTER,
   PVP_ZONE_CENTER,
   PVP_ZONE_RADIUS,
   pvpArenaApproachPoint,
   pvpWeaponForShip,
+  pvpZoneProximity,
+  pvpZoneAt,
+  rankedPvpAccess,
 } from './sim/pvp'
 import { type Pirate, PIRATE_REWARD, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
 import { GameAudio } from './audio/sound'
@@ -508,26 +516,72 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x010206)
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.5, 500000)
 
-function buildPvpArenaMarker(): THREE.LineLoop {
-  const points: THREE.Vector3[] = []
-  for (let i = 0; i < 128; i++) {
-    const a = (i / 128) * Math.PI * 2
-    points.push(new THREE.Vector3(Math.cos(a) * PVP_ZONE_RADIUS, 0, Math.sin(a) * PVP_ZONE_RADIUS))
-  }
-  const geo = new THREE.BufferGeometry().setFromPoints(points)
-  const mat = new THREE.LineBasicMaterial({
-    color: 0xff5dff,
+function buildPvpArenaMarker(center: THREE.Vector3, color: number): THREE.Group {
+  const group = new THREE.Group()
+  group.position.copy(center)
+  const boundaryMat = new THREE.MeshBasicMaterial({
+    color,
     transparent: true,
-    opacity: 0.38,
+    opacity: 0.56,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
   })
-  const ring = new THREE.LineLoop(geo, mat)
-  ring.position.copy(PVP_ZONE_CENTER)
-  return ring
+  const bandMat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.09,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  })
+  const beaconMat = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity: 0.72,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  })
+
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(PVP_ZONE_RADIUS, 28, 8, 192), boundaryMat)
+  ring.rotation.x = Math.PI / 2
+  group.add(ring)
+
+  const band = new THREE.Mesh(new THREE.RingGeometry(PVP_ZONE_RADIUS - 135, PVP_ZONE_RADIUS + 135, 192), bandMat)
+  band.rotation.x = Math.PI / 2
+  band.position.y = -3
+  group.add(band)
+
+  const pillarGeo = new THREE.CylinderGeometry(10, 10, 280, 8, 1, true)
+  const capGeo = new THREE.SphereGeometry(26, 12, 8)
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2
+    const x = Math.cos(a) * PVP_ZONE_RADIUS
+    const z = Math.sin(a) * PVP_ZONE_RADIUS
+    const pillar = new THREE.Mesh(pillarGeo, beaconMat)
+    pillar.position.set(x, 140, z)
+    const cap = new THREE.Mesh(capGeo, beaconMat)
+    cap.position.set(x, 292, z)
+    group.add(pillar, cap)
+  }
+
+  return group
 }
 
-scene.add(buildPvpArenaMarker())
+function buildPvpArenaLights(center: THREE.Vector3, keyColor: number, fillColor: number): THREE.Group {
+  const group = new THREE.Group()
+  group.position.copy(center)
+  const key = new THREE.PointLight(keyColor, 5.2, PVP_ZONE_RADIUS * 2.4, 1.4)
+  key.position.set(-360, 260, 180)
+  const fill = new THREE.PointLight(fillColor, 3.6, PVP_ZONE_RADIUS * 2.1, 1.5)
+  fill.position.set(420, -120, -260)
+  group.add(key, fill)
+  return group
+}
+
+scene.add(buildPvpArenaMarker(PVP_PRACTICE_ZONE_CENTER, 0x5df4ff))
+scene.add(buildPvpArenaLights(PVP_PRACTICE_ZONE_CENTER, 0x5df4ff, 0xff5dff))
+scene.add(buildPvpArenaMarker(PVP_RANKED_ZONE_CENTER, 0xffd24d))
+scene.add(buildPvpArenaLights(PVP_RANKED_ZONE_CENTER, 0xffd24d, 0xff5dff))
 
 // Bloom post-processing: make the sun, engines, lasers and lit windows actually glow.
 const composer = new EffectComposer(renderer)
@@ -633,6 +687,12 @@ for (const [idx, planet] of PLANETS.entries()) {
 }
 buildLights(scene)
 
+function updateDeepSpaceVisibility(): void {
+  const inPvpDeepSpace = ship.position.distanceToSquared(PVP_ZONE_CENTER) <= PVP_ARENA_CLEAR_RADIUS * PVP_ARENA_CLEAR_RADIUS
+  sun.visible = !inPvpDeepSpace
+  for (const mesh of planetGroups) mesh.visible = !inPvpDeepSpace
+}
+
 function rebuildPlanetLODs(): void {
   planetLODs.length = 0
   for (const mesh of planetGroups) mesh.traverse((o) => { if (o instanceof THREE.LOD) planetLODs.push(o) })
@@ -645,7 +705,7 @@ function schedulePlanetUpgrades(startDelay = PLANET_UPGRADE_START_DELAY_MS): voi
 
 function canUpgradePlanetNow(now: number): boolean {
   if (!running || planetUpgradeInFlight) return false
-  if (docked) return true
+  if (docked) return false
   const busy =
     chatOpen ||
     solarMap.isOpen ||
@@ -996,18 +1056,25 @@ function planetDestination(idx: number): QuantumDestination {
   }
 }
 
-function pvpArenaDestination(): QuantumDestination {
+function pvpArenaDestination(idx: number): QuantumDestination {
+  const dest = PVP_ARENA_DESTINATIONS[idx] ?? PVP_ARENA_DESTINATIONS[0]
   return {
-    id: PVP_ARENA_ID,
-    name: PVP_ARENA_NAME,
-    kind: PVP_ARENA_KIND,
-    position: PVP_ZONE_CENTER.clone(),
-    radius: PVP_ZONE_RADIUS,
+    id: dest.id,
+    name: dest.name,
+    kind: dest.kind,
+    position: dest.position.clone(),
+    radius: dest.radius,
   }
 }
 
+function pvpArenaDestinationIndex(id: string): number {
+  return PVP_ARENA_DESTINATIONS.findIndex((dest) => dest.id === id)
+}
+
 function activeQuantumDestination(): QuantumDestination {
-  if (!customJumpDestination && selectedJumpIdx >= PLANETS.length) return pvpArenaDestination()
+  if (!customJumpDestination && selectedJumpIdx >= PLANETS.length) {
+    return pvpArenaDestination(selectedJumpIdx - PLANETS.length)
+  }
   return customJumpDestination ?? planetDestination(selectedJumpIdx)
 }
 
@@ -1024,8 +1091,8 @@ function activeDestinationSnapshot(): SolarMapNavigationTarget {
 
 /** Arrival point just OFF the selected target's surface (never inside it), plus its name + distance. */
 function destinationArrival(dest = activeQuantumDestination()): { position: THREE.Vector3; name: string; dist: number } {
-  if (dest.id === PVP_ARENA_ID) {
-    const position = pvpArenaApproachPoint(ship.position)
+  if (pvpArenaDestinationIndex(dest.id) >= 0) {
+    const position = pvpArenaApproachPoint(ship.position, dest.position)
     return { position, name: dest.name, dist: ship.position.distanceTo(position) }
   }
   _navDir.copy(ship.position).sub(dest.position)
@@ -1043,6 +1110,12 @@ function setQuantumDestinationFromAtlas(target: SolarMapNavigationTarget): Solar
   const planetIdx = PLANETS.findIndex((p) => target.id === `planet.${p.name}` || target.name === p.name)
   if (planetIdx >= 0) {
     selectedJumpIdx = planetIdx
+    customJumpDestination = null
+    return { ok: true }
+  }
+  const arenaIdx = pvpArenaDestinationIndex(target.id)
+  if (arenaIdx >= 0) {
+    selectedJumpIdx = PLANETS.length + arenaIdx
     customJumpDestination = null
     return { ok: true }
   }
@@ -1235,6 +1308,7 @@ function spawnPirateWave(now: number): void {
   const depth = deepFactor()
   if (pirates.length >= MAX_PIRATES + Math.round(depth * 2)) return // up to +2 more in deep space
   if (inSafeZone(ship.position)) return
+  if (!allowsPveHostiles(ship.position)) return
   const pos = spawnPositionAround(ship.position, 600, pirateSpawnCount++)
   // Deeper space: tankier pirates worth a bigger bounty (risk scales with reward).
   const pirate = spawnPirate(`pir-${pirateSpawnCount}`, pos, 1 + depth * 1.6, Math.round(PIRATE_REWARD * (1 + depth * 2)))
@@ -1370,6 +1444,17 @@ function setPlayerCraft(type: ShipType): void {
   })
 }
 
+function clearPirates(): void {
+  for (const p of pirates) {
+    const mesh = pirateMeshes.get(p.id)
+    if (mesh) { scene.remove(mesh); pirateMeshes.delete(p.id) }
+  }
+  pirates.splice(0)
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    if (projectiles[i].faction === 'pirate') projectiles.splice(i, 1)
+  }
+}
+
 function updateWalletHUD(): void {
   creditsEl.textContent = String(Math.floor(econ.credits))
   cargoEl.textContent = `${Math.floor(cargoUsed(econ))}/${effCargo()}`
@@ -1408,10 +1493,26 @@ document.body.appendChild(stationMenu.root)
 
 // --- Remote ships
 interface RemoteShip { mesh: THREE.Group; peer: PeerState; label: CSS2DObject; health: ReturnType<typeof createHealth> }
-let selfTier = 0 // token-holder tier, cosmetic only
+let selfTier = 0 // token-holder tier, cosmetic identity
+let selfHolderBalance = 0 // exact token balance from the relay; used only for holder-gated ranked PvP
 let selectedHolderShipVisual = loadHolderShipVisual(localStorage)
+let rankedPvpDeniedUntil = 0
+const _rankedBounceDir = new THREE.Vector3()
 function activeHolderShipVisual(): HolderShipVisualId {
   return resolveHolderShipVisual(selectedHolderShipVisual, selfTier).id
+}
+
+function enforceRankedArenaAccess(now: number): void {
+  if (!isInRankedPvpZone(ship.position) || rankedPvpAccess(selfHolderBalance)) return
+  _rankedBounceDir.copy(ship.position).sub(PVP_RANKED_ZONE_CENTER)
+  if (_rankedBounceDir.lengthSq() < 1) _rankedBounceDir.set(0, 0, 1).applyQuaternion(ship.quaternion)
+  _rankedBounceDir.normalize()
+  ship.position.copy(PVP_RANKED_ZONE_CENTER).addScaledVector(_rankedBounceDir, PVP_ZONE_RADIUS + 180)
+  ship.velocity.copy(_rankedBounceDir).multiplyScalar(Math.max(420, ship.velocity.length() * 0.75))
+  rankedPvpDeniedUntil = now + 2600
+  pvpEl.hidden = false
+  pvpEl.textContent = `RANKED LOCKED - HOLD ${PVP_RANKED_MIN_TOKEN_BALANCE.toLocaleString()} TOKENS`
+  audio.blip('error')
 }
 function nameplateParts(el: HTMLElement): { name: HTMLElement; hull: HTMLElement; fill: HTMLElement } {
   let name = el.querySelector<HTMLElement>('.np-name')
@@ -1479,8 +1580,10 @@ const solarMap = new SolarSystemMap({
 })
 document.body.appendChild(solarMap.root)
 
+let dockOpenRequest = 0
 function dock(id: string): void {
   docked = true
+  const openRequest = ++dockOpenRequest
   if (!dockedEver) markOnboard('scc.ob.docked', (v) => { dockedEver = v }) // onboarding step 2 — opening the UI counts
   solarMap.close()
   miningActive = false
@@ -1497,33 +1600,37 @@ function dock(id: string): void {
   audio.setMining(false, false)
   audio.blip('dock')
   document.exitPointerLock()
-  stationMenu.open({
-    outpostId: id, econ, market, upgrades, contracts, audio,
-    capacity: effCargo,
-    selectedShip: () => selectedShipType,
-    ownedShips,
-    shipPrices: SHIP_PRICES,
-    onBuyShip: (type) => {
-      if (ownedShips.has(type) || econ.credits < SHIP_PRICES[type]) return
-      econ.credits -= SHIP_PRICES[type]
-      ownedShips.add(type)
-      saveHangar()
-      refreshWallet()
-    },
-    onSelectShip: (type) => {
-      if (ownedShips.has(type)) setPlayerCraft(type)
-    },
-    holderTier: () => selfTier,
-    selectedHolderShipVisual: () => selectedHolderShipVisual,
-    onSelectHolderShipVisual: (id: HolderShipVisualId) => {
-      selectedHolderShipVisual = id
-      saveHolderShipVisual(localStorage, id)
-      setPlayerCraft(selectedShipType)
-    },
+  requestAnimationFrame(() => {
+    if (!docked || openRequest !== dockOpenRequest) return
+    stationMenu.open({
+      outpostId: id, econ, market, upgrades, contracts, audio,
+      capacity: effCargo,
+      selectedShip: () => selectedShipType,
+      ownedShips,
+      shipPrices: SHIP_PRICES,
+      onBuyShip: (type) => {
+        if (ownedShips.has(type) || econ.credits < SHIP_PRICES[type]) return
+        econ.credits -= SHIP_PRICES[type]
+        ownedShips.add(type)
+        saveHangar()
+        refreshWallet()
+      },
+      onSelectShip: (type) => {
+        if (ownedShips.has(type)) setPlayerCraft(type)
+      },
+      holderTier: () => selfTier,
+      selectedHolderShipVisual: () => selectedHolderShipVisual,
+      onSelectHolderShipVisual: (id: HolderShipVisualId) => {
+        selectedHolderShipVisual = id
+        saveHolderShipVisual(localStorage, id)
+        setPlayerCraft(selectedShipType)
+      },
+    })
   })
 }
 
 function undock(): void {
+  dockOpenRequest++
   stationMenu.close()
   docked = false
   requestFlightPointerLock()
@@ -1578,7 +1685,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Space' && running && !docked && dockable) dock(dockable)
   if (e.code === 'KeyN' && running && !docked && quantum.phase === 'idle') {
     customJumpDestination = null
-    selectedJumpIdx = (selectedJumpIdx + 1) % (PLANETS.length + 1) // cycle planets, then the PvP arena beacon
+    selectedJumpIdx = (selectedJumpIdx + 1) % (PLANETS.length + PVP_ARENA_DESTINATIONS.length) // cycle planets, then PvP arena beacons
     audio.blip('nav')
   }
   if (!leaderboardPanelEl.hidden && running && !docked && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
@@ -1722,8 +1829,9 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
       applyHolderNameplate(remote.label.element as HTMLElement, remote.peer.name, tier)
     }
   },
-  onHolder(tier) {
+  onHolder(tier, balance) {
     selfTier = tier
+    selfHolderBalance = balance
     setPlayerCraft(selectedShipType)
   },
   onPeerLeave(id) {
@@ -1880,7 +1988,7 @@ function updateRemotes(): void {
     const op = 1 - THREE.MathUtils.clamp((d - NAMEPLATE_FADE_NEAR) / (NAMEPLATE_FADE_FAR - NAMEPLATE_FADE_NEAR), 0, 1)
     label.visible = op > 0.02
     ;(label.element as HTMLElement).style.opacity = String(op)
-    updateNameplateHealth(label.element as HTMLElement, peer.hull ?? health.hull, peer.maxHull ?? health.max, isInPvpZone(ship.position) && isInPvpZone(mesh.position))
+    updateNameplateHealth(label.element as HTMLElement, peer.hull ?? health.hull, peer.maxHull ?? health.max, pvpZoneAt(ship.position)?.id === pvpZoneAt(mesh.position)?.id && isInPvpZone(ship.position))
   }
 }
 
@@ -2236,7 +2344,8 @@ function drawMinimap(): void {
   for (const planet of PLANETS) plot(planet.position.x, planet.position.z, '#9bb8e0', 2, true)
   plot(REFINERY_POS.x, REFINERY_POS.z, '#6fdc8c', 3.4, true, true)
   plot(COLONY_POS.x, COLONY_POS.z, '#ffb347', 3.4, true, true)
-  plot(PVP_ZONE_CENTER.x, PVP_ZONE_CENTER.z, '#ff5dff', 3.2, true, true)
+  plot(PVP_PRACTICE_ZONE_CENTER.x, PVP_PRACTICE_ZONE_CENTER.z, '#5df4ff', 3.2, true, true)
+  plot(PVP_RANKED_ZONE_CENTER.x, PVP_RANKED_ZONE_CENTER.z, '#ffd24d', 3.2, true, true)
   for (const p of pirates) plot(p.position.x, p.position.z, '#ff5d5d', 2.2, false)
 
   // player heading arrow at center
@@ -2253,9 +2362,9 @@ function frame(now: number): void {
   const dt = Math.min((now - last) / 1000, 0.05)
   last = now
 
-  // The Solar Atlas owns the screen and runs its own render loop while open —
-  // skip the game's sim/render so two WebGL contexts don't fight for the GPU.
-  if (solarMap.isOpen) return
+  // Full-screen overlays own the screen. Pause the game's sim/render so UI clicks do not
+  // compete with WebGL, LOD swaps, or texture work on the same main thread.
+  if (!shouldRenderWorldFrame({ running, docked, solarMapOpen: solarMap.isOpen })) return
 
   station.rotation.z += dt * 0.05
   colony.rotation.y += dt * 0.03
@@ -2265,7 +2374,7 @@ function frame(now: number): void {
   capital.rotation.y += dt * 0.0015 // capital ship drifts almost imperceptibly
   capitalCarrier.rotation.y -= dt * 0.0011 // different silhouette, different lazy drift
   ;(sun.userData.sunMat as THREE.ShaderMaterial).uniforms.uTime.value = now * 0.001 // boil the star surface
-  if (running) {
+  if (shouldRunBackgroundWorldWork({ running, docked })) {
     streamCelestials(now)
     upgradeNextPlanet(now)
     for (const lod of planetLODs) lod.update(camera) // swap planet detail by distance
@@ -2307,6 +2416,7 @@ function frame(now: number): void {
     stepShip(ship, input, dt, { maxSpeed: effSpeed(), boostMultiplier: effBoost() })
     resolvePlanetCollisions()
     resolveCapitalCollision()
+    enforceRankedArenaAccess(now)
     shipMesh.position.copy(ship.position)
     shipMesh.quaternion.copy(ship.quaternion)
 
@@ -2365,8 +2475,26 @@ function frame(now: number): void {
     )
 
     // --- Combat
-    const pvpActive = isInPvpZone(ship.position)
-    pvpEl.hidden = !pvpActive
+    const pvpZone = pvpZoneAt(ship.position)
+    const pvpProximity = pvpZoneProximity(ship.position)
+    const pvpActive = pvpZone !== null
+    const rankedDenied = now < rankedPvpDeniedUntil
+    pvpEl.hidden = !pvpActive && !rankedDenied && !pvpProximity
+    if (rankedDenied) {
+      pvpEl.textContent = `RANKED LOCKED - HOLD ${PVP_RANKED_MIN_TOKEN_BALANCE.toLocaleString()} TOKENS`
+    } else if (pvpZone?.id === 'ranked') {
+      pvpEl.textContent = 'RANKED PVP ENABLED'
+    } else if (pvpZone?.id === 'practice') {
+      pvpEl.textContent = 'PRACTICE PVP ENABLED'
+    } else if (pvpProximity) {
+      const entryMeters = Math.max(0, Math.ceil(pvpProximity.distanceToBoundary))
+      const zoneName = pvpProximity.zone.id === 'ranked' ? 'RANKED ARENA' : 'PRACTICE ARENA'
+      if (pvpProximity.zone.id === 'ranked' && !rankedPvpAccess(selfHolderBalance)) {
+        pvpEl.textContent = `RANKED LOCKED - ${entryMeters}m TO BARRIER`
+      } else {
+        pvpEl.textContent = `${zoneName} - ENTRY ${entryMeters}m`
+      }
+    }
     const pvpWeapon = pvpWeaponForShip(selectedShipType)
     playerWeapon.interval = pvpActive ? pvpWeapon.interval : 0.16
     stepWeapon(playerWeapon, dt)
@@ -2382,18 +2510,11 @@ function frame(now: number): void {
     const repairing = updateSafeRepair(safe, pvpActive, now, dt)
     safeEl.hidden = !safe
     safeEl.textContent = repairing ? 'SAFE ZONE · HULL REPAIRING' : 'SAFE ZONE'
-    if (safe && pirates.length) {
-      for (const p of pirates) {
-        const mesh = pirateMeshes.get(p.id)
-        if (mesh) { scene.remove(mesh); pirateMeshes.delete(p.id) }
-      }
-      pirates.splice(0)
-      for (let i = projectiles.length - 1; i >= 0; i--) {
-        if (projectiles[i].faction === 'pirate') projectiles.splice(i, 1)
-      }
+    if ((safe || pvpActive) && pirates.length) {
+      clearPirates()
     }
 
-    if (!safe && now >= nextSpawnAt) {
+    if (!safe && !pvpActive && now >= nextSpawnAt) {
       spawnPirateWave(now)
       nextSpawnAt = now + 19000
     }
@@ -2415,7 +2536,7 @@ function frame(now: number): void {
       ...pirates.map((p) => ({ position: p.position, radius: 5, health: p.health, faction: 'pirate' as const })),
       ...(pvpActive
         ? [...remotes.entries()]
-            .filter(([, r]) => isInPvpZone(r.mesh.position))
+            .filter(([, r]) => pvpZoneAt(r.mesh.position)?.id === pvpZone.id)
             .map(([id, r]) => ({ id, position: r.mesh.position, radius: 7, health: r.health, faction: 'peer' as const }))
         : []),
     ]
@@ -2450,6 +2571,7 @@ function frame(now: number): void {
   }
 
   if (running) {
+    updateDeepSpaceVisibility()
     updateRemotes()
     updateCamera(dt)
     drawMinimap()
@@ -2460,6 +2582,8 @@ function frame(now: number): void {
       audio.setAmbience({ atmosphere, quantum: 0, speedFrac: ship.velocity.length() / effSpeed() })
     }
   } else {
+    sun.visible = true
+    for (const mesh of planetGroups) mesh.visible = true
     // Menu background: slow orbit around the station
     const t = now * 0.0001
     camera.position.set(Math.cos(t) * 220 + 120, 60, Math.sin(t) * 220 - 350)

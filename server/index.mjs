@@ -8,7 +8,7 @@ import {
   verifySignature, createChallengeStore, createSessionStore,
   resolveClaim, issueChallenge,
 } from './auth.mjs'
-import { fetchHolderTier, createHolderCache } from './holders.mjs'
+import { fetchHolderStatus, createHolderCache } from './holders.mjs'
 import { leaderboardPage, parseLeaderboardParams } from './leaderboard.mjs'
 import { applyPvpHit, isInPvpZone, normalizeShip, resetPvpHull } from './pvp.mjs'
 
@@ -35,8 +35,8 @@ const STORE_FILE = process.env.STORE_FILE ?? './progress.json'
 // Verified sessions persist beside the progress store (same volume) so a relay restart
 // doesn't drop wallet logins — otherwise reconnects fall back to anonymous + lose holder flair.
 const SESSION_FILE = process.env.SESSION_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'sessions.json')
-// Token-holder cosmetics (flair only, never gameplay). Verified pubkeys are checked against
-// the mint via Helius; a missing key just means no flair anywhere.
+// Token-holder status. Verified pubkeys are checked against the mint via Helius; a missing
+// key just means no flair and no holder-gated ranked PvP access.
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY
 const HOLDER_MINT = '6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump'
 const holderCache = createHolderCache()
@@ -56,19 +56,20 @@ function applySession(client, sessionId) {
   if (pubkey) { client.authed = true; client.pubkey = pubkey }
 }
 
-/** Resolve a verified pubkey's holder tier (cached), set it on the client, and tell the player
- *  + nearby peers so cosmetic flair appears. Best-effort: failures leave tier 0. */
+/** Resolve a verified pubkey's holder status (cached), set it on the client, and tell the player
+ *  + nearby peers so cosmetic flair and ranked access stay in sync. */
 async function refreshHolder(ws, client) {
   if (!client.authed || !client.pubkey) return
-  let tier = holderCache.get(client.pubkey, Date.now())
-  if (tier === null) {
-    tier = await fetchHolderTier(client.pubkey, { apiKey: HELIUS_API_KEY, mint: HOLDER_MINT })
-    holderCache.set(client.pubkey, tier, Date.now())
+  let status = holderCache.get(client.pubkey, Date.now())
+  if (status === null) {
+    status = await fetchHolderStatus(client.pubkey, { apiKey: HELIUS_API_KEY, mint: HOLDER_MINT })
+    holderCache.set(client.pubkey, status, Date.now())
   }
   if (!clients.has(ws)) return // disconnected during the async lookup
-  client.tier = tier
-  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ t: 'holder', tier }))
-  if (client.active && tier > 0) broadcast(ws, { t: 'peer-holder', id: client.id, tier })
+  client.tier = Number(status.tier) || 0
+  client.holderBalance = Number(status.balance) || 0
+  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ t: 'holder', tier: client.tier, balance: client.holderBalance }))
+  if (client.active && client.tier > 0) broadcast(ws, { t: 'peer-holder', id: client.id, tier: client.tier })
 }
 
 // HTTP server: a /stats endpoint for the landing page + the WebSocket upgrade.
@@ -169,7 +170,7 @@ wss.on('connection', (ws) => {
       const client = {
         id: Math.random().toString(36).slice(2, 10),
         name: null, color: -1, p: [0, 0, 0], q: [0, 0, 0, 1], token,
-        active: false, authed: false, pubkey: null, tier: 0,
+        active: false, authed: false, pubkey: null, tier: 0, holderBalance: 0,
       }
       resetPvpHull(client, 'hauler')
       applySession(client, msg.sessionId)
@@ -196,7 +197,7 @@ wss.on('connection', (ws) => {
           id: Math.random().toString(36).slice(2, 10),
           name: String(msg.name ?? 'PILOT').slice(0, 16),
           color: nextColor++, p: [0, 0, 0], q: [0, 0, 0, 1], token,
-          active: true, authed: false, pubkey: null, tier: 0,
+          active: true, authed: false, pubkey: null, tier: 0, holderBalance: 0,
         }
         resetPvpHull(client, normalizeShip(msg.ship))
         clients.set(ws, client)
@@ -213,7 +214,7 @@ wss.on('connection', (ws) => {
         }
       }
       // Only active pilots are peers (have ships).
-      const peers = [...clients.values()].filter((c) => c.active && c !== client).map(({ token: _t, active: _a, authed: _au, pubkey: _pk, ...rest }) => rest)
+      const peers = [...clients.values()].filter((c) => c.active && c !== client).map(({ token: _t, active: _a, authed: _au, pubkey: _pk, holderBalance: _hb, ...rest }) => rest)
       ws.send(JSON.stringify({ t: 'welcome', id: client.id, peers }))
       if (key) {
         if (store[key]) ws.send(JSON.stringify({ t: 'progress', data: store[key] }))

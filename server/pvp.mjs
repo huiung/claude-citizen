@@ -1,4 +1,9 @@
-export const PVP_ZONE = { x: -850, y: -260, z: -3600, radius: 1250 }
+export const PVP_RANKED_MIN_TOKEN_BALANCE = 1000
+export const PVP_ZONES = {
+  practice: { id: 'practice', x: 92000, y: 26000, z: -210000, radius: 1250 },
+  ranked: { id: 'ranked', x: 96000, y: 26000, z: -214000, radius: 1250 },
+}
+export const PVP_ZONE = PVP_ZONES.practice
 export const PVP_HIT_RANGE = 900
 export const PVP_KILL_REWARD = 180
 export const PVP_REPEAT_REWARD_COOLDOWN_MS = 5 * 60 * 1000
@@ -20,12 +25,24 @@ export function resetPvpHull(client, ship = client.ship) {
   client.hull = client.maxHull
 }
 
-export function isInPvpZone(p) {
+function isInsideZone(p, zone) {
   if (!Array.isArray(p) || p.length < 3) return false
-  const dx = Number(p[0]) - PVP_ZONE.x
-  const dy = Number(p[1]) - PVP_ZONE.y
-  const dz = Number(p[2]) - PVP_ZONE.z
-  return dx * dx + dy * dy + dz * dz <= PVP_ZONE.radius * PVP_ZONE.radius
+  const dx = Number(p[0]) - zone.x
+  const dy = Number(p[1]) - zone.y
+  const dz = Number(p[2]) - zone.z
+  return dx * dx + dy * dy + dz * dz <= zone.radius * zone.radius
+}
+
+export function pvpZoneAt(p) {
+  return Object.values(PVP_ZONES).find((zone) => isInsideZone(p, zone)) ?? null
+}
+
+export function isInPvpZone(p) {
+  return pvpZoneAt(p) !== null
+}
+
+export function rankedPvpAccess(holderBalance) {
+  return Number(holderBalance) >= PVP_RANKED_MIN_TOKEN_BALANCE
 }
 
 function distanceSq(a, b) {
@@ -46,7 +63,13 @@ export function pvpRewardForPair(rewardMemory, attackerId, targetId, now) {
 export function applyPvpHit({ attacker, target, now, rewardMemory }) {
   if (!attacker || !target || attacker === target) return { ok: false, reason: 'bad-target' }
   if (!attacker.active || !target.active) return { ok: false, reason: 'inactive' }
-  if (!isInPvpZone(attacker.p) || !isInPvpZone(target.p)) return { ok: false, reason: 'outside-zone' }
+  const attackerZone = pvpZoneAt(attacker.p)
+  const targetZone = pvpZoneAt(target.p)
+  if (!attackerZone || !targetZone) return { ok: false, reason: 'outside-zone' }
+  if (attackerZone.id !== targetZone.id) return { ok: false, reason: 'outside-zone' }
+  if (attackerZone.id === 'ranked' && (!rankedPvpAccess(attacker.holderBalance) || !rankedPvpAccess(target.holderBalance))) {
+    return { ok: false, reason: 'ranked-locked' }
+  }
   if (distanceSq(attacker.p, target.p) > PVP_HIT_RANGE * PVP_HIT_RANGE) return { ok: false, reason: 'too-far' }
   if ((target.hull ?? 0) <= 0) return { ok: false, reason: 'dead-target' }
 

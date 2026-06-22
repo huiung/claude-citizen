@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseHolderBalance, holderTier, createHolderCache } from './holders.mjs'
+import { parseHolderBalance, holderTier, createHolderCache, holderStatus } from './holders.mjs'
 
 describe('parseHolderBalance', () => {
   // Shape returned by Helius getTokenAccountsByOwner (jsonParsed).
@@ -44,6 +44,14 @@ describe('holderTier', () => {
   it('tier 3 (whale) for 1M+', () => {
     expect(holderTier(1_000_000)).toBe(3)
     expect(holderTier(50_000_000)).toBe(3)
+  })
+})
+
+describe('holderStatus', () => {
+  it('returns both balance and tier so gameplay gates can use exact balances', () => {
+    expect(holderStatus(999)).toEqual({ balance: 999, tier: 1 })
+    expect(holderStatus(1000)).toEqual({ balance: 1000, tier: 1 })
+    expect(holderStatus(100_000)).toEqual({ balance: 100_000, tier: 2 })
   })
 })
 

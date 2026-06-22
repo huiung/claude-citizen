@@ -1,15 +1,69 @@
 import { Vector3 } from 'three'
 import type { ShipType } from './shipTypes'
 
-export const PVP_ZONE_CENTER = new Vector3(-850, -260, -3600)
 export const PVP_ZONE_RADIUS = 1250
+export const PVP_ARENA_CLEAR_RADIUS = 90000
+export const PVP_ARENA_ENTRY_HINT_DISTANCE = 4500
 export const PVP_HIT_RANGE = 900
 export const PVP_KILL_REWARD = 180
 export const PVP_REPEAT_REWARD_COOLDOWN_MS = 5 * 60 * 1000
-export const PVP_ARENA_ID = 'pvp.arena'
-export const PVP_ARENA_NAME = 'PvP Arena'
-export const PVP_ARENA_KIND = 'Combat beacon'
+export const PVP_RANKED_MIN_TOKEN_BALANCE = 1000
+export const PVP_PRACTICE_ZONE_CENTER = new Vector3(92000, 26000, -210000)
+export const PVP_RANKED_ZONE_CENTER = new Vector3(96000, 26000, -214000)
+export const PVP_ZONE_CENTER = PVP_PRACTICE_ZONE_CENTER
 export const PVP_ARENA_APPROACH_DISTANCE = Math.max(PVP_ZONE_RADIUS * 1.5, 650)
+
+export interface PvpZone {
+  id: 'practice' | 'ranked'
+  quantumId: string
+  name: string
+  kind: string
+  center: Vector3
+  radius: number
+}
+
+export interface PvpZoneProximity {
+  zone: PvpZone
+  inside: boolean
+  distanceToBoundary: number
+}
+
+export const PVP_ZONES: readonly PvpZone[] = [
+  {
+    id: 'practice',
+    quantumId: 'pvp.practice',
+    name: 'Practice Arena',
+    kind: 'Open combat beacon',
+    center: PVP_PRACTICE_ZONE_CENTER,
+    radius: PVP_ZONE_RADIUS,
+  },
+  {
+    id: 'ranked',
+    quantumId: 'pvp.ranked',
+    name: 'Ranked Arena',
+    kind: 'Holder-ranked beacon',
+    center: PVP_RANKED_ZONE_CENTER,
+    radius: PVP_ZONE_RADIUS,
+  },
+]
+
+export const PVP_ARENA_DESTINATIONS = PVP_ZONES.map(({ quantumId, name, kind, center, radius }) => ({
+  id: quantumId,
+  name,
+  kind,
+  position: center,
+  radius,
+})) as readonly {
+  id: string
+  name: string
+  kind: string
+  position: Vector3
+  radius: number
+}[]
+
+export const PVP_ARENA_ID = PVP_ARENA_DESTINATIONS[0].id
+export const PVP_ARENA_NAME = PVP_ARENA_DESTINATIONS[0].name
+export const PVP_ARENA_KIND = PVP_ARENA_DESTINATIONS[0].kind
 
 export interface PvpWeaponStat {
   damage: number
@@ -23,19 +77,48 @@ export const PVP_WEAPONS: Record<ShipType, PvpWeaponStat> = {
   interceptor: { damage: 9, interval: 0.14 },
 }
 
+export function pvpZoneAt(position: Vector3): PvpZone | null {
+  return PVP_ZONES.find((zone) => position.distanceToSquared(zone.center) <= zone.radius * zone.radius) ?? null
+}
+
+export function pvpZoneProximity(position: Vector3): PvpZoneProximity | null {
+  let nearest: PvpZoneProximity | null = null
+  for (const zone of PVP_ZONES) {
+    const signedDistance = position.distanceTo(zone.center) - zone.radius
+    const distanceToBoundary = Math.abs(signedDistance)
+    if (signedDistance > PVP_ARENA_ENTRY_HINT_DISTANCE) continue
+    if (!nearest || distanceToBoundary < nearest.distanceToBoundary) {
+      nearest = { zone, inside: signedDistance <= 0, distanceToBoundary }
+    }
+  }
+  return nearest
+}
+
 export function isInPvpZone(position: Vector3): boolean {
-  return position.distanceToSquared(PVP_ZONE_CENTER) <= PVP_ZONE_RADIUS * PVP_ZONE_RADIUS
+  return pvpZoneAt(position) !== null
+}
+
+export function isInRankedPvpZone(position: Vector3): boolean {
+  return pvpZoneAt(position)?.id === 'ranked'
+}
+
+export function rankedPvpAccess(holderBalance: number): boolean {
+  return Number(holderBalance) >= PVP_RANKED_MIN_TOKEN_BALANCE
+}
+
+export function allowsPveHostiles(position: Vector3): boolean {
+  return !isInPvpZone(position)
 }
 
 export function pvpZoneIntensity(position: Vector3): number {
-  const d = position.distanceTo(PVP_ZONE_CENTER)
+  const d = Math.min(...PVP_ZONES.map((zone) => position.distanceTo(zone.center)))
   return Math.max(0, Math.min(1, 1 - d / PVP_ZONE_RADIUS))
 }
 
-export function pvpArenaApproachPoint(from: Vector3): Vector3 {
-  const dir = from.clone().sub(PVP_ZONE_CENTER)
+export function pvpArenaApproachPoint(from: Vector3, center = PVP_ZONE_CENTER): Vector3 {
+  const dir = from.clone().sub(center)
   if (dir.lengthSq() < 1) dir.set(0, 0, 1)
-  return PVP_ZONE_CENTER.clone().add(dir.normalize().multiplyScalar(PVP_ARENA_APPROACH_DISTANCE))
+  return center.clone().add(dir.normalize().multiplyScalar(PVP_ARENA_APPROACH_DISTANCE))
 }
 
 export function pvpWeaponForShip(type: ShipType): PvpWeaponStat {

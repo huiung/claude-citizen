@@ -26,6 +26,11 @@ export function holderTier(balance) {
   return 0
 }
 
+export function holderStatus(balance) {
+  const safeBalance = Math.max(0, Number(balance) || 0)
+  return { balance: safeBalance, tier: holderTier(safeBalance) }
+}
+
 /** pubkey → tier (number) with TTL. get() returns null on miss/expiry, the cached tier
  *  otherwise (so a known non-holder tier 0 is distinct from an unknown null). */
 export function createHolderCache(ttlMs = 5 * 60 * 1000) {
@@ -43,8 +48,8 @@ export function createHolderCache(ttlMs = 5 * 60 * 1000) {
 
 /** Query Helius for `pubkey`'s holding of `mint` and resolve a cosmetic tier (0..3).
  *  Resolves 0 on any failure (network, rate limit, missing key) — game just shows no flair. */
-export async function fetchHolderTier(pubkey, { apiKey, mint }) {
-  if (!apiKey || !mint || !pubkey) return 0
+export async function fetchHolderStatus(pubkey, { apiKey, mint }) {
+  if (!apiKey || !mint || !pubkey) return holderStatus(0)
   try {
     const res = await fetch(`https://mainnet.helius-rpc.com/?api-key=${apiKey}`, {
       method: 'POST',
@@ -54,9 +59,13 @@ export async function fetchHolderTier(pubkey, { apiKey, mint }) {
         params: [pubkey, { mint }, { encoding: 'jsonParsed' }],
       }),
     })
-    if (!res.ok) return 0
-    return holderTier(parseHolderBalance(await res.json()))
+    if (!res.ok) return holderStatus(0)
+    return holderStatus(parseHolderBalance(await res.json()))
   } catch {
-    return 0
+    return holderStatus(0)
   }
+}
+
+export async function fetchHolderTier(pubkey, opts) {
+  return (await fetchHolderStatus(pubkey, opts)).tier
 }

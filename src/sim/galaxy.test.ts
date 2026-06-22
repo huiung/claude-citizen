@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Vector3 } from 'three'
 import { COLONY_POS, REFINERY_POS } from '../render/world'
+import { PVP_ARENA_CLEAR_RADIUS, PVP_ZONE_CENTER } from './pvp'
 import {
   CELL_SIZE, type Celestial, EXCLUSION_RADIUS, queryCelestials,
 } from './galaxy'
@@ -97,6 +98,11 @@ describe('galaxy', () => {
 
   it('keeps the immediate spawn sphere completely empty', () => {
     expect(queryCelestials(new Vector3(0, 0, 0), EXCLUSION_RADIUS - 1000)).toEqual([])
+  })
+
+  it('keeps the PvP arena clear of procedural celestial bodies', () => {
+    expect(PVP_ARENA_CLEAR_RADIUS).toBeGreaterThan(0)
+    expect(queryCelestials(PVP_ZONE_CENTER, PVP_ARENA_CLEAR_RADIUS - 1000)).toEqual([])
   })
 
   it('is sparse — space feels vast, not cluttered', () => {

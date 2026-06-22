@@ -9,6 +9,7 @@
 
 import { Vector3 } from 'three'
 import { COLONY_POS, REFINERY_POS } from '../render/world'
+import { PVP_ARENA_CLEAR_RADIUS, PVP_ZONE_CENTER } from './pvp'
 
 export type CelestialType = 'planet' | 'moon' | 'asteroid-cluster' | 'station' | 'derelict'
 
@@ -37,10 +38,11 @@ export const CELL_SIZE = 24000
 export const EXCLUSION_RADIUS = 26000
 
 /** Anchors whose neighbourhoods stay pristine. */
-const EXCLUSION_ANCHORS: ReadonlyArray<Vector3> = [
-  new Vector3(0, 0, 0),
-  REFINERY_POS,
-  COLONY_POS,
+const EXCLUSION_ZONES: ReadonlyArray<{ center: Vector3; radius: number }> = [
+  { center: new Vector3(0, 0, 0), radius: EXCLUSION_RADIUS },
+  { center: REFINERY_POS, radius: EXCLUSION_RADIUS },
+  { center: COLONY_POS, radius: EXCLUSION_RADIUS },
+  { center: PVP_ZONE_CENTER, radius: PVP_ARENA_CLEAR_RADIUS },
 ]
 
 // --- Integer hashing -------------------------------------------------------
@@ -103,9 +105,8 @@ const MAX_BODIES_PER_CELL = 2
 
 /** True if `p` falls inside any pristine exclusion zone. */
 function inExclusionZone(p: Vector3): boolean {
-  const r2 = EXCLUSION_RADIUS * EXCLUSION_RADIUS
-  for (const anchor of EXCLUSION_ANCHORS) {
-    if (p.distanceToSquared(anchor) <= r2) return true
+  for (const zone of EXCLUSION_ZONES) {
+    if (p.distanceToSquared(zone.center) <= zone.radius * zone.radius) return true
   }
   return false
 }
