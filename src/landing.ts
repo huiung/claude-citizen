@@ -8,10 +8,13 @@ import { LandingMusic } from './audio/landingMusic'
 import { holderCaptureLaunchConfig } from './ui/landingCapture'
 import {
   canPageLeaderboard,
+  leaderboardEndpointUrl,
+  leaderboardMetricText,
   leaderboardRangeText,
   leaderboardUrl,
   nextLeaderboardOffset,
   normalizeLeaderboardPage,
+  type LeaderboardMode,
   type LeaderboardRow,
 } from './ui/leaderboard'
 
@@ -24,6 +27,9 @@ const launchLoadingTextEl = document.getElementById('launch-loading-text')!
 const statOnlineEl = document.getElementById('stat-online')!
 const statRegisteredEl = document.getElementById('stat-registered')!
 const lbListLandingEl = document.getElementById('lb-list-landing')!
+const lbTitleLandingEl = document.getElementById('lb-title-landing')!
+const lbModeCareerLandingEl = document.getElementById('lb-mode-career-landing') as HTMLButtonElement
+const lbModePvpLandingEl = document.getElementById('lb-mode-pvp-landing') as HTMLButtonElement
 const lbPrevLandingEl = document.getElementById('lb-prev-landing') as HTMLButtonElement
 const lbNextLandingEl = document.getElementById('lb-next-landing') as HTMLButtonElement
 const lbPageLandingEl = document.getElementById('lb-page-landing')!
@@ -38,7 +44,10 @@ const walletStatusEl = document.getElementById('wallet-status')!
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:8080`
 const STATS_URL = WS_URL.replace(/^ws/, 'http') + '/stats'
-const LEADERBOARD_URL = WS_URL.replace(/^ws/, 'http') + '/leaderboard'
+const LEADERBOARD_URLS: Record<LeaderboardMode, string> = {
+  career: leaderboardEndpointUrl(WS_URL, 'career'),
+  pvp: leaderboardEndpointUrl(WS_URL, 'pvp'),
+}
 
 nicknameEl.value = localStorage.getItem('callsign') ?? ''
 
@@ -57,6 +66,7 @@ let pendingPubkey: string | null = null
 let netConnected = false
 let launchStarted = false
 let leaderboardOffset = 0
+let leaderboardMode: LeaderboardMode = 'career'
 const landingMusic = new LandingMusic()
 
 myCodeEl.textContent = playerToken
@@ -72,20 +82,43 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c)
 }
 
+function leaderboardMetric(row: LeaderboardRow): string {
+  if (leaderboardMode === 'pvp') return leaderboardMetricText(row, 'pvp')
+  const cr = Number(row.earned) || 0
+  return `[${rankForCredits(cr).name}] ${leaderboardMetricText(row, 'career')}`
+}
+
+function syncLeaderboardModeButtons(): void {
+  lbTitleLandingEl.textContent = leaderboardMode === 'pvp' ? '◆ RANKED PVP' : '◆ TOP PILOTS'
+  lbModeCareerLandingEl.classList.toggle('active', leaderboardMode === 'career')
+  lbModePvpLandingEl.classList.toggle('active', leaderboardMode === 'pvp')
+  lbModeCareerLandingEl.setAttribute('aria-pressed', String(leaderboardMode === 'career'))
+  lbModePvpLandingEl.setAttribute('aria-pressed', String(leaderboardMode === 'pvp'))
+}
+
+function setLeaderboardMode(mode: LeaderboardMode): void {
+  if (leaderboardMode === mode) return
+  leaderboardMode = mode
+  leaderboardOffset = 0
+  syncLeaderboardModeButtons()
+  fetchLeaderboard()
+}
+
 function renderLeaderboard(rows: LeaderboardRow[], offset: number): void {
   if (!rows.length) {
-    lbListLandingEl.innerHTML = '<li class="lb-empty">no pilots yet - be the first</li>'
+    lbListLandingEl.innerHTML = leaderboardMode === 'pvp'
+      ? '<li class="lb-empty">no ranked kills yet</li>'
+      : '<li class="lb-empty">no pilots yet - be the first</li>'
     return
   }
   lbListLandingEl.innerHTML = rows.map((r, i) => {
-    const cr = Number(r.earned) || 0
     return `<li><span class="rank">${r.rank ?? offset + i + 1}</span><span class="nm">${escapeHtml(String(r.name))}</span>`
-      + `<span class="cr">[${rankForCredits(cr).name}] ${cr.toLocaleString()} cr</span></li>`
+      + `<span class="cr">${escapeHtml(leaderboardMetric(r))}</span></li>`
   }).join('')
 }
 
 function fetchLeaderboard(): void {
-  fetch(leaderboardUrl(LEADERBOARD_URL, leaderboardOffset))
+  fetch(leaderboardUrl(LEADERBOARD_URLS[leaderboardMode], leaderboardOffset))
     .then((r) => r.json())
     .then((payload) => {
       const page = normalizeLeaderboardPage(payload, leaderboardOffset)
@@ -105,6 +138,9 @@ function changeLeaderboardPage(dir: -1 | 1): void {
 
 lbPrevLandingEl.addEventListener('click', () => changeLeaderboardPage(-1))
 lbNextLandingEl.addEventListener('click', () => changeLeaderboardPage(1))
+lbModeCareerLandingEl.addEventListener('click', () => setLeaderboardMode('career'))
+lbModePvpLandingEl.addEventListener('click', () => setLeaderboardMode('pvp'))
+syncLeaderboardModeButtons()
 
 function refreshLandingStats(): void {
   fetch(STATS_URL)

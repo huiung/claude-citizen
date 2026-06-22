@@ -1,10 +1,15 @@
 export const LEADERBOARD_PAGE_SIZE = 10
 export const LEADERBOARD_MAX_RANK = 100
+export type LeaderboardMode = 'career' | 'pvp'
 
 export interface LeaderboardRow {
   rank?: number
   name: string
-  earned: number
+  earned?: number
+  kills?: number
+  deaths?: number
+  streak?: number
+  bestStreak?: number
 }
 
 export interface LeaderboardPage {
@@ -22,6 +27,20 @@ export function leaderboardUrl(baseUrl: string, offset: number): string {
   url.searchParams.set('limit', String(LEADERBOARD_PAGE_SIZE))
   if (baseUrl.startsWith('http://') || baseUrl.startsWith('https://')) return url.toString()
   return `${url.pathname}${url.search}`
+}
+
+export function leaderboardEndpointUrl(wsUrl: string, mode: LeaderboardMode): string {
+  return wsUrl.replace(/^ws/, 'http') + (mode === 'pvp' ? '/pvp-leaderboard' : '/leaderboard')
+}
+
+export function leaderboardMetricText(row: LeaderboardRow, mode: LeaderboardMode): string {
+  if (mode === 'pvp') {
+    const kills = Number(row.kills) || 0
+    const deaths = Number(row.deaths) || 0
+    const streak = Number(row.streak) || 0
+    return `${kills.toLocaleString()} K / ${deaths.toLocaleString()} D · streak ${streak.toLocaleString()}`
+  }
+  return `${(Number(row.earned) || 0).toLocaleString()} cr`
 }
 
 export function normalizeLeaderboardPage(payload: unknown, fallbackOffset = 0): LeaderboardPage {

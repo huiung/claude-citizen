@@ -65,10 +65,13 @@ import { SolarSystemMap, type SolarMapDestinationResult, type SolarMapNavigation
 import { holderChatNameClass, holderNameplateClass, holderNameplateText } from './ui/nameplate'
 import {
   canPageLeaderboard,
+  leaderboardEndpointUrl,
+  leaderboardMetricText,
   leaderboardRangeText,
   leaderboardUrl,
   nextLeaderboardOffset,
   normalizeLeaderboardPage,
+  type LeaderboardMode,
   type LeaderboardPage,
   type LeaderboardRow,
 } from './ui/leaderboard'
@@ -272,10 +275,19 @@ connectWalletBtn.addEventListener('click', () => {
 // Landing stats (online / registered pilots) from the relay's /stats endpoint.
 const WS_URL = import.meta.env.VITE_WS_URL ?? `ws://${location.hostname}:8080`
 const STATS_URL = WS_URL.replace(/^ws/, 'http') + '/stats'
-const LEADERBOARD_URL = WS_URL.replace(/^ws/, 'http') + '/leaderboard'
+const LEADERBOARD_URLS: Record<LeaderboardMode, string> = {
+  career: leaderboardEndpointUrl(WS_URL, 'career'),
+  pvp: leaderboardEndpointUrl(WS_URL, 'pvp'),
+}
 const lbListLandingEl = document.getElementById('lb-list-landing')!
 const lbListHudEl = document.getElementById('lb-list-hud')!
 const leaderboardPanelEl = document.getElementById('leaderboard-panel')!
+const lbTitleLandingEl = document.getElementById('lb-title-landing')!
+const lbTitleHudEl = document.getElementById('lb-title-hud')!
+const lbModeCareerLandingEl = document.getElementById('lb-mode-career-landing') as HTMLButtonElement
+const lbModePvpLandingEl = document.getElementById('lb-mode-pvp-landing') as HTMLButtonElement
+const lbModeCareerHudEl = document.getElementById('lb-mode-career-hud') as HTMLButtonElement
+const lbModePvpHudEl = document.getElementById('lb-mode-pvp-hud') as HTMLButtonElement
 const lbPrevLandingEl = document.getElementById('lb-prev-landing') as HTMLButtonElement
 const lbNextLandingEl = document.getElementById('lb-next-landing') as HTMLButtonElement
 const lbPageLandingEl = document.getElementById('lb-page-landing')!
@@ -285,6 +297,8 @@ const lbPageHudEl = document.getElementById('lb-page-hud')!
 let statsTimer: ReturnType<typeof setInterval> | undefined
 let landingLeaderboardOffset = 0
 let hudLeaderboardOffset = 0
+let landingLeaderboardMode: LeaderboardMode = 'career'
+let hudLeaderboardMode: LeaderboardMode = 'career'
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c)
@@ -297,14 +311,46 @@ function renderLeaderboardRows(listEl: HTMLElement, rows: LeaderboardRow[], offs
       + `<span class="cr">[${rankForCredits(cr).name}] ${cr.toLocaleString()} cr</span></li>`
   }).join('')
 }
+function leaderboardMetric(row: LeaderboardRow, mode: LeaderboardMode): string {
+  if (mode === 'pvp') return leaderboardMetricText(row, 'pvp')
+  const cr = Number(row.earned) || 0
+  return `[${rankForCredits(cr).name}] ${leaderboardMetricText(row, 'career')}`
+}
+function renderLeaderboardRowsForMode(listEl: HTMLElement, rows: LeaderboardRow[], offset: number, mode: LeaderboardMode): void {
+  if (!rows.length) {
+    listEl.innerHTML = mode === 'pvp'
+      ? '<li class="lb-empty">no ranked kills yet</li>'
+      : '<li class="lb-empty">no pilots yet - be the first</li>'
+    return
+  }
+  listEl.innerHTML = rows.map((r, i) => {
+    return `<li><span class="rank">${r.rank ?? offset + i + 1}</span><span class="nm">${escapeHtml(String(r.name))}</span>`
+      + `<span class="cr">${escapeHtml(leaderboardMetric(r, mode))}</span></li>`
+  }).join('')
+}
+function syncLeaderboardModeButtons(slot: 'landing' | 'hud'): void {
+  const mode = slot === 'landing' ? landingLeaderboardMode : hudLeaderboardMode
+  const title = slot === 'landing' ? lbTitleLandingEl : lbTitleHudEl
+  const careerBtn = slot === 'landing' ? lbModeCareerLandingEl : lbModeCareerHudEl
+  const pvpBtn = slot === 'landing' ? lbModePvpLandingEl : lbModePvpHudEl
+  title.textContent = mode === 'pvp'
+    ? (slot === 'landing' ? '◆ RANKED PVP' : '◆ RANKED PVP · kills')
+    : (slot === 'landing' ? '◆ TOP PILOTS' : '◆ TOP PILOTS · credits')
+  careerBtn.classList.toggle('active', mode === 'career')
+  pvpBtn.classList.toggle('active', mode === 'pvp')
+  careerBtn.setAttribute('aria-pressed', String(mode === 'career'))
+  pvpBtn.setAttribute('aria-pressed', String(mode === 'pvp'))
+}
 function renderLeaderboardPage(
   listEl: HTMLElement,
   rangeEl: HTMLElement,
   prevEl: HTMLButtonElement,
   nextEl: HTMLButtonElement,
   page: LeaderboardPage,
+  mode: LeaderboardMode,
 ): void {
-  renderLeaderboardRows(listEl, page.rows, page.offset)
+  if (mode === 'career') renderLeaderboardRows(listEl, page.rows, page.offset)
+  else renderLeaderboardRowsForMode(listEl, page.rows, page.offset, mode)
   rangeEl.textContent = leaderboardRangeText(page)
   const canPage = canPageLeaderboard(page)
   prevEl.disabled = !canPage.prev
@@ -312,13 +358,27 @@ function renderLeaderboardPage(
 }
 function fetchLeaderboard(slot: 'landing' | 'hud'): void {
   const offset = slot === 'landing' ? landingLeaderboardOffset : hudLeaderboardOffset
-  fetch(leaderboardUrl(LEADERBOARD_URL, offset)).then((r) => r.json())
+  const mode = slot === 'landing' ? landingLeaderboardMode : hudLeaderboardMode
+  fetch(leaderboardUrl(LEADERBOARD_URLS[mode], offset)).then((r) => r.json())
     .then((payload) => {
       const page = normalizeLeaderboardPage(payload, offset)
-      if (slot === 'landing') renderLeaderboardPage(lbListLandingEl, lbPageLandingEl, lbPrevLandingEl, lbNextLandingEl, page)
-      else renderLeaderboardPage(lbListHudEl, lbPageHudEl, lbPrevHudEl, lbNextHudEl, page)
+      if (slot === 'landing') renderLeaderboardPage(lbListLandingEl, lbPageLandingEl, lbPrevLandingEl, lbNextLandingEl, page, mode)
+      else renderLeaderboardPage(lbListHudEl, lbPageHudEl, lbPrevHudEl, lbNextHudEl, page, mode)
     })
     .catch(() => { /* relay offline */ })
+}
+function setLeaderboardMode(slot: 'landing' | 'hud', mode: LeaderboardMode): void {
+  if (slot === 'landing') {
+    if (landingLeaderboardMode === mode) return
+    landingLeaderboardMode = mode
+    landingLeaderboardOffset = 0
+  } else {
+    if (hudLeaderboardMode === mode) return
+    hudLeaderboardMode = mode
+    hudLeaderboardOffset = 0
+  }
+  syncLeaderboardModeButtons(slot)
+  fetchLeaderboard(slot)
 }
 function changeLeaderboardPage(slot: 'landing' | 'hud', dir: -1 | 1): void {
   if (slot === 'landing') landingLeaderboardOffset = nextLeaderboardOffset(landingLeaderboardOffset, dir)
@@ -329,6 +389,12 @@ lbPrevLandingEl.addEventListener('click', () => changeLeaderboardPage('landing',
 lbNextLandingEl.addEventListener('click', () => changeLeaderboardPage('landing', 1))
 lbPrevHudEl.addEventListener('click', () => changeLeaderboardPage('hud', -1))
 lbNextHudEl.addEventListener('click', () => changeLeaderboardPage('hud', 1))
+lbModeCareerLandingEl.addEventListener('click', () => setLeaderboardMode('landing', 'career'))
+lbModePvpLandingEl.addEventListener('click', () => setLeaderboardMode('landing', 'pvp'))
+lbModeCareerHudEl.addEventListener('click', () => setLeaderboardMode('hud', 'career'))
+lbModePvpHudEl.addEventListener('click', () => setLeaderboardMode('hud', 'pvp'))
+syncLeaderboardModeButtons('landing')
+syncLeaderboardModeButtons('hud')
 function refreshLandingStats(): void {
   fetch(STATS_URL)
     .then((r) => r.json())

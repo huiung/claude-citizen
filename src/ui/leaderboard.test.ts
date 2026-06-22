@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   canPageLeaderboard,
+  leaderboardEndpointUrl,
+  leaderboardMetricText,
   leaderboardRangeText,
   leaderboardUrl,
   nextLeaderboardOffset,
@@ -33,5 +35,15 @@ describe('leaderboard UI paging', () => {
     expect(leaderboardUrl('https://example.test/leaderboard', 999)).toBe('https://example.test/leaderboard?offset=90&limit=10')
     expect(nextLeaderboardOffset(90, 1)).toBe(90)
     expect(nextLeaderboardOffset(10, -1)).toBe(0)
+  })
+
+  it('builds career and PvP leaderboard endpoints from a websocket url', () => {
+    expect(leaderboardEndpointUrl('ws://127.0.0.1:8080', 'career')).toBe('http://127.0.0.1:8080/leaderboard')
+    expect(leaderboardEndpointUrl('wss://claudecitizen.com', 'pvp')).toBe('https://claudecitizen.com/pvp-leaderboard')
+  })
+
+  it('formats career and PvP row metrics', () => {
+    expect(leaderboardMetricText({ name: 'ACE', earned: 1234 }, 'career')).toBe('1,234 cr')
+    expect(leaderboardMetricText({ name: 'ACE', kills: 7, deaths: 2, streak: 3 }, 'pvp')).toBe('7 K / 2 D · streak 3')
   })
 })

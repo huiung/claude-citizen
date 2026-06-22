@@ -275,6 +275,14 @@
     #landing-stats span { color: #ffe08a; font-weight: 600; }
     .lb { margin: 10px auto 0; width: 300px; text-align: left; font: 12px/1.6 "Share Tech Mono", ui-monospace, Consolas, monospace; }
     .lb-title { color: #9fffb0; letter-spacing: 1px; font-weight: 600; margin-bottom: 5px; text-align: center; }
+    .lb-tabs { display: flex; justify-content: center; gap: 5px; margin-bottom: 6px; }
+    .lb-mode {
+      pointer-events: auto; cursor: pointer; border-radius: 4px; border: 1px solid rgba(159, 255, 176, .24);
+      background: rgba(0, 18, 8, .38); color: #7fc99a; font: 700 10px "Share Tech Mono", ui-monospace, monospace;
+      letter-spacing: 1px; padding: 3px 9px;
+    }
+    .lb-mode.active { border-color: rgba(255, 224, 138, .55); color: #ffe08a; background: rgba(42, 30, 4, .5); }
+    .lb-mode:not(.active):hover { border-color: rgba(159, 255, 176, .55); color: #9fffb0; }
     .lb ol { list-style: none; margin: 0; padding: 0; }
     .lb li { display: flex; gap: 8px; padding: 1px 4px; color: #cfe3d0; }
     .lb li .rank { color: #ffe08a; width: 1.5em; flex: none; }
@@ -298,6 +306,7 @@
       border: 1px solid rgba(159, 255, 176, .28); background: rgba(0, 18, 8, .55);
       color: #9fffb0; font: 700 13px "Share Tech Mono", ui-monospace, monospace;
     }
+    #overlay .lb-mode { padding: 3px 9px; letter-spacing: 1px; font-size: 10px; }
     #leaderboard-panel {
       position: fixed; top: 50%; right: 24px; transform: translateY(-50%);
       background: rgba(2, 8, 12, .82); border: 1px solid rgba(159, 255, 176, .25);
@@ -361,7 +370,11 @@
   <div id="mine-prompt" hidden>⛏ MINING ORE — hold to extract</div>
   <div id="leaderboard-panel" hidden>
     <div class="lb">
-      <div class="lb-title">◆ TOP PILOTS · credits</div>
+      <div class="lb-title" id="lb-title-hud">◆ TOP PILOTS · credits</div>
+      <div class="lb-tabs" role="tablist" aria-label="Leaderboard mode">
+        <button class="lb-mode active" id="lb-mode-career-hud" type="button">CAREER</button>
+        <button class="lb-mode" id="lb-mode-pvp-hud" type="button">PVP</button>
+      </div>
       <ol id="lb-list-hud"><li class="lb-empty">—</li></ol>
       <div class="lb-pager" data-lb="hud">
         <button class="lb-prev" id="lb-prev-hud" type="button" aria-label="Previous leaderboard page">‹</button>
@@ -410,7 +423,11 @@
     <p>An open-source space MMO — mine, trade, fight pirates, and jump across the galaxy with other pilots, right in your browser.<br/>Built with Claude. Not affiliated with CIG/RSI.</p>
     <div id="landing-stats"><span id="stat-online">—</span> online · <span id="stat-registered">—</span> pilots registered</div>
     <div id="leaderboard-landing" class="lb">
-      <div class="lb-title">◆ TOP PILOTS</div>
+      <div class="lb-title" id="lb-title-landing">◆ TOP PILOTS</div>
+      <div class="lb-tabs" role="tablist" aria-label="Leaderboard mode">
+        <button class="lb-mode active" id="lb-mode-career-landing" type="button">CAREER</button>
+        <button class="lb-mode" id="lb-mode-pvp-landing" type="button">PVP</button>
+      </div>
       <ol id="lb-list-landing"><li class="lb-empty">—</li></ol>
       <div class="lb-pager" data-lb="landing">
         <button class="lb-prev" id="lb-prev-landing" type="button" aria-label="Previous leaderboard page">‹</button>

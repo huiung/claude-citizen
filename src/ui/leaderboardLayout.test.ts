@@ -16,4 +16,11 @@ describe('landing leaderboard layout CSS', () => {
     expect(block).toContain('background: rgba(0, 18, 8, .55)')
     expect(block).toContain('font: 700 13px "Share Tech Mono"')
   })
+
+  it('renders Career and PvP tabs for both launch and HUD leaderboards', () => {
+    expect(html).toContain('id="lb-mode-career-landing"')
+    expect(html).toContain('id="lb-mode-pvp-landing"')
+    expect(html).toContain('id="lb-mode-career-hud"')
+    expect(html).toContain('id="lb-mode-pvp-hud"')
+  })
 })

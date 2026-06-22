@@ -10,7 +10,8 @@ import {
 } from './auth.mjs'
 import { fetchHolderStatus, createHolderCache } from './holders.mjs'
 import { leaderboardPage, parseLeaderboardParams } from './leaderboard.mjs'
-import { applyPvpHit, isInPvpZone, normalizeShip, resetPvpHull } from './pvp.mjs'
+import { pvpLeaderboardPage, mergePvpStats, recordRankedPvpKill } from './pvpLeaderboard.mjs'
+import { applyPvpHit, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
 
 function loadEnvFile(path = '.env') {
   let text
@@ -83,6 +84,12 @@ const httpServer = createServer((req, res) => {
   if (req.url?.startsWith('/leaderboard')) {
     // Top pilots by credits — every activity (mining, bounties, contracts) settles into credits.
     const top = leaderboardPage(store, parseLeaderboardParams(req.url))
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+    res.end(JSON.stringify(req.url.includes('?') ? top : top.rows))
+    return
+  }
+  if (req.url?.startsWith('/pvp-leaderboard')) {
+    const top = pvpLeaderboardPage(store, parseLeaderboardParams(req.url))
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
     res.end(JSON.stringify(req.url.includes('?') ? top : top.rows))
     return
@@ -292,6 +299,16 @@ wss.on('connection', (ws) => {
       send(ws, { t: 'pvp-hit', targetId: target.id, hull: result.hull, maxHull: result.maxHull, damage: result.damage, killed: result.killed })
       send(targetWs, { t: 'pvp-damage', attackerId: client.id, attackerName: client.name, hull: result.hull, maxHull: result.maxHull, damage: result.damage, killed: result.killed })
       if (result.killed) {
+        if (result.reward > 0 && pvpZoneAt(client.p)?.id === 'ranked') {
+          const recorded = recordRankedPvpKill(store, {
+            killerKey: identityKey(client),
+            killerName: client.name,
+            victimKey: identityKey(target),
+            victimName: target.name,
+            now: Date.now(),
+          })
+          if (recorded) flush()
+        }
         if (result.reward > 0) send(ws, { t: 'pvp-reward', credits: result.reward, victimId: target.id, victimName: target.name })
         broadcastAll({
           t: 'pvp-kill',
@@ -310,7 +327,11 @@ wss.on('connection', (ws) => {
       const key = identityKey(client)
       if (!key) return
       const clean = sanitizeProgress(msg.progress)
-      if (clean) { clean.name = client.name; store[key] = clean; flush() } // stamp callsign for the leaderboard
+      if (clean) {
+        clean.name = client.name
+        store[key] = mergePvpStats(clean, store[key])
+        flush()
+      } // stamp callsign for the leaderboard
       return
     }
 
