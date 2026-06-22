@@ -17,11 +17,18 @@ function stats(overrides = {}) {
   }
 }
 
+const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+function wallet(n = 0) {
+  return `${'1'.repeat(31)}${BASE58[n % BASE58.length]}${BASE58[Math.floor(n / BASE58.length) % BASE58.length]}`
+}
+
 describe('ranked PvP leaderboard', () => {
   it('records a ranked kill, victim death, streak, and best streak', () => {
+    const killerKey = wallet(1)
+    const victimKey = wallet(2)
     const store = {
-      killer: { name: 'OLDACE', earned: 100 },
-      victim: {
+      [killerKey]: { name: 'OLDACE', earned: 100 },
+      [victimKey]: {
         name: 'BRAVO',
         earned: 80,
         pvp: stats({ rankedKills: 2, rankedDeaths: 1, rankedStreak: 2, bestRankedStreak: 2, lastRankedKillAt: 500 }),
@@ -29,22 +36,22 @@ describe('ranked PvP leaderboard', () => {
     }
 
     recordRankedPvpKill(store, {
-      killerKey: 'killer',
+      killerKey,
       killerName: 'ACE',
-      victimKey: 'victim',
+      victimKey,
       victimName: 'BRAVO',
       now: 1000,
     })
 
-    expect(store.killer.pvp).toEqual(stats({
+    expect(store[killerKey].pvp).toEqual(stats({
       rankedKills: 1,
       rankedDeaths: 0,
       rankedStreak: 1,
       bestRankedStreak: 1,
       lastRankedKillAt: 1000,
     }))
-    expect(store.killer.name).toBe('ACE')
-    expect(store.victim.pvp).toEqual(stats({
+    expect(store[killerKey].name).toBe('ACE')
+    expect(store[victimKey].pvp).toEqual(stats({
       rankedKills: 2,
       rankedDeaths: 2,
       rankedStreak: 0,
@@ -55,18 +62,18 @@ describe('ranked PvP leaderboard', () => {
 
   it('sorts ranked PvP rows by kills, best streak, fewer deaths, then recency', () => {
     const store = {
-      alpha: { name: 'ALPHA', pvp: stats({ rankedKills: 3, rankedDeaths: 2, bestRankedStreak: 3, lastRankedKillAt: 100 }) },
-      bravo: { name: 'BRAVO', pvp: stats({ rankedKills: 3, rankedDeaths: 1, bestRankedStreak: 2, lastRankedKillAt: 900 }) },
-      charlie: { name: 'CHARLIE', pvp: stats({ rankedKills: 3, rankedDeaths: 1, bestRankedStreak: 2, lastRankedKillAt: 1200 }) },
-      delta: { name: 'DELTA', pvp: stats({ rankedKills: 0, rankedDeaths: 8 }) },
+      [wallet(1)]: { name: 'ALPHA', pvp: stats({ rankedKills: 3, rankedDeaths: 2, bestRankedStreak: 3, lastRankedKillAt: 100 }) },
+      [wallet(2)]: { name: 'BRAVO', pvp: stats({ rankedKills: 3, rankedDeaths: 1, bestRankedStreak: 2, lastRankedKillAt: 900 }) },
+      [wallet(3)]: { name: 'CHARLIE', pvp: stats({ rankedKills: 3, rankedDeaths: 1, bestRankedStreak: 2, lastRankedKillAt: 1200 }) },
+      [wallet(4)]: { name: 'DELTA', pvp: stats({ rankedKills: 0, rankedDeaths: 8 }) },
     }
 
     const page = pvpLeaderboardPage(store, { offset: 0, limit: 10 })
 
-    expect(page.rows.map((row) => row.name)).toEqual(['ALPHA', 'CHARLIE', 'BRAVO'])
-    expect(page.rows[0]).toEqual({
+    expect(page.rows.map((row) => row.callsign)).toEqual(['ALPHA', 'CHARLIE', 'BRAVO'])
+    expect(page.rows[0]).toMatchObject({
       rank: 1,
-      name: 'ALPHA',
+      name: `ALPHA (${wallet(1).slice(0, 4)}...${wallet(1).slice(-4)})`,
       kills: 3,
       deaths: 2,
       streak: 0,
@@ -76,35 +83,56 @@ describe('ranked PvP leaderboard', () => {
   })
 
   it('shows shortened wallet addresses for ranked PvP wallet identities', () => {
-    const wallet = '7GgB2mDWpD6nA3xJ9sS6e5zqZTa3YL6hFLaeL5Qz6QnU'
+    const key = '7GgB2mDWpD6nA3xJ9sS6e5zqZTa3YL6hFLaeL5Qz6QnU'
     const store = {
-      [wallet]: { name: 'DUPENAME', pvp: stats({ rankedKills: 4, lastRankedKillAt: 1000 }) },
+      [key]: { name: 'DUPENAME', pvp: stats({ rankedKills: 4, lastRankedKillAt: 1000 }) },
       anonToken: { name: 'PILOT', pvp: stats({ rankedKills: 1, lastRankedKillAt: 900 }) },
     }
 
     const page = pvpLeaderboardPage(store, { offset: 0, limit: 10 })
 
     expect(page.rows[0]).toMatchObject({
-      name: '7GgB...6QnU',
+      name: 'DUPENAME (7GgB...6QnU)',
       wallet: '7GgB...6QnU',
       callsign: 'DUPENAME',
       kills: 4,
     })
-    expect(page.rows[1]).toMatchObject({ name: 'PILOT' })
+    expect(page.rows).toHaveLength(1)
+    expect(page.total).toBe(1)
+  })
+
+  it('rejects ranked PvP records without wallet identities', () => {
+    const store = {}
+
+    expect(recordRankedPvpKill(store, {
+      killerKey: 'anon-killer-token',
+      killerName: 'ANON',
+      victimKey: wallet(8),
+      victimName: 'TARGET',
+      now: 1000,
+    })).toBe(false)
+    expect(recordRankedPvpKill(store, {
+      killerKey: wallet(9),
+      killerName: 'ACE',
+      victimKey: 'anon-victim-token',
+      victimName: 'ANON',
+      now: 1000,
+    })).toBe(false)
+    expect(store).toEqual({})
   })
 
   it('pages ranked PvP rows with the same 100-rank cap as the career leaderboard', () => {
     const store = {}
     for (let i = 0; i < 120; i++) {
-      store[`p${i}`] = { name: `P${i}`, pvp: stats({ rankedKills: 120 - i, lastRankedKillAt: i }) }
+      store[wallet(i)] = { name: `P${i}`, pvp: stats({ rankedKills: 120 - i, lastRankedKillAt: i }) }
     }
 
     const page = pvpLeaderboardPage(store, { offset: 90, limit: 10 })
 
     expect(page.total).toBe(100)
     expect(page.rows).toHaveLength(10)
-    expect(page.rows[0]).toMatchObject({ rank: 91, name: 'P90', kills: 30 })
-    expect(page.rows[9]).toMatchObject({ rank: 100, name: 'P99', kills: 21 })
+    expect(page.rows[0]).toMatchObject({ rank: 91, callsign: 'P90', kills: 30 })
+    expect(page.rows[9]).toMatchObject({ rank: 100, callsign: 'P99', kills: 21 })
   })
 
   it('preserves existing PvP stats when normal progress is saved', () => {

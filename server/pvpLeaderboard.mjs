@@ -22,12 +22,17 @@ function ensureEntry(store, key, name) {
   return entry
 }
 
+function isWalletKey(key) {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(key ?? ''))
+}
+
 export function mergePvpStats(progress, previousEntry) {
   if (!previousEntry?.pvp) return progress
   return { ...progress, pvp: cleanStats(previousEntry.pvp) }
 }
 
 export function recordRankedPvpKill(store, { killerKey, killerName, victimKey, victimName, now }) {
+  if (!isWalletKey(killerKey) || !isWalletKey(victimKey)) return false
   const killer = ensureEntry(store, killerKey, killerName)
   const victim = ensureEntry(store, victimKey, victimName)
   if (!killer || !victim || killerKey === victimKey) return false
@@ -111,13 +116,13 @@ function pvpScore(entry) {
 
 function shortWallet(key) {
   const text = String(key ?? '')
-  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(text)) return null
+  if (!isWalletKey(text)) return null
   return `${text.slice(0, 4)}...${text.slice(-4)}`
 }
 
 export function pvpLeaderboardPage(store, { offset = 0, limit = LEADERBOARD_PAGE_SIZE } = {}) {
   const ranked = Object.entries(store)
-    .filter(([, entry]) => pvpScore(entry).rankedKills > 0)
+    .filter(([key, entry]) => isWalletKey(key) && pvpScore(entry).rankedKills > 0)
     .sort(([, a], [, b]) => {
       const ap = pvpScore(a)
       const bp = pvpScore(b)
@@ -133,7 +138,7 @@ export function pvpLeaderboardPage(store, { offset = 0, limit = LEADERBOARD_PAGE
       const wallet = shortWallet(key)
       const row = {
         rank: index + 1,
-        name: wallet ?? callsign,
+        name: wallet ? `${callsign} (${wallet})` : callsign,
         kills: pvp.rankedKills,
         deaths: pvp.rankedDeaths,
         streak: pvp.rankedStreak,
