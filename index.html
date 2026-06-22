@@ -112,6 +112,9 @@
       background: rgba(255, 90, 90, .15); border: 1px solid rgba(255, 120, 120, .35);
     }
     #hull-bar { display: block; height: 100%; width: 100%; background: #6fdc8c; transition: width .15s linear; }
+    #ship-identity { margin-top: 5px; font-size: 11px; line-height: 1.45; letter-spacing: .7px; color: #aee9ff; opacity: .78; }
+    #ship-identity b { color: #ffe08a; font-weight: 600; }
+    #ship-visual-line[hidden] { display: none; }
     #enemies { color: #ff8a6b; }
     #safe-zone { color: #6fdc8c; letter-spacing: 2px; text-shadow: 0 0 8px rgba(110, 220, 140, .5); }
     #pvp-zone { color: #ff5dff; letter-spacing: 2px; text-shadow: 0 0 10px rgba(255, 93, 255, .7); }
@@ -485,6 +488,10 @@
     <div>FLIGHT ASSIST: <span id="assist">COUPLED</span></div>
     <div id="boost" style="visibility:hidden">⚡ BOOST</div>
     <div id="hull-line">HULL <span id="hull-track"><i id="hull-bar"></i></span></div>
+    <div id="ship-identity">
+      <div>SHIP <b id="ship-class">HAULER</b></div>
+      <div id="ship-visual-line" hidden>VISUAL <b id="ship-visual">STANDARD HULL</b></div>
+    </div>
   </div>
   <div id="status" hidden>
     <div id="net">CONNECTING…</div>

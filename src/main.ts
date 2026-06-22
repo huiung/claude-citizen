@@ -87,6 +87,7 @@ import {
   saveHolderShipVisual,
   type HolderShipVisualId,
 } from './ui/holderShipVisual'
+import { hudShipIdentity } from './ui/shipIdentity'
 import {
   defaultOrbitDistance,
   defaultRearDistance,
@@ -181,6 +182,8 @@ function showPromotion(name: string): void {
 const dockPromptEl = document.getElementById('dock-prompt')!
 const mineEl = document.getElementById('mine-prompt')!
 const hullBarEl = document.getElementById('hull-bar')!
+const shipClassEl = document.getElementById('ship-class')!
+const shipVisualEl = document.getElementById('ship-visual')!
 const enemiesEl = document.getElementById('enemies')!
 const flashEl = document.getElementById('damage-flash')!
 const quantumEl = document.getElementById('quantum')!
@@ -1600,6 +1603,7 @@ function setPlayerCraft(type: ShipType): void {
   playerHealth.max = SHIP_STATS[type].hull
   playerHealth.hull = playerHealth.max
   saveHangar()
+  updateWalletHUD()
   // Upgrade to the generated GLB model if available (async; keeps the procedural hull on failure).
   const holderVisual = activeHolderShipVisual()
   const loadSeq = ++shipLoadSeq
@@ -1637,6 +1641,10 @@ function removePirateMesh(id: string): void {
 function updateWalletHUD(): void {
   creditsEl.textContent = String(Math.floor(econ.credits))
   cargoEl.textContent = `${Math.floor(cargoUsed(econ))}/${effCargo()}`
+  const identity = hudShipIdentity(selectedShipType, selectedHolderShipVisual, selfTier)
+  shipClassEl.textContent = identity.shipClass
+  shipVisualEl.textContent = identity.visual ?? ''
+  shipVisualEl.parentElement!.hidden = identity.visual === null
   // Rank: name + progress to next, with a one-shot promotion banner when it climbs.
   const rank = rankForCredits(econ.earned)
   rankNameEl.textContent = rank.bonus > 0 ? `${rank.name} +${Math.round(rank.bonus * 100)}%` : rank.name
