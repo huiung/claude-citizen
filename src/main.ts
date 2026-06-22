@@ -48,11 +48,12 @@ import {
   PVP_ARENA_CLEAR_RADIUS,
   PVP_ARENA_DESTINATIONS,
   PVP_PRACTICE_ZONE_CENTER,
+  PVP_PRACTICE_ZONE_RADIUS,
   PVP_PEER_HIT_RADIUS,
   PVP_RANKED_MIN_TOKEN_BALANCE,
   PVP_RANKED_ZONE_CENTER,
+  PVP_RANKED_ZONE_RADIUS,
   PVP_ZONE_CENTER,
-  PVP_ZONE_RADIUS,
   pvpArenaApproachPoint,
   pvpCombatActive,
   pvpWeaponForShip,
@@ -619,7 +620,7 @@ const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x010206)
 const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.5, 500000)
 
-function buildPvpArenaMarker(center: THREE.Vector3, color: number): THREE.Group {
+function buildPvpArenaMarker(center: THREE.Vector3, radius: number, color: number): THREE.Group {
   const group = new THREE.Group()
   group.position.copy(center)
   const boundaryMat = new THREE.MeshBasicMaterial({
@@ -645,11 +646,11 @@ function buildPvpArenaMarker(center: THREE.Vector3, color: number): THREE.Group 
     depthWrite: false,
   })
 
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(PVP_ZONE_RADIUS, 28, 8, 192), boundaryMat)
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(radius, 28, 8, 192), boundaryMat)
   ring.rotation.x = Math.PI / 2
   group.add(ring)
 
-  const band = new THREE.Mesh(new THREE.RingGeometry(PVP_ZONE_RADIUS - 135, PVP_ZONE_RADIUS + 135, 192), bandMat)
+  const band = new THREE.Mesh(new THREE.RingGeometry(radius - 135, radius + 135, 192), bandMat)
   band.rotation.x = Math.PI / 2
   band.position.y = -3
   group.add(band)
@@ -658,8 +659,8 @@ function buildPvpArenaMarker(center: THREE.Vector3, color: number): THREE.Group 
   const capGeo = new THREE.SphereGeometry(26, 12, 8)
   for (let i = 0; i < 16; i++) {
     const a = (i / 16) * Math.PI * 2
-    const x = Math.cos(a) * PVP_ZONE_RADIUS
-    const z = Math.sin(a) * PVP_ZONE_RADIUS
+    const x = Math.cos(a) * radius
+    const z = Math.sin(a) * radius
     const pillar = new THREE.Mesh(pillarGeo, beaconMat)
     pillar.position.set(x, 140, z)
     const cap = new THREE.Mesh(capGeo, beaconMat)
@@ -670,21 +671,21 @@ function buildPvpArenaMarker(center: THREE.Vector3, color: number): THREE.Group 
   return group
 }
 
-function buildPvpArenaLights(center: THREE.Vector3, keyColor: number, fillColor: number): THREE.Group {
+function buildPvpArenaLights(center: THREE.Vector3, radius: number, keyColor: number, fillColor: number): THREE.Group {
   const group = new THREE.Group()
   group.position.copy(center)
-  const key = new THREE.PointLight(keyColor, 5.2, PVP_ZONE_RADIUS * 2.4, 1.4)
+  const key = new THREE.PointLight(keyColor, 5.2, radius * 2.4, 1.4)
   key.position.set(-360, 260, 180)
-  const fill = new THREE.PointLight(fillColor, 3.6, PVP_ZONE_RADIUS * 2.1, 1.5)
+  const fill = new THREE.PointLight(fillColor, 3.6, radius * 2.1, 1.5)
   fill.position.set(420, -120, -260)
   group.add(key, fill)
   return group
 }
 
-scene.add(buildPvpArenaMarker(PVP_PRACTICE_ZONE_CENTER, 0x5df4ff))
-scene.add(buildPvpArenaLights(PVP_PRACTICE_ZONE_CENTER, 0x5df4ff, 0xff5dff))
-scene.add(buildPvpArenaMarker(PVP_RANKED_ZONE_CENTER, 0xffd24d))
-scene.add(buildPvpArenaLights(PVP_RANKED_ZONE_CENTER, 0xffd24d, 0xff5dff))
+scene.add(buildPvpArenaMarker(PVP_PRACTICE_ZONE_CENTER, PVP_PRACTICE_ZONE_RADIUS, 0x5df4ff))
+scene.add(buildPvpArenaLights(PVP_PRACTICE_ZONE_CENTER, PVP_PRACTICE_ZONE_RADIUS, 0x5df4ff, 0xff5dff))
+scene.add(buildPvpArenaMarker(PVP_RANKED_ZONE_CENTER, PVP_RANKED_ZONE_RADIUS, 0xffd24d))
+scene.add(buildPvpArenaLights(PVP_RANKED_ZONE_CENTER, PVP_RANKED_ZONE_RADIUS, 0xffd24d, 0xff5dff))
 
 // Bloom post-processing: make the sun, engines, lasers and lit windows actually glow.
 const composer = new EffectComposer(renderer)
@@ -1671,7 +1672,7 @@ function enforceRankedArenaAccess(now: number): void {
   _rankedBounceDir.copy(ship.position).sub(PVP_RANKED_ZONE_CENTER)
   if (_rankedBounceDir.lengthSq() < 1) _rankedBounceDir.set(0, 0, 1).applyQuaternion(ship.quaternion)
   _rankedBounceDir.normalize()
-  ship.position.copy(PVP_RANKED_ZONE_CENTER).addScaledVector(_rankedBounceDir, PVP_ZONE_RADIUS + 180)
+  ship.position.copy(PVP_RANKED_ZONE_CENTER).addScaledVector(_rankedBounceDir, PVP_RANKED_ZONE_RADIUS + 180)
   ship.velocity.copy(_rankedBounceDir).multiplyScalar(Math.max(420, ship.velocity.length() * 0.75))
   rankedPvpDeniedUntil = now + 2600
   pvpEl.hidden = false

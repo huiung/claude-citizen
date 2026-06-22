@@ -12,8 +12,10 @@ import {
   PVP_ARENA_ENTRY_HINT_DISTANCE,
   PVP_PRACTICE_ZONE_CENTER,
   PVP_PEER_HIT_RADIUS,
+  PVP_PRACTICE_ZONE_RADIUS,
   PVP_RANKED_MIN_TOKEN_BALANCE,
   PVP_RANKED_ZONE_CENTER,
+  PVP_RANKED_ZONE_RADIUS,
   PVP_ZONE_CENTER,
   PVP_ZONE_RADIUS,
   pvpArenaApproachPoint,
@@ -37,6 +39,7 @@ describe('pvp zone rules', () => {
   it('reports strongest intensity at the center and zero outside', () => {
     expect(pvpZoneIntensity(PVP_ZONE_CENTER.clone())).toBe(1)
     expect(pvpZoneIntensity(PVP_ZONE_CENTER.clone().add(new Vector3(PVP_ZONE_RADIUS, 0, 0)))).toBe(0)
+    expect(pvpZoneIntensity(PVP_RANKED_ZONE_CENTER.clone().add(new Vector3(PVP_RANKED_ZONE_RADIUS / 2, 0, 0)))).toBeCloseTo(0.5, 5)
   })
 
   it('defines a quantum beacon that drops pilots outside the arena edge', () => {
@@ -56,6 +59,14 @@ describe('pvp zone rules', () => {
     expect(pvpZoneAt(PVP_PRACTICE_ZONE_CENTER.clone())?.id).toBe('practice')
     expect(pvpZoneAt(PVP_RANKED_ZONE_CENTER.clone())?.id).toBe('ranked')
     expect(isInPvpZone(PVP_RANKED_ZONE_CENTER.clone())).toBe(true)
+  })
+
+  it('gives ranked PvP more room than practice for tournament dogfights', () => {
+    expect(PVP_PRACTICE_ZONE_RADIUS).toBe(1800)
+    expect(PVP_RANKED_ZONE_RADIUS).toBe(2200)
+    expect(PVP_RANKED_ZONE_RADIUS).toBeGreaterThan(PVP_PRACTICE_ZONE_RADIUS)
+    expect(pvpZoneAt(PVP_PRACTICE_ZONE_CENTER.clone().add(new Vector3(PVP_PRACTICE_ZONE_RADIUS + 1, 0, 0)))).toBeNull()
+    expect(pvpZoneAt(PVP_RANKED_ZONE_CENTER.clone().add(new Vector3(PVP_RANKED_ZONE_RADIUS, 0, 0)))?.id).toBe('ranked')
   })
 
   it('keeps mobile civilian pilots out of active PvP combat', () => {

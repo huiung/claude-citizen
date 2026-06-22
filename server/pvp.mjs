@@ -1,7 +1,7 @@
 export const PVP_RANKED_MIN_TOKEN_BALANCE = 1000
 export const PVP_ZONES = {
-  practice: { id: 'practice', x: 92000, y: 26000, z: -210000, radius: 1250 },
-  ranked: { id: 'ranked', x: 96000, y: 26000, z: -214000, radius: 1250 },
+  practice: { id: 'practice', x: 92000, y: 26000, z: -210000, radius: 1800 },
+  ranked: { id: 'ranked', x: 96000, y: 26000, z: -214000, radius: 2200 },
 }
 export const PVP_ZONE = PVP_ZONES.practice
 export const PVP_HIT_RANGE = 900

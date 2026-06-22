@@ -1,7 +1,9 @@
 import { Vector3 } from 'three'
 import type { ShipType } from './shipTypes'
 
-export const PVP_ZONE_RADIUS = 1250
+export const PVP_PRACTICE_ZONE_RADIUS = 1800
+export const PVP_RANKED_ZONE_RADIUS = 2200
+export const PVP_ZONE_RADIUS = PVP_PRACTICE_ZONE_RADIUS
 export const PVP_ARENA_CLEAR_RADIUS = 90000
 export const PVP_ARENA_ENTRY_HINT_DISTANCE = 4500
 export const PVP_HIT_RANGE = 900
@@ -12,7 +14,7 @@ export const PVP_RANKED_MIN_TOKEN_BALANCE = 1000
 export const PVP_PRACTICE_ZONE_CENTER = new Vector3(92000, 26000, -210000)
 export const PVP_RANKED_ZONE_CENTER = new Vector3(96000, 26000, -214000)
 export const PVP_ZONE_CENTER = PVP_PRACTICE_ZONE_CENTER
-export const PVP_ARENA_APPROACH_DISTANCE = Math.max(PVP_ZONE_RADIUS * 1.5, 650)
+export const PVP_ARENA_APPROACH_DISTANCE = Math.max(PVP_RANKED_ZONE_RADIUS * 1.5, 650)
 
 export interface PvpZone {
   id: 'practice' | 'ranked'
@@ -36,7 +38,7 @@ export const PVP_ZONES: readonly PvpZone[] = [
     name: 'Practice Arena',
     kind: 'Open combat beacon',
     center: PVP_PRACTICE_ZONE_CENTER,
-    radius: PVP_ZONE_RADIUS,
+    radius: PVP_PRACTICE_ZONE_RADIUS,
   },
   {
     id: 'ranked',
@@ -44,7 +46,7 @@ export const PVP_ZONES: readonly PvpZone[] = [
     name: 'Ranked Arena',
     kind: 'Holder-ranked beacon',
     center: PVP_RANKED_ZONE_CENTER,
-    radius: PVP_ZONE_RADIUS,
+    radius: PVP_RANKED_ZONE_RADIUS,
   },
 ]
 
@@ -132,8 +134,8 @@ export function shouldClearPveHostiles({
 }
 
 export function pvpZoneIntensity(position: Vector3): number {
-  const d = Math.min(...PVP_ZONES.map((zone) => position.distanceTo(zone.center)))
-  return Math.max(0, Math.min(1, 1 - d / PVP_ZONE_RADIUS))
+  const intensity = Math.max(...PVP_ZONES.map((zone) => 1 - position.distanceTo(zone.center) / zone.radius))
+  return Math.max(0, Math.min(1, intensity))
 }
 
 export function pvpArenaApproachPoint(from: Vector3, center = PVP_ZONE_CENTER): Vector3 {
