@@ -60,6 +60,27 @@ export function createSessionStore(initial = {}) {
 }
 
 /** A안: claim anon progress only if the wallet has none; otherwise keep the wallet's. */
+export function createClaimedAnonStore(initial = []) {
+  const values = Array.isArray(initial)
+    ? initial
+    : Object.entries(initial ?? {}).filter(([, value]) => value).map(([key]) => key)
+  const claimed = new Set(values.map((token) => String(token).slice(0, 64)).filter(Boolean))
+  return {
+    claim(token) {
+      const safe = String(token ?? '').slice(0, 64)
+      if (!safe) return false
+      claimed.add(safe)
+      return true
+    },
+    has(token) {
+      return claimed.has(String(token ?? '').slice(0, 64))
+    },
+    snapshot() {
+      return [...claimed]
+    },
+  }
+}
+
 export function resolveClaim(store, pubkey, anonToken) {
   if (!store[pubkey]) {
     store[pubkey] = (anonToken && store[anonToken]) || null

@@ -5,7 +5,7 @@ import { readFileSync, writeFileSync } from 'fs'
 import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import {
-  verifySignature, createChallengeStore, createSessionStore,
+  verifySignature, createChallengeStore, createClaimedAnonStore, createSessionStore,
   resolveClaim, issueChallenge,
 } from './auth.mjs'
 import { fetchHolderStatus, createHolderCache } from './holders.mjs'
@@ -35,6 +35,7 @@ loadEnvFile()
 const PORT = process.env.PORT ?? 8080
 const STORE_FILE = process.env.STORE_FILE ?? './progress.json'
 const PVP_KILL_LOG_FILE = process.env.PVP_KILL_LOG_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'pvp-kills.json')
+const CLAIMED_ANON_FILE = process.env.CLAIMED_ANON_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'claimed-anon.json')
 // Verified sessions persist beside the progress store (same volume) so a relay restart
 // doesn't drop wallet logins — otherwise reconnects fall back to anonymous + lose holder flair.
 const SESSION_FILE = process.env.SESSION_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'sessions.json')
@@ -143,6 +144,12 @@ const sessions = createSessionStore(sessionSeed)
 function flushSessions() {
   try { writeFileSync(SESSION_FILE, JSON.stringify(sessions.snapshot())) } catch { /* disk unavailable */ }
 }
+let claimedAnonSeed = []
+try { claimedAnonSeed = JSON.parse(readFileSync(CLAIMED_ANON_FILE, 'utf8')) } catch { claimedAnonSeed = [] }
+const claimedAnonTokens = createClaimedAnonStore(claimedAnonSeed)
+function flushClaimedAnonTokens() {
+  try { writeFileSync(CLAIMED_ANON_FILE, JSON.stringify(claimedAnonTokens.snapshot())) } catch { /* disk unavailable */ }
+}
 
 // --- Token-keyed progress store (anonymous, no accounts)
 let store = {}
@@ -202,6 +209,10 @@ function kickDuplicatePeers(ws, client) {
   }
 }
 
+function anonymousProgressAllowed(client) {
+  return client.authed || !client.token || !claimedAnonTokens.has(client.token)
+}
+
 wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
     let msg
@@ -220,7 +231,7 @@ wss.on('connection', (ws) => {
       applySession(client, msg.sessionId)
       clients.set(ws, client)
       const key = identityKey(client)
-      if (key && !(key in store)) { store[key] = null; flush() } // seen → counts as registered
+      if (key && anonymousProgressAllowed(client) && !(key in store)) { store[key] = null; flush() } // seen → counts as registered
       void refreshHolder(ws, client) // resolve holder flair if this viewer carried a verified session
       console.log(`[hello] viewer — ${clients.size} online`)
       return
@@ -253,7 +264,7 @@ wss.on('connection', (ws) => {
       // Only active pilots are peers (have ships).
       const peers = [...clients.values()].filter((c) => c.active && c !== client).map(({ token: _t, active: _a, authed: _au, pubkey: _pk, holderBalance: _hb, ...rest }) => rest)
       ws.send(JSON.stringify({ t: 'welcome', id: client.id, peers }))
-      if (key) {
+      if (key && anonymousProgressAllowed(client)) {
         if (store[key]) ws.send(JSON.stringify({ t: 'progress', data: store[key] }))
         else if (!(key in store)) { store[key] = null; flush() }
       }
@@ -292,6 +303,7 @@ wss.on('connection', (ws) => {
       client.pubkey = pubkey
       kickDuplicatePeers(ws, client)
       resolveClaim(store, pubkey, anonToken)
+      if (anonToken && anonToken !== pubkey && claimedAnonTokens.claim(anonToken)) flushClaimedAnonTokens()
       flush()
       const sessionId = sessions.create(pubkey)
       flushSessions() // persist so this login survives a relay restart
@@ -393,6 +405,7 @@ wss.on('connection', (ws) => {
     if (msg.t === 'save') {
       const key = identityKey(client)
       if (!key) return
+      if (!anonymousProgressAllowed(client)) return
       const clean = sanitizeProgress(msg.progress)
       if (clean) {
         clean.name = client.name

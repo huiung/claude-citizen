@@ -3,7 +3,7 @@ import nacl from 'tweetnacl'
 import bs58 from 'bs58'
 import {
   buildMessage, verifySignature,
-  createChallengeStore, createSessionStore, resolveClaim,
+  createChallengeStore, createClaimedAnonStore, createSessionStore, resolveClaim,
 } from './auth.mjs'
 
 const enc = (s) => new TextEncoder().encode(s)
@@ -104,5 +104,17 @@ describe('resolveClaim', () => {
     const store = {}
     resolveClaim(store, 'PK', undefined)
     expect(store['PK']).toBeNull()
+  })
+})
+
+describe('createClaimedAnonStore', () => {
+  it('tracks claimed anonymous tokens and snapshots them for persistence', () => {
+    const claimed = createClaimedAnonStore(['anon1'])
+
+    expect(claimed.has('anon1')).toBe(true)
+    expect(claimed.has('anon2')).toBe(false)
+    expect(claimed.claim('anon2')).toBe(true)
+    expect(claimed.claim('')).toBe(false)
+    expect(claimed.snapshot()).toEqual(['anon1', 'anon2'])
   })
 })
