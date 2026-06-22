@@ -10,7 +10,7 @@ import {
 import { spawnPositionAround } from './pirates'
 
 export const TRAINING_DRONE_COUNT = 2
-export const TRAINING_DRONE_HULL = 50
+export const TRAINING_DRONE_HULL = 30
 export const TRAINING_DRONE_SPEED = 105
 export const TRAINING_DRONE_STANDOFF = 720
 export const TRAINING_DRONE_RADIUS = 7

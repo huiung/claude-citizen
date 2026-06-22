@@ -18,6 +18,7 @@ describe('training drones', () => {
     const center = new Vector3(100, 20, -50)
     const drones = createTrainingDrones(center)
 
+    expect(TRAINING_DRONE_HULL).toBe(30)
     expect(drones).toHaveLength(TRAINING_DRONE_COUNT)
     expect(drones.every((drone) => drone.health.max === TRAINING_DRONE_HULL)).toBe(true)
     expect(drones.every((drone) => drone.radius === TRAINING_DRONE_RADIUS)).toBe(true)
