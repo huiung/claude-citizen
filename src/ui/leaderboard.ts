@@ -2,6 +2,13 @@ export const LEADERBOARD_PAGE_SIZE = 10
 export const LEADERBOARD_MAX_RANK = 100
 export type LeaderboardMode = 'career' | 'pvp'
 
+export const PVP_SEASON = {
+  title: 'SEASON 0',
+  endUtcMs: Date.UTC(2026, 5, 27, 23, 59, 0),
+  prizeText: 'TOP 3: 1 / 0.5 / 0.25 SOL',
+  rulesText: 'RANKED ONLY - 1,000+ TOKENS',
+} as const
+
 export interface LeaderboardRow {
   rank?: number
   name: string
@@ -41,6 +48,16 @@ export function leaderboardMetricText(row: LeaderboardRow, mode: LeaderboardMode
     return `${kills.toLocaleString()} K / ${deaths.toLocaleString()} D · streak ${streak.toLocaleString()}`
   }
   return `${(Number(row.earned) || 0).toLocaleString()} cr`
+}
+
+export function pvpSeasonCopy(now = Date.now()): { title: string; ends: string; prizes: string; rules: string } {
+  const status = now <= PVP_SEASON.endUtcMs ? 'LIVE' : 'ENDED'
+  return {
+    title: `${PVP_SEASON.title} ${status}`,
+    ends: 'ENDS JUN 27 23:59 UTC',
+    prizes: PVP_SEASON.prizeText,
+    rules: PVP_SEASON.rulesText,
+  }
 }
 
 export function normalizeLeaderboardPage(payload: unknown, fallbackOffset = 0): LeaderboardPage {

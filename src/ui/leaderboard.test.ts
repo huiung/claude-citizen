@@ -7,6 +7,7 @@ import {
   leaderboardUrl,
   nextLeaderboardOffset,
   normalizeLeaderboardPage,
+  pvpSeasonCopy,
 } from './leaderboard'
 
 describe('leaderboard UI paging', () => {
@@ -45,5 +46,14 @@ describe('leaderboard UI paging', () => {
   it('formats career and PvP row metrics', () => {
     expect(leaderboardMetricText({ name: 'ACE', earned: 1234 }, 'career')).toBe('1,234 cr')
     expect(leaderboardMetricText({ name: 'ACE', kills: 7, deaths: 2, streak: 3 }, 'pvp')).toBe('7 K / 2 D · streak 3')
+  })
+  it('formats PvP season contest copy for the leaderboard panels', () => {
+    expect(pvpSeasonCopy(Date.UTC(2026, 5, 22))).toEqual({
+      title: 'SEASON 0 LIVE',
+      ends: 'ENDS JUN 27 23:59 UTC',
+      prizes: 'TOP 3: 1 / 0.5 / 0.25 SOL',
+      rules: 'RANKED ONLY - 1,000+ TOKENS',
+    })
+    expect(pvpSeasonCopy(Date.UTC(2026, 5, 28)).title).toBe('SEASON 0 ENDED')
   })
 })

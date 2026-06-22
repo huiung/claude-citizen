@@ -283,6 +283,13 @@
     }
     .lb-mode.active { border-color: rgba(255, 224, 138, .55); color: #ffe08a; background: rgba(42, 30, 4, .5); }
     .lb-mode:not(.active):hover { border-color: rgba(159, 255, 176, .55); color: #9fffb0; }
+    .lb-season {
+      margin: 3px 0 6px; padding: 5px 6px; border: 1px solid rgba(255, 224, 138, .26);
+      border-radius: 5px; background: rgba(42, 30, 4, .24); color: #ffe08a;
+      font-size: 10px; line-height: 1.35; text-align: center; letter-spacing: .3px;
+    }
+    .lb-season b { color: #fff0b8; font-weight: 700; }
+    .lb-season span { display: block; color: #aee9ff; }
     .lb ol { list-style: none; margin: 0; padding: 0; }
     .lb li { display: flex; gap: 8px; padding: 1px 4px; color: #cfe3d0; }
     .lb li .rank { color: #ffe08a; width: 1.5em; flex: none; }
@@ -375,6 +382,7 @@
         <button class="lb-mode active" id="lb-mode-career-hud" type="button">CAREER</button>
         <button class="lb-mode" id="lb-mode-pvp-hud" type="button">PVP</button>
       </div>
+      <div class="lb-season" id="lb-season-hud" hidden></div>
       <ol id="lb-list-hud"><li class="lb-empty">—</li></ol>
       <div class="lb-pager" data-lb="hud">
         <button class="lb-prev" id="lb-prev-hud" type="button" aria-label="Previous leaderboard page">‹</button>
@@ -428,6 +436,7 @@
         <button class="lb-mode active" id="lb-mode-career-landing" type="button">CAREER</button>
         <button class="lb-mode" id="lb-mode-pvp-landing" type="button">PVP</button>
       </div>
+      <div class="lb-season" id="lb-season-landing" hidden></div>
       <ol id="lb-list-landing"><li class="lb-empty">—</li></ol>
       <div class="lb-pager" data-lb="landing">
         <button class="lb-prev" id="lb-prev-landing" type="button" aria-label="Previous leaderboard page">‹</button>

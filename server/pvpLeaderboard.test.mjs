@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createPvpKillAuditLog,
   mergePvpStats,
   pvpLeaderboardPage,
   recordRankedPvpKill,
@@ -99,5 +100,67 @@ describe('ranked PvP leaderboard', () => {
       pvp: previousEntry.pvp,
     })
     expect(mergePvpStats(cleanProgress, null)).toEqual(cleanProgress)
+  })
+
+  it('keeps a capped ranked kill audit log without exposing raw identity keys', () => {
+    const log = createPvpKillAuditLog(3)
+
+    log.record({
+      zone: 'practice',
+      killerKey: 'raw-killer-key',
+      killerName: 'PRACTICE',
+      victimKey: 'raw-victim-key',
+      victimName: 'TARGET',
+      now: 900,
+      reward: 0,
+    })
+    log.record({
+      zone: 'ranked',
+      killerKey: 'raw-killer-key',
+      killerName: 'ALPHA',
+      victimKey: 'raw-victim-key',
+      victimName: 'BRAVO',
+      now: 1000,
+      reward: 180,
+      killerBalance: 1500,
+      victimBalance: 1200,
+    })
+    log.record({
+      zone: 'ranked',
+      killerKey: 'raw-killer-key',
+      killerName: 'ALPHA',
+      victimKey: 'raw-victim-key',
+      victimName: 'BRAVO',
+      now: 1100,
+      reward: 0,
+      killerBalance: 1500,
+      victimBalance: 1200,
+    })
+    log.record({
+      zone: 'ranked',
+      killerKey: 'other-killer-key',
+      killerName: 'CHARLIE',
+      victimKey: 'raw-victim-key',
+      victimName: 'BRAVO',
+      now: 1200,
+      reward: 180,
+    })
+
+    const snapshot = log.snapshot()
+    expect(snapshot.total).toBe(3)
+    expect(snapshot.rows.map((row) => row.killerName)).toEqual(['CHARLIE', 'ALPHA', 'ALPHA'])
+    expect(snapshot.rows[1]).toMatchObject({
+      at: 1100,
+      zone: 'ranked',
+      killerName: 'ALPHA',
+      victimName: 'BRAVO',
+      reward: 0,
+      killerBalance: 1500,
+      victimBalance: 1200,
+    })
+    expect(JSON.stringify(snapshot)).not.toContain('raw-killer-key')
+    expect(snapshot.rows[1].killerHash).toHaveLength(12)
+    expect(snapshot.rows[1].killerHash).toBe(snapshot.rows[2].killerHash)
+    expect(snapshot.rows[0].victimHash).toBe(snapshot.rows[1].victimHash)
   })
 })

@@ -73,6 +73,7 @@ import {
   leaderboardUrl,
   nextLeaderboardOffset,
   normalizeLeaderboardPage,
+  pvpSeasonCopy,
   type LeaderboardMode,
   type LeaderboardPage,
   type LeaderboardRow,
@@ -292,6 +293,8 @@ const lbModeCareerLandingEl = document.getElementById('lb-mode-career-landing') 
 const lbModePvpLandingEl = document.getElementById('lb-mode-pvp-landing') as HTMLButtonElement
 const lbModeCareerHudEl = document.getElementById('lb-mode-career-hud') as HTMLButtonElement
 const lbModePvpHudEl = document.getElementById('lb-mode-pvp-hud') as HTMLButtonElement
+const lbSeasonLandingEl = document.getElementById('lb-season-landing')!
+const lbSeasonHudEl = document.getElementById('lb-season-hud')!
 const lbPrevLandingEl = document.getElementById('lb-prev-landing') as HTMLButtonElement
 const lbNextLandingEl = document.getElementById('lb-next-landing') as HTMLButtonElement
 const lbPageLandingEl = document.getElementById('lb-page-landing')!
@@ -332,14 +335,22 @@ function renderLeaderboardRowsForMode(listEl: HTMLElement, rows: LeaderboardRow[
       + `<span class="cr">${escapeHtml(leaderboardMetric(r, mode))}</span></li>`
   }).join('')
 }
+function renderPvpSeasonPanel(el: HTMLElement, mode: LeaderboardMode): void {
+  el.hidden = mode !== 'pvp'
+  if (mode !== 'pvp') return
+  const season = pvpSeasonCopy()
+  el.innerHTML = `<b>${escapeHtml(season.title)}</b><span>${escapeHtml(season.ends)}</span><span>${escapeHtml(season.prizes)}</span><span>${escapeHtml(season.rules)}</span>`
+}
 function syncLeaderboardModeButtons(slot: 'landing' | 'hud'): void {
   const mode = slot === 'landing' ? landingLeaderboardMode : hudLeaderboardMode
   const title = slot === 'landing' ? lbTitleLandingEl : lbTitleHudEl
   const careerBtn = slot === 'landing' ? lbModeCareerLandingEl : lbModeCareerHudEl
   const pvpBtn = slot === 'landing' ? lbModePvpLandingEl : lbModePvpHudEl
+  const seasonEl = slot === 'landing' ? lbSeasonLandingEl : lbSeasonHudEl
   title.textContent = mode === 'pvp'
     ? (slot === 'landing' ? '◆ RANKED PVP' : '◆ RANKED PVP · kills')
     : (slot === 'landing' ? '◆ TOP PILOTS' : '◆ TOP PILOTS · credits')
+  renderPvpSeasonPanel(seasonEl, mode)
   careerBtn.classList.toggle('active', mode === 'career')
   pvpBtn.classList.toggle('active', mode === 'pvp')
   careerBtn.setAttribute('aria-pressed', String(mode === 'career'))

@@ -14,6 +14,7 @@ import {
   leaderboardUrl,
   nextLeaderboardOffset,
   normalizeLeaderboardPage,
+  pvpSeasonCopy,
   type LeaderboardMode,
   type LeaderboardRow,
 } from './ui/leaderboard'
@@ -30,6 +31,7 @@ const lbListLandingEl = document.getElementById('lb-list-landing')!
 const lbTitleLandingEl = document.getElementById('lb-title-landing')!
 const lbModeCareerLandingEl = document.getElementById('lb-mode-career-landing') as HTMLButtonElement
 const lbModePvpLandingEl = document.getElementById('lb-mode-pvp-landing') as HTMLButtonElement
+const lbSeasonLandingEl = document.getElementById('lb-season-landing')!
 const lbPrevLandingEl = document.getElementById('lb-prev-landing') as HTMLButtonElement
 const lbNextLandingEl = document.getElementById('lb-next-landing') as HTMLButtonElement
 const lbPageLandingEl = document.getElementById('lb-page-landing')!
@@ -88,8 +90,16 @@ function leaderboardMetric(row: LeaderboardRow): string {
   return `[${rankForCredits(cr).name}] ${leaderboardMetricText(row, 'career')}`
 }
 
+function renderPvpSeasonPanel(): void {
+  lbSeasonLandingEl.hidden = leaderboardMode !== 'pvp'
+  if (leaderboardMode !== 'pvp') return
+  const season = pvpSeasonCopy()
+  lbSeasonLandingEl.innerHTML = `<b>${escapeHtml(season.title)}</b><span>${escapeHtml(season.ends)}</span><span>${escapeHtml(season.prizes)}</span><span>${escapeHtml(season.rules)}</span>`
+}
+
 function syncLeaderboardModeButtons(): void {
   lbTitleLandingEl.textContent = leaderboardMode === 'pvp' ? '◆ RANKED PVP' : '◆ TOP PILOTS'
+  renderPvpSeasonPanel()
   lbModeCareerLandingEl.classList.toggle('active', leaderboardMode === 'career')
   lbModePvpLandingEl.classList.toggle('active', leaderboardMode === 'pvp')
   lbModeCareerLandingEl.setAttribute('aria-pressed', String(leaderboardMode === 'career'))

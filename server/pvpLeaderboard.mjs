@@ -1,4 +1,7 @@
 import { LEADERBOARD_MAX_RANK, LEADERBOARD_PAGE_SIZE } from './leaderboard.mjs'
+import { createHash } from 'crypto'
+
+export const PVP_KILL_AUDIT_LIMIT = 200
 
 function cleanStats(raw) {
   return {
@@ -37,6 +40,45 @@ export function recordRankedPvpKill(store, { killerKey, killerName, victimKey, v
   victim.pvp.rankedDeaths += 1
   victim.pvp.rankedStreak = 0
   return true
+}
+
+function auditHash(key) {
+  return createHash('sha256').update(String(key ?? '')).digest('hex').slice(0, 12)
+}
+
+function cleanAuditName(name) {
+  return String(name ?? 'PILOT').slice(0, 16)
+}
+
+export function createPvpKillAuditLog(limit = PVP_KILL_AUDIT_LIMIT) {
+  const safeLimit = Math.max(1, Math.min(PVP_KILL_AUDIT_LIMIT, Math.floor(Number(limit) || PVP_KILL_AUDIT_LIMIT)))
+  const rows = []
+  return {
+    record(event) {
+      if (event?.zone !== 'ranked') return null
+      const row = {
+        at: Math.max(0, Math.floor(Number(event.now) || Date.now())),
+        zone: 'ranked',
+        killerName: cleanAuditName(event.killerName),
+        victimName: cleanAuditName(event.victimName),
+        killerHash: auditHash(event.killerKey),
+        victimHash: auditHash(event.victimKey),
+        reward: Math.max(0, Math.floor(Number(event.reward) || 0)),
+        killerBalance: Math.max(0, Math.floor(Number(event.killerBalance) || 0)),
+        victimBalance: Math.max(0, Math.floor(Number(event.victimBalance) || 0)),
+      }
+      rows.unshift(row)
+      rows.splice(safeLimit)
+      return row
+    },
+    snapshot() {
+      return {
+        rows: rows.map((row) => ({ ...row })),
+        total: rows.length,
+        limit: safeLimit,
+      }
+    },
+  }
 }
 
 function pvpScore(entry) {

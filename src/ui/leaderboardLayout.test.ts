@@ -23,4 +23,10 @@ describe('landing leaderboard layout CSS', () => {
     expect(html).toContain('id="lb-mode-career-hud"')
     expect(html).toContain('id="lb-mode-pvp-hud"')
   })
+
+  it('renders PvP season panels for both launch and HUD leaderboards', () => {
+    expect(html).toContain('id="lb-season-landing"')
+    expect(html).toContain('id="lb-season-hud"')
+    expect(cssBlockFor('.lb-season')).toContain('font-size: 10px')
+  })
 })

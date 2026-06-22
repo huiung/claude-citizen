@@ -10,7 +10,7 @@ import {
 } from './auth.mjs'
 import { fetchHolderStatus, createHolderCache } from './holders.mjs'
 import { leaderboardPage, parseLeaderboardParams } from './leaderboard.mjs'
-import { pvpLeaderboardPage, mergePvpStats, recordRankedPvpKill } from './pvpLeaderboard.mjs'
+import { createPvpKillAuditLog, pvpLeaderboardPage, mergePvpStats, recordRankedPvpKill } from './pvpLeaderboard.mjs'
 import { applyPvpHit, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
 
 function loadEnvFile(path = '.env') {
@@ -41,11 +41,13 @@ const SESSION_FILE = process.env.SESSION_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY
 const HOLDER_MINT = '6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump'
 const holderCache = createHolderCache()
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? ''
 // Area-of-interest: position updates only relay to pilots within this range. Cuts the
 // O(N^2) state broadcast to O(N*k) as players spread out across the sector.
 const AOI_RADIUS = 3000
 const AOI_RADIUS2 = AOI_RADIUS * AOI_RADIUS
 const pvpRewardMemory = new Map()
+const pvpKillAuditLog = createPvpKillAuditLog()
 
 let nextColor = 0
 const clients = new Map() // ws -> { id, name, color, p, q, token, active, authed, pubkey }
@@ -73,6 +75,18 @@ async function refreshHolder(ws, client) {
   if (client.active && client.tier > 0) broadcast(ws, { t: 'peer-holder', id: client.id, tier: client.tier })
 }
 
+function isAdminRequest(req) {
+  if (!ADMIN_TOKEN) return false
+  const auth = req.headers.authorization ?? ''
+  if (auth === `Bearer ${ADMIN_TOKEN}`) return true
+  try {
+    const url = new URL(req.url ?? '/', 'http://localhost')
+    return url.searchParams.get('token') === ADMIN_TOKEN
+  } catch {
+    return false
+  }
+}
+
 // HTTP server: a /stats endpoint for the landing page + the WebSocket upgrade.
 const httpServer = createServer((req, res) => {
   if (req.url === '/stats') {
@@ -92,6 +106,16 @@ const httpServer = createServer((req, res) => {
     const top = pvpLeaderboardPage(store, parseLeaderboardParams(req.url))
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
     res.end(JSON.stringify(req.url.includes('?') ? top : top.rows))
+    return
+  }
+  if (req.url?.startsWith('/pvp-kill-log')) {
+    if (!isAdminRequest(req)) {
+      res.writeHead(403, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+      res.end(JSON.stringify({ error: 'forbidden' }))
+      return
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+    res.end(JSON.stringify(pvpKillAuditLog.snapshot()))
     return
   }
   res.writeHead(200, { 'Content-Type': 'text/plain' })
@@ -299,7 +323,21 @@ wss.on('connection', (ws) => {
       send(ws, { t: 'pvp-hit', targetId: target.id, hull: result.hull, maxHull: result.maxHull, damage: result.damage, killed: result.killed })
       send(targetWs, { t: 'pvp-damage', attackerId: client.id, attackerName: client.name, hull: result.hull, maxHull: result.maxHull, damage: result.damage, killed: result.killed })
       if (result.killed) {
-        if (result.reward > 0 && pvpZoneAt(client.p)?.id === 'ranked') {
+        const killZone = pvpZoneAt(client.p)
+        if (killZone?.id === 'ranked') {
+          pvpKillAuditLog.record({
+            zone: killZone.id,
+            killerKey: identityKey(client),
+            killerName: client.name,
+            victimKey: identityKey(target),
+            victimName: target.name,
+            now: Date.now(),
+            reward: result.reward,
+            killerBalance: client.holderBalance,
+            victimBalance: target.holderBalance,
+          })
+        }
+        if (result.reward > 0 && killZone?.id === 'ranked') {
           const recorded = recordRankedPvpKill(store, {
             killerKey: identityKey(client),
             killerName: client.name,
