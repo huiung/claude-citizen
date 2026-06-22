@@ -91,6 +91,15 @@ describe('pvp zone rules', () => {
     expect(trainingDronesActive(TRAINING_RANGE_CENTER.clone(), true)).toBe(false)
   })
 
+  it('keeps active drones alive just outside the training ring while chasing', () => {
+    const justOutside = TRAINING_RANGE_CENTER.clone().add(new Vector3(TRAINING_RANGE_RADIUS + 320, 0, 0))
+    const farOutside = TRAINING_RANGE_CENTER.clone().add(new Vector3(TRAINING_RANGE_RADIUS + 900, 0, 0))
+
+    expect(trainingDronesActive(justOutside, false, true)).toBe(true)
+    expect(trainingDronesActive(justOutside, false, false)).toBe(false)
+    expect(trainingDronesActive(farOutside, false, true)).toBe(false)
+  })
+
   it('reports nearby arena entry distance while the pilot is just outside the boundary', () => {
     const outside = PVP_PRACTICE_ZONE_CENTER.clone().add(new Vector3(PVP_ZONE_RADIUS + 320, 0, 0))
     const status = pvpZoneProximity(outside)

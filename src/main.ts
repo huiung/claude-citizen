@@ -2534,7 +2534,7 @@ function drawCombatHud(now: number): void {
     }
   }
 
-  const drawTarget = (position: THREE.Vector3, velocity: THREE.Vector3, color: string, label: string): void => {
+  const drawTarget = (position: THREE.Vector3, velocity: THREE.Vector3, color: string, label: string, lead = true): void => {
     _proj.copy(position).project(camera)
     const infront = _proj.z < 1
     const sx = (_proj.x * 0.5 + 0.5) * W
@@ -2564,11 +2564,11 @@ function drawCombatHud(now: number): void {
       cctx.beginPath(); cctx.moveTo(13, 0); cctx.lineTo(-8, -7); cctx.lineTo(-8, 7); cctx.closePath(); cctx.fill()
       cctx.restore()
     }
-    markLeadTarget(position, velocity, dist)
+    if (lead) markLeadTarget(position, velocity, dist)
   }
 
   for (const p of pirates) drawTarget(p.position, p.velocity, '#ff5d5d', 'HOSTILE')
-  for (const drone of trainingDrones) drawTarget(drone.position, drone.velocity, '#58ddff', 'DRONE')
+  for (const drone of trainingDrones) drawTarget(drone.position, drone.velocity, '#58ddff', 'DRONE', false)
 
   const activePvpZone = pvpZoneAt(ship.position)
   if (activePvpZone) {
@@ -3042,7 +3042,7 @@ function frame(now: number): void {
     const pvpProximity = pvpZoneProximity(ship.position)
     const pvpActive = pvpCombatActive(ship.position, MOBILE_COMPANION)
     const trainingProtected = isInTrainingRange(ship.position)
-    const dronesActive = trainingDronesActive(ship.position, MOBILE_COMPANION)
+    const dronesActive = trainingDronesActive(ship.position, MOBILE_COMPANION, trainingDrones.length > 0)
     const pvpProtected = pvpZone !== null
     const rankedDenied = now < rankedPvpDeniedUntil
     pvpEl.hidden = !pvpActive && !trainingProtected && !rankedDenied && !pvpProximity
@@ -3102,10 +3102,9 @@ function frame(now: number): void {
     }
 
     if (dronesActive) {
-      ensureTrainingDrones()
+      if (trainingProtected) ensureTrainingDrones()
       for (const drone of trainingDrones) {
-        const result = stepTrainingDrone(drone, ship.position, dt, ship.velocity)
-        if (result.fired) projectiles.push(result.fired)
+        stepTrainingDrone(drone, ship.position, dt)
         const mesh = ensureTrainingDroneMesh(drone)
         mesh.position.copy(drone.position)
         mesh.lookAt(ship.position)

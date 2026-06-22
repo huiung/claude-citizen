@@ -12,6 +12,7 @@ export const PVP_KILL_REWARD = 180
 export const PVP_REPEAT_REWARD_COOLDOWN_MS = 5 * 60 * 1000
 export const PVP_RANKED_MIN_TOKEN_BALANCE = 1000
 export const TRAINING_RANGE_RADIUS = 1500
+export const TRAINING_DRONE_EXIT_BUFFER = 600
 export const TRAINING_RANGE_CENTER = new Vector3(88000, 26000, -206000)
 export const PVP_PRACTICE_ZONE_CENTER = new Vector3(92000, 26000, -210000)
 export const PVP_RANKED_ZONE_CENTER = new Vector3(96000, 26000, -214000)
@@ -118,9 +119,11 @@ export function isInTrainingRange(position: Vector3): boolean {
   return position.distanceToSquared(TRAINING_RANGE_CENTER) <= TRAINING_RANGE_RADIUS * TRAINING_RANGE_RADIUS
 }
 
-export function trainingDronesActive(position: Vector3, isMobileCivilian: boolean): boolean {
+export function trainingDronesActive(position: Vector3, isMobileCivilian: boolean, hasActiveDrones = false): boolean {
   if (isMobileCivilian) return false
-  return isInTrainingRange(position)
+  if (isInTrainingRange(position)) return true
+  return hasActiveDrones
+    && position.distanceToSquared(TRAINING_RANGE_CENTER) <= (TRAINING_RANGE_RADIUS + TRAINING_DRONE_EXIT_BUFFER) ** 2
 }
 
 export function pvpCombatActive(position: Vector3, isMobileCivilian: boolean): boolean {
