@@ -11,6 +11,7 @@ const CRAFT_MODEL_URLS: Record<ShipType, string> = {
   miner: '/assets/ships/miner.glb',
   interceptor: '/assets/ships/interceptor.glb',
 }
+const HOLDER_DOGE_RUNNER_MODEL_URL = '/assets/ships/holder-doge-runner.glb'
 const HOLDER_VOID_INTERCEPTOR_MODEL_URL = '/assets/ships/holder-void-interceptor.glb'
 
 const CRAFT_MODEL_TARGET_SIZES: Record<ShipType, number> = {
@@ -77,7 +78,15 @@ export function craftModelUrl(type: ShipType): string {
 }
 
 export function craftModelUrlForHolderVisual(type: ShipType, visual: HolderShipVisualId, holderTier: number): string {
-  return visual === 'void-interceptor' && holderTier >= 3 ? HOLDER_VOID_INTERCEPTOR_MODEL_URL : CRAFT_MODEL_URLS[type]
+  if (visual === 'doge-runner' && holderTier >= 2) return HOLDER_DOGE_RUNNER_MODEL_URL
+  if (visual === 'void-interceptor' && holderTier >= 3) return HOLDER_VOID_INTERCEPTOR_MODEL_URL
+  return CRAFT_MODEL_URLS[type]
+}
+
+export function craftModelTargetSizeForHolderVisual(type: ShipType, visual: HolderShipVisualId, holderTier: number): number {
+  if (visual === 'doge-runner' && holderTier >= 2) return 9.7
+  if (visual === 'void-interceptor' && holderTier >= 3) return 10.5
+  return CRAFT_MODEL_TARGET_SIZES[type]
 }
 
 export function pirateModelUrl(): string {
@@ -130,9 +139,10 @@ export async function loadCraftModel(url: string, targetSize = 8): Promise<THREE
 }
 
 export async function loadCraftModelForType(type: ShipType, holderTier = 0, visual: HolderShipVisualId = 'standard'): Promise<THREE.Group | null> {
-  const usingVoid = visual === 'void-interceptor' && holderTier >= 3
-  const targetSize = usingVoid ? 10.5 : CRAFT_MODEL_TARGET_SIZES[type]
-  return loadCraftModel(craftModelUrlForHolderVisual(type, visual, holderTier), targetSize)
+  return loadCraftModel(
+    craftModelUrlForHolderVisual(type, visual, holderTier),
+    craftModelTargetSizeForHolderVisual(type, visual, holderTier),
+  )
 }
 
 export async function loadPirateModel(): Promise<THREE.Group | null> {

@@ -7,6 +7,7 @@ import {
   capitalModelUrl,
   collectCraftEngineGlows,
   craftModelUrl,
+  craftModelTargetSizeForHolderVisual,
   craftModelUrlForHolderVisual,
   pirateModelUrl,
 } from './shipyard'
@@ -17,10 +18,20 @@ describe('pirate model asset', () => {
     expect(craftModelUrl('interceptor')).toBe('/assets/ships/interceptor.glb')
   })
 
-  it('uses the void interceptor visual only when selected and unlocked', () => {
+  it('uses holder visual hulls only when selected and unlocked', () => {
+    expect(craftModelUrlForHolderVisual('hauler', 'doge-runner', 0)).toBe('/assets/ships/hauler.glb')
+    expect(craftModelUrlForHolderVisual('fighter', 'doge-runner', 1)).toBe('/assets/ships/fighter.glb')
+    expect(craftModelUrlForHolderVisual('fighter', 'doge-runner', 2)).toBe('/assets/ships/holder-doge-runner.glb')
     expect(craftModelUrlForHolderVisual('hauler', 'void-interceptor', 2)).toBe('/assets/ships/hauler.glb')
     expect(craftModelUrlForHolderVisual('hauler', 'standard', 3)).toBe('/assets/ships/hauler.glb')
     expect(craftModelUrlForHolderVisual('fighter', 'void-interceptor', 3)).toBe('/assets/ships/holder-void-interceptor.glb')
+  })
+
+  it('scales the doge runner large enough to read as a prestige racing hull', () => {
+    expect(craftModelTargetSizeForHolderVisual('fighter', 'doge-runner', 0)).toBe(8.2)
+    expect(craftModelTargetSizeForHolderVisual('fighter', 'doge-runner', 1)).toBe(8.2)
+    expect(craftModelTargetSizeForHolderVisual('fighter', 'doge-runner', 2)).toBe(9.7)
+    expect(craftModelTargetSizeForHolderVisual('fighter', 'void-interceptor', 3)).toBe(10.5)
   })
 
   it('points pirates at their dedicated raider GLB', () => {

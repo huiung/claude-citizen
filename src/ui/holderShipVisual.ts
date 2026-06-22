@@ -1,4 +1,4 @@
-export type HolderShipVisualId = 'standard' | 'void-interceptor'
+export type HolderShipVisualId = 'standard' | 'doge-runner' | 'void-interceptor'
 
 export interface HolderShipVisual {
   id: HolderShipVisualId
@@ -13,6 +13,12 @@ export const HOLDER_SHIP_VISUALS: readonly HolderShipVisual[] = [
     name: 'Standard Hull',
     description: 'Use the normal ship hull for your selected craft.',
     requiredTier: 0,
+  },
+  {
+    id: 'doge-runner',
+    name: 'Doge Runner Mk II',
+    description: 'T2 holder-only gold racing hull. Stats stay unchanged.',
+    requiredTier: 2,
   },
   {
     id: 'void-interceptor',

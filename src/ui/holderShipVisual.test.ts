@@ -20,13 +20,17 @@ class MemoryStorage {
 }
 
 describe('holder ship visuals', () => {
-  it('unlocks the void interceptor only for top tier holders', () => {
+  it('unlocks meme and premium holder hulls by tier', () => {
     expect(holderShipVisualsForTier(0).map((visual) => visual.id)).toEqual(['standard'])
-    expect(holderShipVisualsForTier(2).map((visual) => visual.id)).toEqual(['standard'])
-    expect(holderShipVisualsForTier(3).map((visual) => visual.id)).toEqual(['standard', 'void-interceptor'])
+    expect(holderShipVisualsForTier(1).map((visual) => visual.id)).toEqual(['standard'])
+    expect(holderShipVisualsForTier(2).map((visual) => visual.id)).toEqual(['standard', 'doge-runner'])
+    expect(holderShipVisualsForTier(3).map((visual) => visual.id)).toEqual(['standard', 'doge-runner', 'void-interceptor'])
   })
 
   it('falls back to the standard hull when a saved visual is locked', () => {
+    expect(resolveHolderShipVisual('doge-runner', 0).id).toBe('standard')
+    expect(resolveHolderShipVisual('doge-runner', 1).id).toBe('standard')
+    expect(resolveHolderShipVisual('doge-runner', 2).id).toBe('doge-runner')
     expect(resolveHolderShipVisual('void-interceptor', 2).id).toBe('standard')
     expect(resolveHolderShipVisual('void-interceptor', 3).id).toBe('void-interceptor')
     expect(resolveHolderShipVisual('missing', 3).id).toBe('standard')
@@ -35,11 +39,21 @@ describe('holder ship visuals', () => {
   it('persists only known ship visual ids', () => {
     const storage = new MemoryStorage()
 
+    saveHolderShipVisual(storage, 'doge-runner')
+    expect(loadHolderShipVisual(storage)).toBe('doge-runner')
+
     saveHolderShipVisual(storage, 'void-interceptor')
     expect(loadHolderShipVisual(storage)).toBe('void-interceptor')
 
     storage.setItem('scc.holderShipVisual.v1', 'not-real')
     expect(loadHolderShipVisual(storage)).toBe('standard')
     expect(holderShipVisualById('not-real')).toBeNull()
+  })
+
+  it('presents the doge runner as a premium racing hull', () => {
+    expect(holderShipVisualById('doge-runner')).toMatchObject({
+      name: 'Doge Runner Mk II',
+      description: 'T2 holder-only gold racing hull. Stats stay unchanged.',
+    })
   })
 })
