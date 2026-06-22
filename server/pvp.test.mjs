@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyPvpRespawn,
   applyPvpHit,
   isInPvpZone,
   normalizeShip,
@@ -61,7 +62,7 @@ describe('server PvP rules', () => {
     expect(applyPvpHit({ attacker: outside, target, now: 2000, rewardMemory: new Map() }).reason).toBe('outside-zone')
   })
 
-  it('kills, reports zero hull, resets target hull, and suppresses repeated rewards', () => {
+  it('kills and leaves the target dead until an explicit respawn arrives', () => {
     const rewards = new Map()
     const attacker = client('a', 'miner')
     const target = client('b', 'interceptor')
@@ -75,12 +76,25 @@ describe('server PvP rules', () => {
     expect(result.killed).toBe(true)
     expect(result.reward).toBe(PVP_KILL_REWARD)
     expect(result.hull).toBe(0)
-    expect(target.hull).toBe(target.maxHull)
+    expect(target.hull).toBe(0)
+    expect(applyPvpHit({ attacker, target, now: 3000, rewardMemory: rewards }).reason).toBe('dead-target')
 
-    for (let i = 0; i < 4; i++) {
-      result = applyPvpHit({ attacker, target, now: 3000 + i * 300, rewardMemory: rewards })
-    }
+    const respawnPoint = [PVP_ZONE.x + 80, PVP_ZONE.y, PVP_ZONE.z]
+    const respawn = applyPvpRespawn(target, { p: respawnPoint, q: [0, 0, 0, 1], ship: 'interceptor' })
+    expect(respawn).toEqual({ ok: true, hull: target.maxHull, maxHull: target.maxHull })
+    expect(target.hull).toBe(target.maxHull)
+    expect(target.p).toEqual(respawnPoint)
+    expect(target.q).toEqual([0, 0, 0, 1])
+
+    for (let i = 0; i < 4; i++) result = applyPvpHit({ attacker, target, now: 4000 + i * 300, rewardMemory: rewards })
     expect(result.killed).toBe(true)
     expect(result.reward).toBe(0)
+  })
+
+  it('does not let living pilots use respawn as a heal', () => {
+    const target = client('b', 'fighter')
+    target.hull = target.maxHull - 10
+    expect(applyPvpRespawn(target, { p: [1, 2, 3], q: [0, 0, 0, 1], ship: 'fighter' })).toEqual({ ok: false, reason: 'alive' })
+    expect(target.hull).toBe(target.maxHull - 10)
   })
 })

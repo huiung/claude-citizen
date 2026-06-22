@@ -27,6 +27,9 @@ const CAPITAL_MODEL_URL = '/assets/ships/capital-dreadnought.glb'
 const CAPITAL_CARRIER_MODEL_URL = '/assets/ships/capital-carrier.glb'
 const CAPITAL_MODEL_TARGET_SIZE = 620
 
+type CraftModelSceneLoader = (url: string) => Promise<THREE.Group>
+type CraftModelLoader = (url: string, targetSize?: number) => Promise<THREE.Group | null>
+
 export type CraftEngineGlowRole = 'disc' | 'core'
 
 export interface CraftEngineGlow {
@@ -117,26 +120,56 @@ export function collectCraftEngineGlows(root: THREE.Object3D): CraftEngineGlow[]
   return glows
 }
 
+function craftModelCacheKey(url: string, targetSize: number): string {
+  return `${url}#${targetSize}`
+}
+
+function cloneCraftModelInstance(source: THREE.Group): THREE.Group {
+  const instance = source.clone(true)
+  instance.traverse((child) => {
+    if (!(child instanceof THREE.Mesh)) return
+    child.geometry = child.geometry.clone()
+    child.material = Array.isArray(child.material)
+      ? child.material.map((material) => material.clone())
+      : child.material.clone()
+  })
+  return instance
+}
+
+function normalizeCraftModel(model: THREE.Group, targetSize: number): THREE.Group {
+  const box = new THREE.Box3().setFromObject(model)
+  const size = box.getSize(new THREE.Vector3())
+  const maxDim = Math.max(size.x, size.y, size.z) || 1
+  const s = targetSize / maxDim
+  model.scale.setScalar(s)
+  model.position.sub(box.getCenter(new THREE.Vector3()).multiplyScalar(s)) // recenter at origin
+  const group = new THREE.Group()
+  group.add(model)
+  return group
+}
+
+export function createCraftModelLoader(
+  loadScene: CraftModelSceneLoader = async (url) => (await gltfLoader.loadAsync(url)).scene,
+): CraftModelLoader {
+  const sourceCache = new Map<string, Promise<THREE.Group | null>>()
+  return async (url: string, targetSize = 8): Promise<THREE.Group | null> => {
+    const key = craftModelCacheKey(url, targetSize)
+    let source = sourceCache.get(key)
+    if (!source) {
+      source = loadScene(url)
+        .then((model) => normalizeCraftModel(model, targetSize))
+        .catch(() => null)
+      sourceCache.set(key, source)
+    }
+    const cached = await source
+    return cached ? cloneCraftModelInstance(cached) : null
+  }
+}
+
 /** Load a generated GLB hull, normalized to game scale (by bounding box) and wrapped in a
  *  Group so the caller drives a stable transform. Returns null on 404/parse failure
  *  so callers can fall back to the procedural hull. Nose alignment is tuned per-asset. */
-export async function loadCraftModel(url: string, targetSize = 8): Promise<THREE.Group | null> {
-  try {
-    const gltf = await gltfLoader.loadAsync(url)
-    const model = gltf.scene
-    const box = new THREE.Box3().setFromObject(model)
-    const size = box.getSize(new THREE.Vector3())
-    const maxDim = Math.max(size.x, size.y, size.z) || 1
-    const s = targetSize / maxDim
-    model.scale.setScalar(s)
-    model.position.sub(box.getCenter(new THREE.Vector3()).multiplyScalar(s)) // recenter at origin
-    const group = new THREE.Group()
-    group.add(model)
-    return group
-  } catch {
-    return null
-  }
-}
+export const loadCraftModel = createCraftModelLoader()
 
 export async function loadCraftModelForType(type: ShipType, holderTier = 0, visual: HolderShipVisualId = 'standard'): Promise<THREE.Group | null> {
   return loadCraftModel(

@@ -285,6 +285,12 @@ export class NetClient {
     return true
   }
 
+  sendPvpRespawn(p: [number, number, number], q: [number, number, number, number], ship?: string): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    this.ws.send(JSON.stringify({ t: 'pvp-respawn', p, q, ship: ship ?? this.activeShip }))
+    return true
+  }
+
   getPeers(): ReadonlyMap<string, PeerState> {
     return this.peers
   }

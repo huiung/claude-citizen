@@ -1390,6 +1390,7 @@ function resolveCapitalCollision(): void {
 const boltGeo = new THREE.SphereGeometry(0.4, 8, 8)
 const boltHaloGeo = new THREE.SphereGeometry(0.85, 8, 8)
 const explosionGeo = new THREE.SphereGeometry(1, 10, 10)
+const _projectileLookAt = new THREE.Vector3()
 
 // Per-ship-type bolt colors (player); pirates fire warm orange. Friendly hulls read cool/bright,
 // hostiles read orange — so you can tell incoming fire apart at a glance.
@@ -1502,7 +1503,7 @@ function syncProjectileMeshes(): void {
       projectileMeshes.set(proj, mesh)
     }
     mesh.position.copy(proj.position)
-    if (proj.velocity.lengthSq() > 1e-6) mesh.lookAt(proj.position.clone().add(proj.velocity))
+    if (proj.velocity.lengthSq() > 1e-6) mesh.lookAt(_projectileLookAt.copy(proj.position).add(proj.velocity))
   }
 }
 
@@ -1602,13 +1603,20 @@ function setPlayerCraft(type: ShipType): void {
 
 function clearPirates(): void {
   for (const p of pirates) {
-    const mesh = pirateMeshes.get(p.id)
-    if (mesh) { scene.remove(mesh); pirateMeshes.delete(p.id) }
+    removePirateMesh(p.id)
   }
   pirates.splice(0)
   for (let i = projectiles.length - 1; i >= 0; i--) {
     if (projectiles[i].faction === 'pirate') projectiles.splice(i, 1)
   }
+}
+
+function removePirateMesh(id: string): void {
+  const mesh = pirateMeshes.get(id)
+  if (!mesh) return
+  scene.remove(mesh)
+  disposeObject(mesh)
+  pirateMeshes.delete(id)
 }
 
 function updateWalletHUD(): void {
@@ -2149,7 +2157,14 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     lastPlayerDamageAt = performance.now()
     damageFlash()
     addChatLine('PVP', `${attackerName} hit you for ${Math.round(damage)}`, 3)
-    if (killed) respawnPlayer(performance.now())
+    if (killed) {
+      respawnPlayer(performance.now())
+      net.sendPvpRespawn(
+        [ship.position.x, ship.position.y, ship.position.z],
+        [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],
+        selectedShipType,
+      )
+    }
   },
   onPvpKill(killerName, victimName, reward, killerIsSelf, victimIsSelf) {
     const suffix = reward > 0 ? ` (+${reward} cr)` : ''
@@ -2928,8 +2943,7 @@ function frame(now: number): void {
         finishOnboarding() // graduates the onboarding objective
         refreshWallet()
         spawnLoot(p.position) // drop a loot crate where it died
-        const mesh = pirateMeshes.get(p.id)
-        if (mesh) { scene.remove(mesh); pirateMeshes.delete(p.id) }
+        removePirateMesh(p.id)
         pirates.splice(i, 1)
       }
     }

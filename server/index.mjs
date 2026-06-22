@@ -11,7 +11,7 @@ import {
 import { fetchHolderStatus, createHolderCache } from './holders.mjs'
 import { leaderboardPage, parseLeaderboardParams } from './leaderboard.mjs'
 import { createPvpKillAuditLog, pvpLeaderboardPage, mergePvpStats, recordRankedPvpKill } from './pvpLeaderboard.mjs'
-import { applyPvpHit, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
+import { applyPvpHit, applyPvpRespawn, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
 
 function loadEnvFile(path = '.env') {
   let text
@@ -318,6 +318,27 @@ wss.on('connection', (ws) => {
         const dx = c2.p[0] - px, dy = c2.p[1] - py, dz = c2.p[2] - pz
         if (dx * dx + dy * dy + dz * dz <= AOI_RADIUS2) ws2.send(out)
       }
+      return
+    }
+
+    if (msg.t === 'pvp-respawn' && client.active) {
+      const result = applyPvpRespawn(client, {
+        p: Array.isArray(msg.p) ? msg.p : undefined,
+        q: Array.isArray(msg.q) ? msg.q : undefined,
+        ship: typeof msg.ship === 'string' ? normalizeShip(msg.ship) : undefined,
+      })
+      if (!result.ok) return
+      const out = {
+        t: 'peer-state',
+        id: client.id,
+        p: client.p,
+        q: client.q,
+        ship: client.ship,
+        hull: client.hull,
+        maxHull: client.maxHull,
+      }
+      broadcastAll(out)
+      broadcastAll({ t: 'pvp-health', id: client.id, hull: client.hull, maxHull: client.maxHull })
       return
     }
 

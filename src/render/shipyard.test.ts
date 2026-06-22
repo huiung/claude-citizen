@@ -6,11 +6,21 @@ import {
   capitalCarrierModelUrl,
   capitalModelUrl,
   collectCraftEngineGlows,
+  createCraftModelLoader,
   craftModelUrl,
   craftModelTargetSizeForHolderVisual,
   craftModelUrlForHolderVisual,
   pirateModelUrl,
 } from './shipyard'
+
+function firstMesh(root: THREE.Object3D): THREE.Mesh {
+  let found: THREE.Mesh | null = null
+  root.traverse((child) => {
+    if (!found && child instanceof THREE.Mesh) found = child
+  })
+  if (!found) throw new Error('expected a mesh')
+  return found
+}
 
 describe('pirate model asset', () => {
   it('points player craft at their generated GLB assets', () => {
@@ -63,5 +73,34 @@ describe('craft engine glow mounts', () => {
     const glows = collectCraftEngineGlows(group)
     expect(glows.filter((glow) => glow.role === 'disc')).toHaveLength(4)
     expect(glows.filter((glow) => glow.role === 'core')).toHaveLength(4)
+  })
+})
+
+describe('generated craft model loading', () => {
+  it('caches the normalized GLB source while returning independent scene instances', async () => {
+    let loadCount = 0
+    const source = new THREE.Group()
+    source.add(new THREE.Mesh(
+      new THREE.BoxGeometry(2, 1, 4),
+      new THREE.MeshStandardMaterial({ color: 0x88ccff }),
+    ))
+    const loadCraft = createCraftModelLoader(async () => {
+      loadCount++
+      return source
+    })
+
+    const first = await loadCraft('/assets/ships/test.glb', 8)
+    const second = await loadCraft('/assets/ships/test.glb', 8)
+
+    expect(loadCount).toBe(1)
+    expect(first).not.toBe(second)
+    const firstHull = firstMesh(first!)
+    const secondHull = firstMesh(second!)
+    expect(firstHull).not.toBe(secondHull)
+    expect(firstHull.geometry).not.toBe(secondHull.geometry)
+    expect(firstHull.material).not.toBe(secondHull.material)
+
+    first!.position.x = 99
+    expect(second!.position.x).toBe(0)
   })
 })

@@ -25,6 +25,15 @@ export function resetPvpHull(client, ship = client.ship) {
   client.hull = client.maxHull
 }
 
+export function applyPvpRespawn(client, { p, q, ship } = {}) {
+  if (!client?.active) return { ok: false, reason: 'inactive' }
+  if ((client.hull ?? 0) > 0) return { ok: false, reason: 'alive' }
+  if (Array.isArray(p) && p.length >= 3) client.p = p.slice(0, 3).map(Number)
+  if (Array.isArray(q) && q.length >= 4) client.q = q.slice(0, 4).map(Number)
+  resetPvpHull(client, ship ?? client.ship)
+  return { ok: true, hull: client.hull, maxHull: client.maxHull }
+}
+
 function isInsideZone(p, zone) {
   if (!Array.isArray(p) || p.length < 3) return false
   const dx = Number(p[0]) - zone.x
@@ -84,7 +93,6 @@ export function applyPvpHit({ attacker, target, now, rewardMemory }) {
   const hullAfterDamage = target.hull
   const killed = hullAfterDamage <= 0
   const reward = killed ? pvpRewardForPair(rewardMemory, attacker.id, target.id, now) : 0
-  if (killed) resetPvpHull(target, target.ship)
 
   return {
     ok: true,
