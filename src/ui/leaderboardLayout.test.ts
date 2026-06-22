@@ -29,4 +29,11 @@ describe('landing leaderboard layout CSS', () => {
     expect(html).toContain('id="lb-season-hud"')
     expect(cssBlockFor('.lb-season')).toContain('font-size: 10px')
   })
+
+  it('keeps leaderboard and wallet visible in mobile companion mode', () => {
+    expect(html).toContain('.is-mobile #nickname, .is-mobile #launch, .is-mobile .foot, .is-mobile #pilot-code { display: none; }')
+    expect(html).not.toContain('.is-mobile #leaderboard-landing, .is-mobile #pilot-code')
+    expect(html).not.toContain('.is-mobile #wallet-box { display: none; }')
+    expect(html).toContain('Mobile Command Deck')
+  })
 })

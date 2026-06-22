@@ -266,7 +266,13 @@
     #disconnect-wallet[hidden] { display: none; }
     #wallet-status { display: block; font-size: 11px; color: #ffe08a; min-height: 12px; margin-top: 4px; }
     #mobile-notice { display: none; }
-    .is-mobile #nickname, .is-mobile #launch, .is-mobile .foot, .is-mobile #leaderboard-landing, .is-mobile #pilot-code, .is-mobile #wallet-box { display: none; }
+    .is-mobile #nickname, .is-mobile #launch, .is-mobile .foot, .is-mobile #pilot-code { display: none; }
+    .is-mobile #overlay { justify-content: flex-start; gap: 12px; overflow-y: auto; padding: 28px 16px; }
+    .is-mobile #overlay h1 { font-size: 24px; letter-spacing: 3px; }
+    .is-mobile #overlay p { font-size: 12px; max-width: 340px; }
+    .is-mobile #leaderboard-landing { width: min(320px, calc(100vw - 32px)); }
+    .is-mobile #wallet-box { margin-top: 2px; }
+    .is-mobile #landing-links { flex-wrap: wrap; justify-content: center; gap: 12px; }
     .is-mobile #mobile-notice {
       display: block; color: #ffd08a; font-size: 14px; max-width: 360px; line-height: 1.7;
       border: 1px solid rgba(255, 208, 138, .4); border-radius: 6px; padding: 14px 16px;
@@ -444,7 +450,7 @@
         <button class="lb-next" id="lb-next-landing" type="button" aria-label="Next leaderboard page">›</button>
       </div>
     </div>
-    <div id="mobile-notice">⌨️ Best experienced on desktop — Claude Citizen flies with a keyboard + mouse. Open <b>claudecitizen.com</b> on a computer to play. (Code &amp; details on GitHub below.)</div>
+    <div id="mobile-notice"><b>Mobile Command Deck</b><br/>Full flight still needs desktop keyboard + mouse. On mobile, use this page to check PvP season standings, connect wallet, and follow the live contest.</div>
     <input id="nickname" maxlength="16" placeholder="CALLSIGN" autocomplete="off" />
     <button id="launch">LAUNCH</button>
     <div id="launch-loading" hidden>
