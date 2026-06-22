@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { nextCameraMode, orbitCameraOffset, queueOrbitZoomDelta, zoomOrbitDistance } from './cameraView'
+import {
+  defaultRearDistance,
+  nextCameraMode,
+  orbitCameraOffset,
+  queueOrbitZoomDelta,
+  rearCameraOffset,
+  zoomOrbitDistance,
+  zoomRearDistance,
+} from './cameraView'
 
 describe('camera view controls', () => {
   it('toggles between rear flight and orbit showcase camera', () => {
@@ -21,6 +29,15 @@ describe('camera view controls', () => {
     expect(zoomOrbitDistance(8.3, 600)).toBe(10.1)
     expect(zoomOrbitDistance(5, -600)).toBe(4.5)
     expect(zoomOrbitDistance(13.8, 600)).toBe(14)
+  })
+
+  it('uses a wider rear combat camera and clamps rear wheel zoom', () => {
+    expect(defaultRearDistance()).toBe(14)
+    expect(rearCameraOffset(0).z).toBe(14)
+    expect(rearCameraOffset(1, 20).z).toBe(24)
+    expect(zoomRearDistance(14, -1000)).toBe(10)
+    expect(zoomRearDistance(14, 1000)).toBe(20)
+    expect(zoomRearDistance(25, 1000)).toBe(26)
   })
 
   it('caps queued wheel bursts so zoom is consumed once per frame', () => {

@@ -83,11 +83,13 @@ import {
 } from './ui/holderShipVisual'
 import {
   defaultOrbitDistance,
+  defaultRearDistance,
   nextCameraMode,
   orbitCameraOffset,
   queueOrbitZoomDelta,
   rearCameraOffset,
   zoomOrbitDistance,
+  zoomRearDistance,
   type CameraMode,
 } from './ui/cameraView'
 import { activeIdentity, loadWalletSession, saveWalletSession } from './net/identity'
@@ -1708,6 +1710,8 @@ let mousePitch = 0
 let mouseYaw = 0
 let assist = true
 let cameraMode: CameraMode = 'rear'
+let cameraRearDistance = defaultRearDistance()
+let cameraRearWheelDelta = 0
 let cameraOrbitElapsed = 0
 let cameraOrbitDistance = defaultOrbitDistance()
 let cameraOrbitWheelDelta = 0
@@ -1716,6 +1720,8 @@ function cycleCameraView(): void {
   if (cameraMode === 'rear') {
     cameraOrbitElapsed = 0
     cameraOrbitWheelDelta = 0
+  } else {
+    cameraRearWheelDelta = 0
   }
 }
 
@@ -1791,9 +1797,13 @@ addEventListener('mousemove', (e) => {
   mousePitch = THREE.MathUtils.clamp(mousePitch, -1, 1)
 })
 renderer.domElement.addEventListener('wheel', (e) => {
-  if (!(running && !docked && cameraMode === 'orbit')) return
+  if (!(running && !docked)) return
   e.preventDefault()
-  cameraOrbitWheelDelta = queueOrbitZoomDelta(cameraOrbitWheelDelta, e.deltaY)
+  if (cameraMode === 'orbit') {
+    cameraOrbitWheelDelta = queueOrbitZoomDelta(cameraOrbitWheelDelta, e.deltaY)
+  } else {
+    cameraRearWheelDelta = queueOrbitZoomDelta(cameraRearWheelDelta, e.deltaY)
+  }
 }, { passive: false })
 // Left mouse = mining laser, right mouse = weapon (only while flying, mouse captured).
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault())
@@ -2230,7 +2240,11 @@ function updateCamera(dt: number): void {
       }
       camOffset.copy(orbitCameraOffset(cameraOrbitElapsed, boostKick, cameraOrbitDistance))
     } else {
-      camOffset.copy(rearCameraOffset(boostKick))
+      if (cameraRearWheelDelta !== 0) {
+        cameraRearDistance = zoomRearDistance(cameraRearDistance, cameraRearWheelDelta)
+        cameraRearWheelDelta = 0
+      }
+      camOffset.copy(rearCameraOffset(boostKick, cameraRearDistance))
     }
     camOffset.applyQuaternion(ship.quaternion)
   }
