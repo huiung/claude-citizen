@@ -60,10 +60,15 @@ export function spawnProjectile(
   damage: number = PROJECTILE_DAMAGE,
   inheritedVelocity?: Vector3,
 ): Projectile {
-  const v = dir.clone()
-  if (v.lengthSq() < 1e-9) v.set(0, 0, -1)
-  v.normalize().multiplyScalar(speed)
-  if (inheritedVelocity) v.add(inheritedVelocity)
+  const aim = dir.clone()
+  if (aim.lengthSq() < 1e-9) aim.set(0, 0, -1)
+  aim.normalize()
+  const v = aim.clone().multiplyScalar(speed)
+  if (inheritedVelocity) {
+    v.add(inheritedVelocity)
+    const inheritedForward = inheritedVelocity.dot(aim)
+    if (inheritedForward < 0) v.addScaledVector(aim, -inheritedForward)
+  }
   return { position: origin.clone(), previousPosition: origin.clone(), velocity: v, life: PROJECTILE_LIFE, faction, damage }
 }
 

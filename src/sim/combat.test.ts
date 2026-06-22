@@ -60,6 +60,20 @@ describe('projectiles', () => {
     expect(p.velocity.z).toBeCloseTo(-PROJECTILE_SPEED - 160, 5)
   })
 
+  it('removes inherited velocity that would push a projectile backward from its aim direction', () => {
+    const p = spawnProjectile(
+      new Vector3(),
+      new Vector3(0, 0, -1),
+      'player',
+      PROJECTILE_SPEED,
+      12,
+      new Vector3(25, 0, 1000),
+    )
+
+    expect(p.velocity.x).toBeCloseTo(25, 5)
+    expect(p.velocity.z).toBeCloseTo(-PROJECTILE_SPEED, 5)
+  })
+
   it('a zero direction falls back to forward (-Z), never NaN', () => {
     const p = spawnProjectile(new Vector3(), new Vector3(0, 0, 0), 'player')
     expect(Number.isNaN(p.velocity.length())).toBe(false)
