@@ -50,6 +50,37 @@ describe('leaderboard paging', () => {
     expect(page.rows[1]).toEqual({ rank: 2, name: 'ANON', earned: 900 })
   })
 
+  it('hides stale anonymous career rows already claimed by a wallet row with the same callsign', () => {
+    const page = leaderboardPage({
+      [WALLET]: { name: 'MAV', earned: 1200 },
+      staleAnon: { name: 'MAV', earned: 1100 },
+      strongerAnon: { name: 'MAV', earned: 1300 },
+      otherAnon: { name: 'OTHER', earned: 1000 },
+    }, { offset: 0, limit: 10 })
+
+    expect(page.rows.map((row) => row.name)).toEqual([
+      'MAV',
+      'MAV (7GgB...6QnU)',
+      'OTHER',
+    ])
+    expect(page.total).toBe(3)
+  })
+
+  it('keeps anonymous PILOT rows even when a wallet-connected PILOT exists', () => {
+    const page = leaderboardPage({
+      [WALLET]: { name: 'PILOT', earned: 1200 },
+      anonPilot: { name: 'PILOT', earned: 1100 },
+      otherAnon: { name: 'OTHER', earned: 1000 },
+    }, { offset: 0, limit: 10 })
+
+    expect(page.rows.map((row) => row.name)).toEqual([
+      'PILOT (7GgB...6QnU)',
+      'PILOT',
+      'OTHER',
+    ])
+    expect(page.total).toBe(3)
+  })
+
   it('clamps request params to 10-row pages through rank 100', () => {
     expect(parseLeaderboardParams('/leaderboard?offset=999&limit=999')).toEqual({ offset: 90, limit: 10 })
     expect(parseLeaderboardParams('/leaderboard?offset=-40&limit=2')).toEqual({ offset: 0, limit: 10 })

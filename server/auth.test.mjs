@@ -92,11 +92,13 @@ describe('resolveClaim', () => {
     const store = { anon1: { credits: 500 } }
     resolveClaim(store, 'PK', 'anon1')
     expect(store['PK']).toEqual({ credits: 500 })
+    expect('anon1' in store).toBe(false)
   })
   it('keeps existing wallet data and ignores anon (A안)', () => {
     const store = { anon1: { credits: 500 }, PK: { credits: 9000 } }
     resolveClaim(store, 'PK', 'anon1')
     expect(store['PK']).toEqual({ credits: 9000 })
+    expect('anon1' in store).toBe(false)
   })
   it('sets null when neither side has data', () => {
     const store = {}

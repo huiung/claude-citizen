@@ -64,6 +64,7 @@ export function resolveClaim(store, pubkey, anonToken) {
   if (!store[pubkey]) {
     store[pubkey] = (anonToken && store[anonToken]) || null
   }
+  if (anonToken && anonToken !== pubkey) delete store[anonToken]
   return store[pubkey]
 }
 
