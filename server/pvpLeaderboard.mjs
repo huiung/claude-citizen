@@ -109,10 +109,16 @@ function pvpScore(entry) {
   return pvp
 }
 
+function shortWallet(key) {
+  const text = String(key ?? '')
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(text)) return null
+  return `${text.slice(0, 4)}...${text.slice(-4)}`
+}
+
 export function pvpLeaderboardPage(store, { offset = 0, limit = LEADERBOARD_PAGE_SIZE } = {}) {
-  const ranked = Object.values(store)
-    .filter((entry) => pvpScore(entry).rankedKills > 0)
-    .sort((a, b) => {
+  const ranked = Object.entries(store)
+    .filter(([, entry]) => pvpScore(entry).rankedKills > 0)
+    .sort(([, a], [, b]) => {
       const ap = pvpScore(a)
       const bp = pvpScore(b)
       return (bp.rankedKills - ap.rankedKills)
@@ -121,16 +127,23 @@ export function pvpLeaderboardPage(store, { offset = 0, limit = LEADERBOARD_PAGE
         || (bp.lastRankedKillAt - ap.lastRankedKillAt)
     })
     .slice(0, LEADERBOARD_MAX_RANK)
-    .map((entry, index) => {
+    .map(([key, entry], index) => {
       const pvp = pvpScore(entry)
-      return {
+      const callsign = entry.name ?? 'PILOT'
+      const wallet = shortWallet(key)
+      const row = {
         rank: index + 1,
-        name: entry.name ?? 'PILOT',
+        name: wallet ?? callsign,
         kills: pvp.rankedKills,
         deaths: pvp.rankedDeaths,
         streak: pvp.rankedStreak,
         bestStreak: pvp.bestRankedStreak,
       }
+      if (wallet) {
+        row.wallet = wallet
+        row.callsign = callsign
+      }
+      return row
     })
 
   const safeOffset = Math.min(Math.max(0, Math.floor(offset)), LEADERBOARD_MAX_RANK - LEADERBOARD_PAGE_SIZE)

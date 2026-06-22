@@ -75,6 +75,24 @@ describe('ranked PvP leaderboard', () => {
     expect(page.total).toBe(3)
   })
 
+  it('shows shortened wallet addresses for ranked PvP wallet identities', () => {
+    const wallet = '7GgB2mDWpD6nA3xJ9sS6e5zqZTa3YL6hFLaeL5Qz6QnU'
+    const store = {
+      [wallet]: { name: 'DUPENAME', pvp: stats({ rankedKills: 4, lastRankedKillAt: 1000 }) },
+      anonToken: { name: 'PILOT', pvp: stats({ rankedKills: 1, lastRankedKillAt: 900 }) },
+    }
+
+    const page = pvpLeaderboardPage(store, { offset: 0, limit: 10 })
+
+    expect(page.rows[0]).toMatchObject({
+      name: '7GgB...6QnU',
+      wallet: '7GgB...6QnU',
+      callsign: 'DUPENAME',
+      kills: 4,
+    })
+    expect(page.rows[1]).toMatchObject({ name: 'PILOT' })
+  })
+
   it('pages ranked PvP rows with the same 100-rank cap as the career leaderboard', () => {
     const store = {}
     for (let i = 0; i < 120; i++) {

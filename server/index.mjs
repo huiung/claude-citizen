@@ -12,6 +12,7 @@ import { fetchHolderStatus, createHolderCache } from './holders.mjs'
 import { leaderboardPage, parseLeaderboardParams } from './leaderboard.mjs'
 import { createPvpKillAuditLog, pvpLeaderboardPage, mergePvpStats, recordRankedPvpKill } from './pvpLeaderboard.mjs'
 import { applyPvpHit, applyPvpRespawn, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
+import { identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
 
 function loadEnvFile(path = '.env') {
   let text
@@ -143,11 +144,6 @@ function flushSessions() {
   try { writeFileSync(SESSION_FILE, JSON.stringify(sessions.snapshot())) } catch { /* disk unavailable */ }
 }
 
-/** The progress key for a client: verified pubkey if authed, else the raw token. */
-function identityKey(client) {
-  return client.authed && client.pubkey ? client.pubkey : client.token
-}
-
 // --- Token-keyed progress store (anonymous, no accounts)
 let store = {}
 try { store = JSON.parse(readFileSync(STORE_FILE, 'utf8')) } catch { store = {} }
@@ -200,6 +196,12 @@ function broadcastAll(msg) {
   }
 }
 
+function kickDuplicatePeers(ws, client) {
+  for (const removed of kickDuplicateActiveClients(clients, ws, client)) {
+    broadcast(ws, { t: 'peer-leave', id: removed.client.id })
+  }
+}
+
 wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
     let msg
@@ -247,14 +249,7 @@ wss.on('connection', (ws) => {
       if (!client.authed) applySession(client, msg.sessionId)
       const key = identityKey(client)
       // Single live session per identity — kick any other live pilot on the same key.
-      if (key) {
-        for (const [ws2, c2] of clients) {
-          if (ws2 !== ws && c2.active && identityKey(c2) === key) {
-            try { ws2.send(JSON.stringify({ t: 'kicked' })) } catch { /* already gone */ }
-            ws2.close()
-          }
-        }
-      }
+      kickDuplicatePeers(ws, client)
       // Only active pilots are peers (have ships).
       const peers = [...clients.values()].filter((c) => c.active && c !== client).map(({ token: _t, active: _a, authed: _au, pubkey: _pk, holderBalance: _hb, ...rest }) => rest)
       ws.send(JSON.stringify({ t: 'welcome', id: client.id, peers }))
@@ -295,6 +290,7 @@ wss.on('connection', (ws) => {
       // Verified. Bind this connection to the pubkey and run the claim.
       client.authed = true
       client.pubkey = pubkey
+      kickDuplicatePeers(ws, client)
       resolveClaim(store, pubkey, anonToken)
       flush()
       const sessionId = sessions.create(pubkey)

@@ -16,6 +16,8 @@ export const PVP_SEASON = {
 export interface LeaderboardRow {
   rank?: number
   name: string
+  callsign?: string
+  wallet?: string | null
   earned?: number
   kills?: number
   deaths?: number
