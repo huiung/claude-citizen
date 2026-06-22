@@ -98,6 +98,12 @@ import {
   type CameraMode,
 } from './ui/cameraView'
 import { mobileFlightInput, type MobileFlightState } from './ui/mobileFlight'
+import {
+  combatFeedbackAlpha,
+  createCombatFeedbackState,
+  registerHitMarker,
+  registerKillBanner,
+} from './ui/combatFeedback'
 import { activeIdentity, loadWalletSession, saveWalletSession } from './net/identity'
 import { connectWallet, signMessage, hasWallet, WalletError, NO_WALLET } from './net/wallet'
 import { inject as injectAnalytics } from '@vercel/analytics'
@@ -1086,6 +1092,7 @@ const projectiles: Projectile[] = []
 const projectileMeshes = new Map<Projectile, THREE.Mesh>()
 const pirates: Pirate[] = []
 const pirateMeshes = new Map<string, THREE.Group>()
+const combatFeedback = createCombatFeedbackState()
 
 // --- Loot: glowing crates dropped by pirates / floating in space. Magnet-collect for credits.
 interface Loot { mesh: THREE.Group; value: number; rare: boolean }
@@ -1102,6 +1109,7 @@ function spawnLoot(pos: THREE.Vector3): void {
   lootCrates.push({ mesh, value, rare })
 }
 const explosions: { mesh: THREE.Mesh; born: number }[] = []
+const hitSparks: { mesh: THREE.Mesh; born: number }[] = []
 let weaponActive = false
 let pirateSpawnCount = 0
 let nextSpawnAt = Infinity
@@ -1402,10 +1410,10 @@ function boltMat(color: number, opacity: number): THREE.MeshBasicMaterial {
 function makeBolt(faction: 'player' | 'pirate'): THREE.Mesh {
   const color = faction === 'player' ? BOLT_COLORS[selectedShipType] : 0xff7b4a
   // Bright additive core + soft halo → bloom turns it into a glowing plasma tracer (not a flat dot).
-  const core = new THREE.Mesh(boltGeo, boltMat(color, 0.95))
-  core.scale.set(1, 1, 2.6) // elongated tracer; z aligns to travel via lookAt
-  const halo = new THREE.Mesh(boltHaloGeo, boltMat(color, 0.28))
-  halo.scale.set(1, 1, 1.6)
+  const core = new THREE.Mesh(boltGeo, boltMat(color, 1))
+  core.scale.set(1.1, 1.1, 4.2) // elongated tracer; z aligns to travel via lookAt
+  const halo = new THREE.Mesh(boltHaloGeo, boltMat(color, 0.4))
+  halo.scale.set(1.45, 1.45, 2.35)
   core.add(halo)
   return core
 }
@@ -1419,6 +1427,17 @@ function spawnExplosion(pos: THREE.Vector3, now: number): void {
   mesh.position.copy(pos)
   scene.add(mesh)
   explosions.push({ mesh, born: now })
+}
+
+function spawnHitSpark(pos: THREE.Vector3, now: number, color = 0xfff2a8): void {
+  const mat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity: 0.7,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  })
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.7, 8, 8), mat)
+  mesh.position.copy(pos)
+  scene.add(mesh)
+  hitSparks.push({ mesh, born: now })
 }
 
 function damageFlash(): void {
@@ -1498,6 +1517,21 @@ function updateExplosions(now: number): void {
     }
     e.mesh.scale.setScalar(2 + age * 20)
     ;(e.mesh.material as THREE.MeshBasicMaterial).opacity = 0.9 * (1 - age)
+  }
+}
+
+function updateHitSparks(now: number): void {
+  for (let i = hitSparks.length - 1; i >= 0; i--) {
+    const spark = hitSparks[i]
+    const age = (now - spark.born) / 260
+    if (age >= 1) {
+      scene.remove(spark.mesh)
+      disposeObject(spark.mesh)
+      hitSparks.splice(i, 1)
+      continue
+    }
+    spark.mesh.scale.setScalar(1 + age * 3.2)
+    ;(spark.mesh.material as THREE.MeshBasicMaterial).opacity = 0.7 * (1 - age)
   }
 }
 
@@ -2097,14 +2131,16 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     remote.peer.hull = remote.health.hull
     remote.peer.maxHull = maxHull
   },
-  onPvpHit(targetId, hull, maxHull, damage, killed) {
+  onPvpHit(targetId, hull, maxHull, _damage, killed) {
     const remote = remotes.get(targetId)
     if (remote) {
       remote.health.max = maxHull
       remote.health.hull = THREE.MathUtils.clamp(hull, 0, maxHull)
       remote.peer.hull = remote.health.hull
       remote.peer.maxHull = maxHull
-      spawnFloat(killed ? 'PVP KILL' : `-${Math.round(damage)}`, remote.mesh.position, performance.now(), killed ? '#ff5dff' : '#ff8ab8')
+      registerHitMarker(combatFeedback, performance.now())
+      spawnHitSpark(remote.mesh.position, performance.now(), killed ? 0xff5dff : 0xfff2a8)
+      if (killed) spawnFloat('PVP KILL', remote.mesh.position, performance.now(), '#ff5dff')
     }
   },
   onPvpDamage(attackerName, hull, maxHull, damage, killed) {
@@ -2118,7 +2154,10 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   onPvpKill(killerName, victimName, reward, killerIsSelf, victimIsSelf) {
     const suffix = reward > 0 ? ` (+${reward} cr)` : ''
     addChatLine('PVP', `${killerName} destroyed ${victimName}${suffix}`, 3)
-    if (killerIsSelf) audio.blip('trade')
+    if (killerIsSelf) {
+      registerKillBanner(combatFeedback, `ELIMINATED ${victimName.toUpperCase()}`, reward > 0 ? `+${reward} cr` : '+1 kill', performance.now())
+      audio.blip('trade')
+    }
     if (victimIsSelf) damageFlash()
   },
   onPvpReward(credits, victimName) {
@@ -2299,32 +2338,41 @@ function updateLootCrates(now: number, dt: number): void {
 // --- Combat HUD overlay: target brackets, off-screen threat arrows, and a lead pip.
 const _proj = new THREE.Vector3()
 const _lead = new THREE.Vector3()
-function drawCombatHud(): void {
+const _leadVelocity = new THREE.Vector3()
+function drawCombatHud(now: number): void {
   const W = combatCanvas.width, H = combatCanvas.height
   cctx.clearRect(0, 0, W, H)
-  if (!pirates.length) return
   const cx = W / 2, cy = H / 2
-  let nearest: Pirate | null = null, nd = Infinity
+  let nearestPos: THREE.Vector3 | null = null
+  let nd = Infinity
 
-  for (const p of pirates) {
-    _proj.copy(p.position).project(camera)
+  const markLeadTarget = (position: THREE.Vector3, velocity: THREE.Vector3, dist: number): void => {
+    if (_proj.z < 1 && dist < nd) {
+      nd = dist
+      nearestPos = position
+      _leadVelocity.copy(velocity)
+    }
+  }
+
+  const drawTarget = (position: THREE.Vector3, velocity: THREE.Vector3, color: string, label: string): void => {
+    _proj.copy(position).project(camera)
     const infront = _proj.z < 1
     const sx = (_proj.x * 0.5 + 0.5) * W
     const sy = (-_proj.y * 0.5 + 0.5) * H
-    const dist = ship.position.distanceTo(p.position)
+    const dist = ship.position.distanceTo(position)
     const onScreen = infront && sx >= 0 && sx <= W && sy >= 0 && sy <= H
 
     if (onScreen) {
       const s = 16
-      cctx.strokeStyle = '#ff5d5d'; cctx.lineWidth = 2
+      cctx.strokeStyle = color; cctx.lineWidth = 2
       cctx.beginPath()
       for (const [ox, oy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as [number, number][]) {
         cctx.moveTo(sx + ox * s, sy + oy * s); cctx.lineTo(sx + ox * s, sy + oy * (s - 6))
         cctx.moveTo(sx + ox * s, sy + oy * s); cctx.lineTo(sx + ox * (s - 6), sy + oy * s)
       }
       cctx.stroke()
-      cctx.fillStyle = '#ff8a8a'; cctx.font = '11px ui-monospace, monospace'; cctx.textAlign = 'center'
-      cctx.fillText(`${Math.round(dist)}m`, sx, sy + s + 14)
+      cctx.fillStyle = color; cctx.font = '11px ui-monospace, monospace'; cctx.textAlign = 'center'
+      cctx.fillText(`${label} ${Math.round(dist)}m`, sx, sy + s + 14)
     } else {
       let dx = sx - cx, dy = sy - cy
       if (!infront) { dx = -dx; dy = -dy } // behind: flip so the arrow points the right way
@@ -2332,17 +2380,32 @@ function drawCombatHud(): void {
       const r = Math.min(W, H) * 0.4
       const ax = cx + Math.cos(ang) * r, ay = cy + Math.sin(ang) * r
       cctx.save(); cctx.translate(ax, ay); cctx.rotate(ang)
-      cctx.fillStyle = '#ff5d5d'
+      cctx.fillStyle = color
       cctx.beginPath(); cctx.moveTo(13, 0); cctx.lineTo(-8, -7); cctx.lineTo(-8, 7); cctx.closePath(); cctx.fill()
       cctx.restore()
     }
-    if (infront && dist < nd) { nd = dist; nearest = p }
+    markLeadTarget(position, velocity, dist)
   }
 
-  // Lead indicator on the nearest pirate ahead — put your crosshair here to land hits.
-  if (nearest) {
+  for (const p of pirates) drawTarget(p.position, p.velocity, '#ff5d5d', 'HOSTILE')
+
+  const activePvpZone = pvpZoneAt(ship.position)
+  if (activePvpZone) {
+    for (const remote of remotes.values()) {
+      if (pvpZoneAt(remote.mesh.position)?.id !== activePvpZone.id) continue
+      const velocity = new THREE.Vector3()
+      if (remote.peer.prev && remote.peer.receivedAt > remote.peer.prev.receivedAt) {
+        const dt = (remote.peer.receivedAt - remote.peer.prev.receivedAt) / 1000
+        if (dt > 0) velocity.fromArray(remote.peer.p).sub(new THREE.Vector3().fromArray(remote.peer.prev.p)).multiplyScalar(1 / dt)
+      }
+      drawTarget(remote.mesh.position, velocity, '#ff5dff', remote.peer.name.slice(0, 8).toUpperCase())
+    }
+  }
+
+  // Lead indicator on the nearest target ahead — put your crosshair here to land hits.
+  if (nearestPos) {
     const t = nd / PROJECTILE_SPEED
-    _lead.copy(nearest.velocity).multiplyScalar(t).add(nearest.position)
+    _lead.copy(_leadVelocity).multiplyScalar(t).add(nearestPos)
     _proj.copy(_lead).project(camera)
     if (_proj.z < 1) {
       const lx = (_proj.x * 0.5 + 0.5) * W, ly = (-_proj.y * 0.5 + 0.5) * H
@@ -2354,6 +2417,48 @@ function drawCombatHud(): void {
       cctx.stroke()
     }
   }
+
+  const hitAlpha = combatFeedbackAlpha(combatFeedback.hitMarker, now)
+  if (hitAlpha > 0) {
+    cctx.save()
+    cctx.globalAlpha = hitAlpha
+    cctx.strokeStyle = combatFeedback.hitMarker.color
+    cctx.fillStyle = combatFeedback.hitMarker.color
+    cctx.shadowColor = combatFeedback.hitMarker.color
+    cctx.shadowBlur = 12
+    cctx.lineWidth = 3
+    const gap = 13
+    const len = 28
+    cctx.beginPath()
+    cctx.moveTo(cx - gap, cy - gap); cctx.lineTo(cx - len, cy - len)
+    cctx.moveTo(cx + gap, cy - gap); cctx.lineTo(cx + len, cy - len)
+    cctx.moveTo(cx - gap, cy + gap); cctx.lineTo(cx - len, cy + len)
+    cctx.moveTo(cx + gap, cy + gap); cctx.lineTo(cx + len, cy + len)
+    cctx.stroke()
+    cctx.font = '700 12px ui-monospace, monospace'
+    cctx.textAlign = 'center'
+    cctx.restore()
+  }
+
+  const killAlpha = combatFeedbackAlpha(combatFeedback.killBanner, now)
+  if (combatFeedback.killBanner && killAlpha > 0) {
+    cctx.save()
+    cctx.globalAlpha = killAlpha
+    cctx.textAlign = 'center'
+    cctx.shadowColor = combatFeedback.killBanner.color
+    cctx.shadowBlur = 18
+    cctx.fillStyle = combatFeedback.killBanner.color
+    cctx.font = '700 24px Orbitron, ui-monospace, monospace'
+    cctx.fillText(combatFeedback.killBanner.text ?? '', cx, H * 0.31)
+    if (combatFeedback.killBanner.subtext) {
+      cctx.shadowBlur = 8
+      cctx.fillStyle = '#ffe8ff'
+      cctx.font = '700 13px ui-monospace, monospace'
+      cctx.fillText(combatFeedback.killBanner.subtext, cx, H * 0.31 + 26)
+    }
+    cctx.restore()
+  }
+
 }
 
 // --- Chase camera
@@ -2802,8 +2907,14 @@ function frame(now: number): void {
     const hits = resolveHits(projectiles, targets)
     for (const h of hits) {
       audio.blip('hit')
-      if (h.target.faction === 'player') damageFlash()
-      if (h.target.faction === 'player') lastPlayerDamageAt = now
+      if (h.target.faction === 'pirate') {
+        registerHitMarker(combatFeedback, now)
+        spawnHitSpark(h.target.position, now)
+      }
+      if (h.target.faction === 'player') {
+        damageFlash()
+        lastPlayerDamageAt = now
+      }
       if (h.target.faction === 'peer' && h.target.id) net.sendPvpHit(h.target.id)
     }
 
@@ -2811,6 +2922,7 @@ function frame(now: number): void {
       if (isDead(pirates[i].health)) {
         const p = pirates[i]
         spawnExplosion(p.position, now)
+        registerKillBanner(combatFeedback, 'PIRATE DESTROYED', `+${p.reward} cr`, now)
         audio.blip('explosion')
         gainCredits(econ, p.reward)
         finishOnboarding() // graduates the onboarding objective
@@ -2851,6 +2963,7 @@ function frame(now: number): void {
 
   updateOreFloats(now)
   updateExplosions(now)
+  updateHitSparks(now)
 
   // Subtle quantum motion: faint streaks ease in during the jump (spool-up pulls them gently
   // toward the vanishing point, travel lets them drift past). Kept light — easy on the eyes.
@@ -2869,7 +2982,7 @@ function frame(now: number): void {
   if (running) updateDustField(dustField, camera.position)
 
   // Combat HUD — target brackets, threat arrows, lead pip (hidden while docked/in menu).
-  if (running && !docked) drawCombatHud()
+  if (running && !docked) drawCombatHud(now)
   else cctx.clearRect(0, 0, combatCanvas.width, combatCanvas.height)
 
   if (running && !docked) updateLootCrates(now, dt) // spin / magnet / collect loot crates
