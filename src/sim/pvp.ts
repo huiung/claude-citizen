@@ -5,6 +5,7 @@ export const PVP_ZONE_RADIUS = 1250
 export const PVP_ARENA_CLEAR_RADIUS = 90000
 export const PVP_ARENA_ENTRY_HINT_DISTANCE = 4500
 export const PVP_HIT_RANGE = 900
+export const PVP_PEER_HIT_RADIUS = 12
 export const PVP_KILL_REWARD = 180
 export const PVP_REPEAT_REWARD_COOLDOWN_MS = 5 * 60 * 1000
 export const PVP_RANKED_MIN_TOKEN_BALANCE = 1000

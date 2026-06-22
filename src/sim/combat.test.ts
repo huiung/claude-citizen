@@ -47,6 +47,19 @@ describe('projectiles', () => {
     expect(p.faction).toBe('player')
   })
 
+  it('adds inherited ship velocity to spawned projectiles', () => {
+    const p = spawnProjectile(
+      new Vector3(),
+      new Vector3(0, 0, -1),
+      'player',
+      PROJECTILE_SPEED,
+      12,
+      new Vector3(0, 0, -160),
+    )
+
+    expect(p.velocity.z).toBeCloseTo(-PROJECTILE_SPEED - 160, 5)
+  })
+
   it('a zero direction falls back to forward (-Z), never NaN', () => {
     const p = spawnProjectile(new Vector3(), new Vector3(0, 0, 0), 'player')
     expect(Number.isNaN(p.velocity.length())).toBe(false)
@@ -98,6 +111,17 @@ describe('resolveHits', () => {
     const t = target('pirate', new Vector3(0, 0, 0))
     expect(resolveHits(proj, [t]).length).toBe(0)
     expect(proj.length).toBe(1)
+  })
+
+  it('detects hits along the projectile path between frames', () => {
+    const proj = [spawnProjectile(new Vector3(0, 0, 12), new Vector3(0, 0, -1), 'player', 1000)]
+    stepProjectiles(proj, 0.03)
+    const t = target('peer', new Vector3(0, 0, 0))
+
+    const hits = resolveHits(proj, [t])
+
+    expect(hits.length).toBe(1)
+    expect(t.health.hull).toBe(88)
   })
 
   it('ignores already-dead targets', () => {

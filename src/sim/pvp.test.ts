@@ -11,6 +11,7 @@ import {
   PVP_ARENA_CLEAR_RADIUS,
   PVP_ARENA_ENTRY_HINT_DISTANCE,
   PVP_PRACTICE_ZONE_CENTER,
+  PVP_PEER_HIT_RADIUS,
   PVP_RANKED_MIN_TOKEN_BALANCE,
   PVP_RANKED_ZONE_CENTER,
   PVP_ZONE_CENTER,
@@ -93,6 +94,11 @@ describe('pvp weapon and reward rules', () => {
     expect(PVP_WEAPONS.interceptor.damage).toBeLessThan(PVP_WEAPONS.fighter.damage)
     expect(PVP_WEAPONS.miner.damage).toBeGreaterThan(PVP_WEAPONS.fighter.damage)
     expect(pvpWeaponForShip('hauler')).toBe(PVP_WEAPONS.hauler)
+  })
+
+  it('uses a forgiving peer hit radius for fast PvP passes', () => {
+    expect(PVP_PEER_HIT_RADIUS).toBeGreaterThan(7)
+    expect(PVP_PEER_HIT_RADIUS).toBeLessThanOrEqual(14)
   })
 
   it('suppresses rewards for repeat kills during the cooldown window', () => {

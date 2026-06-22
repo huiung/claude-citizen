@@ -43,6 +43,7 @@ export const PROJECTILE_DAMAGE = 12
 
 export interface Projectile {
   position: Vector3
+  previousPosition: Vector3
   velocity: Vector3
   /** Seconds of life remaining before it fizzles. */
   life: number
@@ -57,17 +58,20 @@ export function spawnProjectile(
   faction: Faction,
   speed: number = PROJECTILE_SPEED,
   damage: number = PROJECTILE_DAMAGE,
+  inheritedVelocity?: Vector3,
 ): Projectile {
   const v = dir.clone()
   if (v.lengthSq() < 1e-9) v.set(0, 0, -1)
   v.normalize().multiplyScalar(speed)
-  return { position: origin.clone(), velocity: v, life: PROJECTILE_LIFE, faction, damage }
+  if (inheritedVelocity) v.add(inheritedVelocity)
+  return { position: origin.clone(), previousPosition: origin.clone(), velocity: v, life: PROJECTILE_LIFE, faction, damage }
 }
 
 /** Advance every projectile, decrement life, and remove expired ones in place. */
 export function stepProjectiles(projectiles: Projectile[], dt: number): void {
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i]
+    p.previousPosition.copy(p.position)
     p.position.addScaledVector(p.velocity, dt)
     p.life -= dt
     if (p.life <= 0) projectiles.splice(i, 1)
@@ -88,6 +92,25 @@ export interface Hit {
   target: HitTarget
 }
 
+const _hitSegment = new Vector3()
+const _hitTargetOffset = new Vector3()
+const _hitClosest = new Vector3()
+
+function projectileHitsTarget(p: Projectile, t: HitTarget): boolean {
+  const radiusSq = t.radius * t.radius
+  if (p.position.distanceToSquared(t.position) <= radiusSq) return true
+
+  const previous = p.previousPosition ?? p.position
+  _hitSegment.copy(p.position).sub(previous)
+  const segmentLengthSq = _hitSegment.lengthSq()
+  if (segmentLengthSq < 1e-9) return previous.distanceToSquared(t.position) <= radiusSq
+
+  const along = _hitTargetOffset.copy(t.position).sub(previous).dot(_hitSegment) / segmentLengthSq
+  const clamped = Math.max(0, Math.min(1, along))
+  _hitClosest.copy(previous).addScaledVector(_hitSegment, clamped)
+  return _hitClosest.distanceToSquared(t.position) <= radiusSq
+}
+
 /**
  * Check each projectile against every target of a DIFFERENT faction. On the first
  * hit, apply damage to that target and remove the projectile. Returns the hits
@@ -100,7 +123,7 @@ export function resolveHits(projectiles: Projectile[], targets: HitTarget[]): Hi
     for (const t of targets) {
       if (t.faction === p.faction) continue
       if (isDead(t.health)) continue
-      if (p.position.distanceToSquared(t.position) <= t.radius * t.radius) {
+      if (projectileHitsTarget(p, t)) {
         applyDamage(t.health, p.damage)
         hits.push({ projectile: p, target: t })
         projectiles.splice(i, 1)

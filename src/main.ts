@@ -48,6 +48,7 @@ import {
   PVP_ARENA_CLEAR_RADIUS,
   PVP_ARENA_DESTINATIONS,
   PVP_PRACTICE_ZONE_CENTER,
+  PVP_PEER_HIT_RADIUS,
   PVP_RANKED_MIN_TOKEN_BALANCE,
   PVP_RANKED_ZONE_CENTER,
   PVP_ZONE_CENTER,
@@ -2580,7 +2581,14 @@ function frame(now: number): void {
     stepWeapon(playerWeapon, dt)
     if (weaponActive && canFire(playerWeapon)) {
       _fwd.set(0, 0, -1).applyQuaternion(ship.quaternion)
-      projectiles.push(spawnProjectile(ship.position, _fwd, 'player', PROJECTILE_SPEED, pvpActive ? pvpWeapon.damage : undefined))
+      projectiles.push(spawnProjectile(
+        ship.position,
+        _fwd,
+        'player',
+        PROJECTILE_SPEED,
+        pvpActive ? pvpWeapon.damage : undefined,
+        pvpActive ? ship.velocity : undefined,
+      ))
       fireWeapon(playerWeapon)
       audio.blip('fire')
     }
@@ -2617,7 +2625,7 @@ function frame(now: number): void {
       ...(pvpActive
         ? [...remotes.entries()]
             .filter(([, r]) => pvpZoneAt(r.mesh.position)?.id === pvpZone.id)
-            .map(([id, r]) => ({ id, position: r.mesh.position, radius: 7, health: r.health, faction: 'peer' as const }))
+            .map(([id, r]) => ({ id, position: r.mesh.position, radius: PVP_PEER_HIT_RADIUS, health: r.health, faction: 'peer' as const }))
         : []),
     ]
     const hits = resolveHits(projectiles, targets)
