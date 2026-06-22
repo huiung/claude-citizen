@@ -111,6 +111,20 @@ export function allowsPveHostiles(position: Vector3): boolean {
   return !isInPvpZone(position)
 }
 
+export function shouldClearPveHostiles({
+  safe,
+  pvpActive,
+  pirates,
+  pirateProjectiles,
+}: {
+  safe: boolean
+  pvpActive: boolean
+  pirates: number
+  pirateProjectiles: number
+}): boolean {
+  return (safe || pvpActive) && (pirates > 0 || pirateProjectiles > 0)
+}
+
 export function pvpZoneIntensity(position: Vector3): number {
   const d = Math.min(...PVP_ZONES.map((zone) => position.distanceTo(zone.center)))
   return Math.max(0, Math.min(1, 1 - d / PVP_ZONE_RADIUS))

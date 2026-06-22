@@ -24,6 +24,7 @@ import {
   pvpZoneIntensity,
   rankedPvpAccess,
   allowsPveHostiles,
+  shouldClearPveHostiles,
 } from './pvp'
 
 describe('pvp zone rules', () => {
@@ -86,6 +87,12 @@ describe('pvp zone rules', () => {
     expect(allowsPveHostiles(PVP_ZONE_CENTER.clone())).toBe(false)
     expect(allowsPveHostiles(PVP_RANKED_ZONE_CENTER.clone())).toBe(false)
     expect(allowsPveHostiles(PVP_ZONE_CENTER.clone().add(new Vector3(PVP_ZONE_RADIUS + 1, 0, 0)))).toBe(true)
+  })
+
+  it('clears stray pirate fire when entering protected zones', () => {
+    expect(shouldClearPveHostiles({ safe: false, pvpActive: true, pirates: 0, pirateProjectiles: 1 })).toBe(true)
+    expect(shouldClearPveHostiles({ safe: true, pvpActive: false, pirates: 0, pirateProjectiles: 1 })).toBe(true)
+    expect(shouldClearPveHostiles({ safe: false, pvpActive: false, pirates: 0, pirateProjectiles: 1 })).toBe(false)
   })
 })
 

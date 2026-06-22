@@ -58,6 +58,7 @@ import {
   pvpZoneProximity,
   pvpZoneAt,
   rankedPvpAccess,
+  shouldClearPveHostiles,
 } from './sim/pvp'
 import { type Pirate, PIRATE_REWARD, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
 import { GameAudio } from './audio/sound'
@@ -2598,7 +2599,8 @@ function frame(now: number): void {
     const repairing = updateSafeRepair(safe, pvpActive, now, dt)
     safeEl.hidden = !safe
     safeEl.textContent = repairing ? 'SAFE ZONE · HULL REPAIRING' : 'SAFE ZONE'
-    if ((safe || pvpActive) && pirates.length) {
+    const pirateProjectileCount = projectiles.reduce((count, projectile) => count + (projectile.faction === 'pirate' ? 1 : 0), 0)
+    if (shouldClearPveHostiles({ safe, pvpActive, pirates: pirates.length, pirateProjectiles: pirateProjectileCount })) {
       clearPirates()
     }
 
