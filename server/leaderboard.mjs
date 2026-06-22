@@ -5,6 +5,16 @@ function score(entry) {
   return typeof entry?.earned === 'number' ? entry.earned : (entry?.credits || 0)
 }
 
+function isWalletKey(key) {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(key ?? ''))
+}
+
+function shortWallet(key) {
+  const text = String(key ?? '')
+  if (!isWalletKey(text)) return null
+  return `${text.slice(0, 4)}...${text.slice(-4)}`
+}
+
 export function parseLeaderboardParams(rawUrl) {
   const url = new URL(rawUrl, 'http://localhost')
   const rawOffset = Number(url.searchParams.get('offset') ?? 0)
@@ -17,11 +27,24 @@ export function parseLeaderboardParams(rawUrl) {
 }
 
 export function leaderboardPage(store, { offset = 0, limit = LEADERBOARD_PAGE_SIZE } = {}) {
-  const ranked = Object.values(store)
-    .filter((entry) => entry && (typeof entry.credits === 'number' || typeof entry.earned === 'number'))
-    .sort((a, b) => score(b) - score(a))
+  const ranked = Object.entries(store)
+    .filter(([, entry]) => entry && (typeof entry.credits === 'number' || typeof entry.earned === 'number'))
+    .sort(([, a], [, b]) => score(b) - score(a))
     .slice(0, LEADERBOARD_MAX_RANK)
-    .map((entry, index) => ({ rank: index + 1, name: entry.name ?? 'PILOT', earned: score(entry) }))
+    .map(([key, entry], index) => {
+      const callsign = entry.name ?? 'PILOT'
+      const wallet = shortWallet(key)
+      const row = {
+        rank: index + 1,
+        name: wallet ? `${callsign} (${wallet})` : callsign,
+        earned: score(entry),
+      }
+      if (wallet) {
+        row.wallet = wallet
+        row.callsign = callsign
+      }
+      return row
+    })
 
   const safeOffset = Math.min(Math.max(0, Math.floor(offset)), LEADERBOARD_MAX_RANK - LEADERBOARD_PAGE_SIZE)
   const safeLimit = LEADERBOARD_PAGE_SIZE

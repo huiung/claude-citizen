@@ -5,6 +5,8 @@ function entry(name, earned) {
   return { name, earned, credits: earned - 100 }
 }
 
+const WALLET = '7GgB2mDWpD6nA3xJ9sS6e5zqZTa3YL6hFLaeL5Qz6QnU'
+
 describe('leaderboard paging', () => {
   it('returns a 10 pilot page with global ranks and total capped at 100', () => {
     const store = {}
@@ -31,6 +33,21 @@ describe('leaderboard paging', () => {
     expect(page.total).toBe(2)
     expect(page.rows.map((row) => row.name)).toEqual(['D', 'A'])
     expect(page.rows.map((row) => row.earned)).toEqual([70, 50])
+  })
+
+  it('shows callsign and shortened wallet for wallet-connected career pilots', () => {
+    const page = leaderboardPage({
+      [WALLET]: { name: 'ACE', earned: 1000 },
+      anonToken: { name: 'ANON', earned: 900 },
+    }, { offset: 0, limit: 10 })
+
+    expect(page.rows[0]).toMatchObject({
+      name: 'ACE (7GgB...6QnU)',
+      callsign: 'ACE',
+      wallet: '7GgB...6QnU',
+      earned: 1000,
+    })
+    expect(page.rows[1]).toEqual({ rank: 2, name: 'ANON', earned: 900 })
   })
 
   it('clamps request params to 10-row pages through rank 100', () => {
