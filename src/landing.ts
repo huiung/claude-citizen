@@ -8,6 +8,7 @@ import { LandingMusic } from './audio/landingMusic'
 import { holderCaptureLaunchConfig } from './ui/landingCapture'
 import {
   canPageLeaderboard,
+  defaultLandingLeaderboardMode,
   leaderboardEndpointUrl,
   leaderboardMetricText,
   leaderboardRangeText,
@@ -20,6 +21,7 @@ import {
 } from './ui/leaderboard'
 
 const CAPTURE_LAUNCH = holderCaptureLaunchConfig(new URLSearchParams(location.search))
+const MOBILE_COMPANION = document.documentElement.classList.contains('is-mobile')
 
 const nicknameEl = document.getElementById('nickname') as HTMLInputElement
 const launchEl = document.getElementById('launch') as HTMLButtonElement
@@ -68,7 +70,7 @@ let pendingPubkey: string | null = null
 let netConnected = false
 let launchStarted = false
 let leaderboardOffset = 0
-let leaderboardMode: LeaderboardMode = 'career'
+let leaderboardMode: LeaderboardMode = defaultLandingLeaderboardMode(MOBILE_COMPANION)
 const landingMusic = new LandingMusic()
 
 myCodeEl.textContent = playerToken

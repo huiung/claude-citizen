@@ -2,6 +2,10 @@ export const LEADERBOARD_PAGE_SIZE = 10
 export const LEADERBOARD_MAX_RANK = 100
 export type LeaderboardMode = 'career' | 'pvp'
 
+export function defaultLandingLeaderboardMode(isMobile: boolean): LeaderboardMode {
+  return isMobile ? 'pvp' : 'career'
+}
+
 export const PVP_SEASON = {
   title: 'SEASON 0',
   endUtcMs: Date.UTC(2026, 5, 27, 23, 59, 0),

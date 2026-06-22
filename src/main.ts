@@ -67,6 +67,7 @@ import { SolarSystemMap, type SolarMapDestinationResult, type SolarMapNavigation
 import { holderChatNameClass, holderNameplateClass, holderNameplateText } from './ui/nameplate'
 import {
   canPageLeaderboard,
+  defaultLandingLeaderboardMode,
   leaderboardEndpointUrl,
   leaderboardMetricText,
   leaderboardRangeText,
@@ -105,6 +106,7 @@ const INTERP_DELAY_MS = 120
 const URL_PARAMS = new URLSearchParams(location.search)
 const CAPTURE_OG = URL_PARAMS.get('capture') === 'og'
 const SHOWCASE_HOLDER = URL_PARAMS.get('showcase') === 'holder'
+const MOBILE_COMPANION = document.documentElement.classList.contains('is-mobile')
 
 // --- DOM
 const appEl = document.getElementById('app')!
@@ -304,7 +306,7 @@ const lbPageHudEl = document.getElementById('lb-page-hud')!
 let statsTimer: ReturnType<typeof setInterval> | undefined
 let landingLeaderboardOffset = 0
 let hudLeaderboardOffset = 0
-let landingLeaderboardMode: LeaderboardMode = 'career'
+let landingLeaderboardMode: LeaderboardMode = defaultLandingLeaderboardMode(MOBILE_COMPANION)
 let hudLeaderboardMode: LeaderboardMode = 'career'
 
 function escapeHtml(s: string): string {

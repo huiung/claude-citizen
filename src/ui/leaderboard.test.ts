@@ -8,6 +8,7 @@ import {
   nextLeaderboardOffset,
   normalizeLeaderboardPage,
   pvpSeasonCopy,
+  defaultLandingLeaderboardMode,
 } from './leaderboard'
 
 describe('leaderboard UI paging', () => {
@@ -55,5 +56,10 @@ describe('leaderboard UI paging', () => {
       rules: 'RANKED ONLY - 1,000+ TOKENS',
     })
     expect(pvpSeasonCopy(Date.UTC(2026, 5, 28)).title).toBe('SEASON 0 ENDED')
+  })
+
+  it('opens mobile companion visitors on the PvP season board', () => {
+    expect(defaultLandingLeaderboardMode(true)).toBe('pvp')
+    expect(defaultLandingLeaderboardMode(false)).toBe('career')
   })
 })
