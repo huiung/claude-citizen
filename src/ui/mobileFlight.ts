@@ -18,7 +18,7 @@ export function mobileFlightInput(state: MobileFlightState): ControlInput {
   return {
     thrust: new Vector3(0, 0, brake || !state.thrustHeld ? 0 : 1),
     pitch: clampAxis(-state.stickY),
-    yaw: clampAxis(state.stickX),
+    yaw: clampAxis(-state.stickX),
     roll: 0,
     boost: state.boostHeld && !brake,
     brake,

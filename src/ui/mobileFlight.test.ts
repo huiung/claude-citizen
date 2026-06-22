@@ -11,7 +11,7 @@ describe('mobile flight controls', () => {
       brakeHeld: false,
     })
 
-    expect(input.yaw).toBeCloseTo(0.5)
+    expect(input.yaw).toBeCloseTo(-0.5)
     expect(input.pitch).toBeCloseTo(0.25)
     expect(input.thrust.z).toBe(1)
     expect(input.boost).toBe(true)
@@ -28,7 +28,7 @@ describe('mobile flight controls', () => {
       brakeHeld: true,
     })
 
-    expect(input.yaw).toBe(1)
+    expect(input.yaw).toBe(-1)
     expect(input.pitch).toBe(1)
     expect(input.thrust.z).toBe(0)
     expect(input.boost).toBe(false)
