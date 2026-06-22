@@ -50,9 +50,32 @@ function cleanAuditName(name) {
   return String(name ?? 'PILOT').slice(0, 16)
 }
 
-export function createPvpKillAuditLog(limit = PVP_KILL_AUDIT_LIMIT) {
+function cleanAuditHash(hash) {
+  const text = String(hash ?? '').toLowerCase()
+  return /^[a-f0-9]{12}$/.test(text) ? text : auditHash(text)
+}
+
+function cleanAuditRow(raw) {
+  if (raw?.zone !== 'ranked') return null
+  return {
+    at: Math.max(0, Math.floor(Number(raw.at) || 0)),
+    zone: 'ranked',
+    killerName: cleanAuditName(raw.killerName),
+    victimName: cleanAuditName(raw.victimName),
+    killerHash: cleanAuditHash(raw.killerHash),
+    victimHash: cleanAuditHash(raw.victimHash),
+    reward: Math.max(0, Math.floor(Number(raw.reward) || 0)),
+    killerBalance: Math.max(0, Math.floor(Number(raw.killerBalance) || 0)),
+    victimBalance: Math.max(0, Math.floor(Number(raw.victimBalance) || 0)),
+  }
+}
+
+export function createPvpKillAuditLog(limit = PVP_KILL_AUDIT_LIMIT, seed) {
   const safeLimit = Math.max(1, Math.min(PVP_KILL_AUDIT_LIMIT, Math.floor(Number(limit) || PVP_KILL_AUDIT_LIMIT)))
-  const rows = []
+  const rows = (Array.isArray(seed?.rows) ? seed.rows : [])
+    .map(cleanAuditRow)
+    .filter(Boolean)
+    .slice(0, safeLimit)
   return {
     record(event) {
       if (event?.zone !== 'ranked') return null

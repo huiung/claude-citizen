@@ -33,6 +33,7 @@ loadEnvFile()
 
 const PORT = process.env.PORT ?? 8080
 const STORE_FILE = process.env.STORE_FILE ?? './progress.json'
+const PVP_KILL_LOG_FILE = process.env.PVP_KILL_LOG_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'pvp-kills.json')
 // Verified sessions persist beside the progress store (same volume) so a relay restart
 // doesn't drop wallet logins — otherwise reconnects fall back to anonymous + lose holder flair.
 const SESSION_FILE = process.env.SESSION_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'sessions.json')
@@ -47,7 +48,17 @@ const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? ''
 const AOI_RADIUS = 3000
 const AOI_RADIUS2 = AOI_RADIUS * AOI_RADIUS
 const pvpRewardMemory = new Map()
-const pvpKillAuditLog = createPvpKillAuditLog()
+let pvpKillAuditSeed = {}
+try { pvpKillAuditSeed = JSON.parse(readFileSync(PVP_KILL_LOG_FILE, 'utf8')) } catch { pvpKillAuditSeed = {} }
+const pvpKillAuditLog = createPvpKillAuditLog(undefined, pvpKillAuditSeed)
+let pvpKillFlushTimer = null
+function flushPvpKillAuditLog() {
+  if (pvpKillFlushTimer) return
+  pvpKillFlushTimer = setTimeout(() => {
+    pvpKillFlushTimer = null
+    try { writeFileSync(PVP_KILL_LOG_FILE, JSON.stringify(pvpKillAuditLog.snapshot())) } catch { /* disk unavailable */ }
+  }, 500)
+}
 
 let nextColor = 0
 const clients = new Map() // ws -> { id, name, color, p, q, token, active, authed, pubkey }
@@ -325,7 +336,7 @@ wss.on('connection', (ws) => {
       if (result.killed) {
         const killZone = pvpZoneAt(client.p)
         if (killZone?.id === 'ranked') {
-          pvpKillAuditLog.record({
+          const auditRow = pvpKillAuditLog.record({
             zone: killZone.id,
             killerKey: identityKey(client),
             killerName: client.name,
@@ -336,6 +347,7 @@ wss.on('connection', (ws) => {
             killerBalance: client.holderBalance,
             victimBalance: target.holderBalance,
           })
+          if (auditRow) flushPvpKillAuditLog()
         }
         if (result.reward > 0 && killZone?.id === 'ranked') {
           const recorded = recordRankedPvpKill(store, {

@@ -163,4 +163,57 @@ describe('ranked PvP leaderboard', () => {
     expect(snapshot.rows[1].killerHash).toBe(snapshot.rows[2].killerHash)
     expect(snapshot.rows[0].victimHash).toBe(snapshot.rows[1].victimHash)
   })
+
+  it('hydrates capped audit rows from a persisted snapshot', () => {
+    const log = createPvpKillAuditLog(2, {
+      rows: [
+        {
+          at: 1000,
+          zone: 'ranked',
+          killerName: 'ALPHA',
+          victimName: 'BRAVO',
+          killerHash: '111111111111',
+          victimHash: '222222222222',
+          reward: 180,
+          killerBalance: 1500,
+          victimBalance: 1200,
+        },
+        {
+          at: 900,
+          zone: 'ranked',
+          killerName: 'CHARLIE',
+          victimName: 'DELTA',
+          killerHash: '333333333333',
+          victimHash: '444444444444',
+          reward: 0,
+        },
+        {
+          at: 800,
+          zone: 'ranked',
+          killerName: 'ECHO',
+          victimName: 'FOXTROT',
+          killerHash: '555555555555',
+          victimHash: '666666666666',
+          reward: 180,
+        },
+      ],
+    })
+
+    expect(log.snapshot().rows.map((row) => row.killerName)).toEqual(['ALPHA', 'CHARLIE'])
+
+    log.record({
+      zone: 'ranked',
+      killerKey: 'new-killer',
+      killerName: 'NEWACE',
+      victimKey: 'new-victim',
+      victimName: 'NEWTARGET',
+      now: 1100,
+      reward: 180,
+    })
+
+    const snapshot = log.snapshot()
+    expect(snapshot.rows).toHaveLength(2)
+    expect(snapshot.rows.map((row) => row.killerName)).toEqual(['NEWACE', 'ALPHA'])
+    expect(snapshot.rows[1].killerHash).toBe('111111111111')
+  })
 })
