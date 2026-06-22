@@ -2949,7 +2949,7 @@ function frame(now: number): void {
         'player',
         PROJECTILE_SPEED,
         pvpActive ? pvpWeapon.damage : undefined,
-        pvpActive ? ship.velocity : undefined,
+        ship.velocity,
       ))
       fireWeapon(playerWeapon)
       audio.blip('fire')
