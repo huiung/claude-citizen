@@ -98,6 +98,14 @@ import {
   zoomRearDistance,
   type CameraMode,
 } from './ui/cameraView'
+import {
+  DEFAULT_MOUSE_SENSITIVITY,
+  applyMouseSensitivity,
+  clampMouseSensitivity,
+  formatMouseSensitivity,
+  loadGameSettings,
+  saveGameSettings,
+} from './ui/settings'
 import { mobileFlightInput, type MobileFlightState } from './ui/mobileFlight'
 import {
   combatFeedbackAlpha,
@@ -323,11 +331,17 @@ const lbPageLandingEl = document.getElementById('lb-page-landing')!
 const lbPrevHudEl = document.getElementById('lb-prev-hud') as HTMLButtonElement
 const lbNextHudEl = document.getElementById('lb-next-hud') as HTMLButtonElement
 const lbPageHudEl = document.getElementById('lb-page-hud')!
+const settingsPanelEl = document.getElementById('settings-panel')!
+const settingsCloseEl = document.getElementById('settings-close') as HTMLButtonElement
+const settingsResetEl = document.getElementById('settings-reset') as HTMLButtonElement
+const mouseSensitivityEl = document.getElementById('mouse-sensitivity') as HTMLInputElement
+const mouseSensitivityValueEl = document.getElementById('mouse-sensitivity-value')!
 let statsTimer: ReturnType<typeof setInterval> | undefined
 let landingLeaderboardOffset = 0
 let hudLeaderboardOffset = 0
 let landingLeaderboardMode: LeaderboardMode = defaultLandingLeaderboardMode(MOBILE_COMPANION)
 let hudLeaderboardMode: LeaderboardMode = 'career'
+let gameSettings = loadGameSettings(localStorage)
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] ?? c)
@@ -1819,6 +1833,44 @@ function undock(): void {
   requestFlightPointerLock()
 }
 
+function renderSettingsPanel(): void {
+  mouseSensitivityEl.value = String(gameSettings.mouseSensitivity)
+  mouseSensitivityValueEl.textContent = formatMouseSensitivity(gameSettings.mouseSensitivity)
+}
+
+function setMouseSensitivity(value: number): void {
+  gameSettings = { ...gameSettings, mouseSensitivity: clampMouseSensitivity(value) }
+  saveGameSettings(localStorage, gameSettings)
+  renderSettingsPanel()
+}
+
+function openSettingsPanel(): void {
+  if (!running || docked) return
+  keys.clear()
+  miningActive = false
+  weaponActive = false
+  mineEl.hidden = true
+  beam.visible = false
+  impact.visible = false
+  leaderboardPanelEl.hidden = true
+  settingsPanelEl.hidden = false
+  renderSettingsPanel()
+  if (MOBILE_COMPANION) mobileControlsEl.hidden = true
+  if (document.pointerLockElement) document.exitPointerLock()
+}
+
+function closeSettingsPanel(): void {
+  if (settingsPanelEl.hidden) return
+  settingsPanelEl.hidden = true
+  if (MOBILE_COMPANION && running && !docked && !chatOpen) mobileControlsEl.hidden = false
+  if (running && !docked && !chatOpen && !solarMap.isOpen) requestFlightPointerLock()
+}
+
+settingsCloseEl.addEventListener('click', closeSettingsPanel)
+settingsResetEl.addEventListener('click', () => setMouseSensitivity(DEFAULT_MOUSE_SENSITIVITY))
+mouseSensitivityEl.addEventListener('input', () => setMouseSensitivity(Number(mouseSensitivityEl.value)))
+renderSettingsPanel()
+
 // --- Input
 const keys = new Set<string>()
 let mousePitch = 0
@@ -1928,6 +1980,13 @@ if (MOBILE_COMPANION) {
 addEventListener('keydown', (e) => {
   if (chatOpen) return // chat input owns the keyboard while open
   if (solarMap.isOpen) return // map owns M/Escape via its capture listener
+  if (!settingsPanelEl.hidden) {
+    if (e.code === 'Escape' || e.code === 'KeyO') {
+      e.preventDefault()
+      closeSettingsPanel()
+    }
+    return
+  }
   if (e.code === 'KeyM' && running) {
     e.preventDefault()
     keys.clear()
@@ -1946,6 +2005,11 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Enter' && running && !docked) { openChat(); return }
   if (e.code === 'Space') e.preventDefault()
   if (e.repeat) return
+  if (e.code === 'KeyO' && running && !docked) {
+    e.preventDefault()
+    openSettingsPanel()
+    return
+  }
   keys.add(e.code)
   if (e.code === 'KeyV') {
     assist = !assist
@@ -1983,8 +2047,8 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => keys.delete(e.code))
 addEventListener('mousemove', (e) => {
   if (document.pointerLockElement !== renderer.domElement) return
-  mouseYaw -= e.movementX * 0.0024
-  mousePitch -= e.movementY * 0.0024
+  mouseYaw -= applyMouseSensitivity(e.movementX, gameSettings.mouseSensitivity) * 0.0024
+  mousePitch -= applyMouseSensitivity(e.movementY, gameSettings.mouseSensitivity) * 0.0024
   mouseYaw = THREE.MathUtils.clamp(mouseYaw, -1, 1)
   mousePitch = THREE.MathUtils.clamp(mousePitch, -1, 1)
 })
@@ -2580,7 +2644,7 @@ if (CAPTURE_OG || SHOWCASE_HOLDER) {
   requestAnimationFrame(() => launch())
 }
 renderer.domElement.addEventListener('click', () => {
-  if (running && !docked && !chatOpen && !solarMap.isOpen && document.pointerLockElement !== renderer.domElement) {
+  if (running && !docked && !chatOpen && settingsPanelEl.hidden && !solarMap.isOpen && document.pointerLockElement !== renderer.domElement) {
     requestFlightPointerLock()
   }
 })
