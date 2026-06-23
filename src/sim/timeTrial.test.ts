@@ -2,6 +2,7 @@ import { Vector3 } from 'three'
 import { describe, expect, it } from 'vitest'
 import {
   createTimeTrial,
+  timeTrialEventBannerText,
   timeTrialStatusText,
   updateTimeTrial,
   type TimeTrialGate,
@@ -64,5 +65,12 @@ describe('time trial route state', () => {
 
     updateTimeTrial(trial, new Vector3(1000, 0, 0), 11)
     expect(updateTimeTrial(trial, overlappingFinish[0].position, 12).event).toBe('start')
+  })
+
+  it('formats large banner copy for race events', () => {
+    expect(timeTrialEventBannerText({ event: 'start' }, 10)).toBe('RACE STARTED')
+    expect(timeTrialEventBannerText({ event: 'gate', gateIndex: 2 }, 10)).toBe('GATE 3/10')
+    expect(timeTrialEventBannerText({ event: 'finish', time: 42.18 }, 10, true)).toBe('NEW BEST - 00:42.18')
+    expect(timeTrialEventBannerText({ event: 'finish', time: 45 }, 10, false)).toBe('FINISH - 00:45.00')
   })
 })

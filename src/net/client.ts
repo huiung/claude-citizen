@@ -49,6 +49,7 @@ export interface NetEvents {
   onPvpDamage?(attackerName: string, hull: number, maxHull: number, damage: number, killed: boolean): void
   onPvpKill?(killerName: string, victimName: string, reward: number, killerIsSelf: boolean, victimIsSelf: boolean): void
   onPvpReward?(credits: number, victimName: string): void
+  onRaceRecorded?(timeMs: number): void
 }
 
 const SEND_HZ = 10
@@ -201,6 +202,9 @@ export class NetClient {
       case 'pvp-reward':
         this.events.onPvpReward?.(Number(msg.credits) || 0, String(msg.victimName ?? 'PILOT'))
         break
+      case 'race-recorded':
+        this.events.onRaceRecorded?.(Math.max(0, Math.floor(Number(msg.timeMs) || 0)))
+        break
       case 'challenge':
         if (typeof msg.message === 'string') this.events.onChallenge?.(msg.message)
         break
@@ -288,6 +292,12 @@ export class NetClient {
   sendPvpRespawn(p: [number, number, number], q: [number, number, number, number], ship?: string): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
     this.ws.send(JSON.stringify({ t: 'pvp-respawn', p, q, ship: ship ?? this.activeShip }))
+    return true
+  }
+
+  sendRaceFinish(timeMs: number): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    this.ws.send(JSON.stringify({ t: 'race-finish', timeMs }))
     return true
   }
 

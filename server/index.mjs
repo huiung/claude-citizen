@@ -11,6 +11,7 @@ import {
 import { fetchHolderStatus, createHolderCache } from './holders.mjs'
 import { leaderboardPage, parseLeaderboardParams } from './leaderboard.mjs'
 import { createPvpKillAuditLog, pvpLeaderboardPage, mergePvpStats, recordRankedPvpKill } from './pvpLeaderboard.mjs'
+import { raceLeaderboardPage, mergeRaceStats, recordRankedRaceFinish } from './raceLeaderboard.mjs'
 import { applyPvpHit, applyPvpRespawn, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
 import { identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
 
@@ -117,6 +118,12 @@ const httpServer = createServer((req, res) => {
   }
   if (req.url?.startsWith('/pvp-leaderboard')) {
     const top = pvpLeaderboardPage(store, parseLeaderboardParams(req.url))
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+    res.end(JSON.stringify(req.url.includes('?') ? top : top.rows))
+    return
+  }
+  if (req.url?.startsWith('/race-leaderboard')) {
+    const top = raceLeaderboardPage(store, parseLeaderboardParams(req.url))
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
     res.end(JSON.stringify(req.url.includes('?') ? top : top.rows))
     return
@@ -409,9 +416,23 @@ wss.on('connection', (ws) => {
       const clean = sanitizeProgress(msg.progress)
       if (clean) {
         clean.name = client.name
-        store[key] = mergePvpStats(clean, store[key])
+        store[key] = mergeRaceStats(mergePvpStats(clean, store[key]), store[key])
         flush()
       } // stamp callsign for the leaderboard
+      return
+    }
+
+    if (msg.t === 'race-finish' && client.active) {
+      const recorded = recordRankedRaceFinish(store, {
+        key: identityKey(client),
+        name: client.name,
+        timeMs: msg.timeMs,
+        now: Date.now(),
+      })
+      if (recorded) {
+        flush()
+        send(ws, { t: 'race-recorded', timeMs: Math.max(0, Math.floor(Number(msg.timeMs) || 0)) })
+      }
       return
     }
 

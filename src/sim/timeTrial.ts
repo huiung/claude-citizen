@@ -92,3 +92,12 @@ export function timeTrialStatusText(state: TimeTrialState, nowSeconds: number): 
   const elapsed = nowSeconds - state.startTime
   return `HUB TIME TRIAL - GATE ${state.nextGateIndex + 1}/${state.gates.length} - ${formatTrialTime(elapsed)} - ${best}`
 }
+
+export function timeTrialEventBannerText(update: TimeTrialUpdate, gateCount: number, newBest = false): string {
+  if (update.event === 'start') return 'RACE STARTED'
+  if (update.event === 'gate' && update.gateIndex !== undefined) return `GATE ${update.gateIndex + 1}/${gateCount}`
+  if (update.event === 'finish' && update.time !== undefined) {
+    return `${newBest ? 'NEW BEST' : 'FINISH'} - ${formatTrialTime(update.time)}`
+  }
+  return ''
+}

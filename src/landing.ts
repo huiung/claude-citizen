@@ -33,6 +33,7 @@ const lbListLandingEl = document.getElementById('lb-list-landing')!
 const lbTitleLandingEl = document.getElementById('lb-title-landing')!
 const lbModeCareerLandingEl = document.getElementById('lb-mode-career-landing') as HTMLButtonElement
 const lbModePvpLandingEl = document.getElementById('lb-mode-pvp-landing') as HTMLButtonElement
+const lbModeRaceLandingEl = document.getElementById('lb-mode-race-landing') as HTMLButtonElement
 const lbSeasonLandingEl = document.getElementById('lb-season-landing')!
 const lbPrevLandingEl = document.getElementById('lb-prev-landing') as HTMLButtonElement
 const lbNextLandingEl = document.getElementById('lb-next-landing') as HTMLButtonElement
@@ -51,6 +52,7 @@ const STATS_URL = WS_URL.replace(/^ws/, 'http') + '/stats'
 const LEADERBOARD_URLS: Record<LeaderboardMode, string> = {
   career: leaderboardEndpointUrl(WS_URL, 'career'),
   pvp: leaderboardEndpointUrl(WS_URL, 'pvp'),
+  race: leaderboardEndpointUrl(WS_URL, 'race'),
 }
 
 nicknameEl.value = localStorage.getItem('callsign') ?? ''
@@ -88,6 +90,7 @@ function escapeHtml(s: string): string {
 
 function leaderboardMetric(row: LeaderboardRow): string {
   if (leaderboardMode === 'pvp') return leaderboardMetricText(row, 'pvp')
+  if (leaderboardMode === 'race') return leaderboardMetricText(row, 'race')
   const cr = Number(row.earned) || 0
   return `[${rankForCredits(cr).name}] ${leaderboardMetricText(row, 'career')}`
 }
@@ -100,12 +103,18 @@ function renderPvpSeasonPanel(): void {
 }
 
 function syncLeaderboardModeButtons(): void {
-  lbTitleLandingEl.textContent = leaderboardMode === 'pvp' ? '◆ RANKED PVP' : '◆ TOP PILOTS'
+  lbTitleLandingEl.textContent = leaderboardMode === 'pvp'
+    ? 'RANKED PVP'
+    : leaderboardMode === 'race'
+      ? 'RANKED RACE'
+      : 'TOP PILOTS'
   renderPvpSeasonPanel()
   lbModeCareerLandingEl.classList.toggle('active', leaderboardMode === 'career')
   lbModePvpLandingEl.classList.toggle('active', leaderboardMode === 'pvp')
+  lbModeRaceLandingEl.classList.toggle('active', leaderboardMode === 'race')
   lbModeCareerLandingEl.setAttribute('aria-pressed', String(leaderboardMode === 'career'))
   lbModePvpLandingEl.setAttribute('aria-pressed', String(leaderboardMode === 'pvp'))
+  lbModeRaceLandingEl.setAttribute('aria-pressed', String(leaderboardMode === 'race'))
 }
 
 function setLeaderboardMode(mode: LeaderboardMode): void {
@@ -120,7 +129,9 @@ function renderLeaderboard(rows: LeaderboardRow[], offset: number): void {
   if (!rows.length) {
     lbListLandingEl.innerHTML = leaderboardMode === 'pvp'
       ? '<li class="lb-empty">no ranked kills yet</li>'
-      : '<li class="lb-empty">no pilots yet - be the first</li>'
+      : leaderboardMode === 'race'
+        ? '<li class="lb-empty">no ranked race times yet</li>'
+        : '<li class="lb-empty">no pilots yet - be the first</li>'
     return
   }
   lbListLandingEl.innerHTML = rows.map((r, i) => {
@@ -152,6 +163,7 @@ lbPrevLandingEl.addEventListener('click', () => changeLeaderboardPage(-1))
 lbNextLandingEl.addEventListener('click', () => changeLeaderboardPage(1))
 lbModeCareerLandingEl.addEventListener('click', () => setLeaderboardMode('career'))
 lbModePvpLandingEl.addEventListener('click', () => setLeaderboardMode('pvp'))
+lbModeRaceLandingEl.addEventListener('click', () => setLeaderboardMode('race'))
 syncLeaderboardModeButtons()
 
 function refreshLandingStats(): void {

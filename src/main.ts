@@ -42,6 +42,7 @@ import { cancelTravel, catchUpQuantum, createQuantum, cycleQuantumDestinationInd
 import {
   createTimeTrial,
   formatTrialTime,
+  timeTrialEventBannerText,
   timeTrialStatusText,
   updateTimeTrial,
   type TimeTrialGate,
@@ -144,6 +145,7 @@ const INTERP_DELAY_MS = 120
 const URL_PARAMS = new URLSearchParams(location.search)
 const CAPTURE_OG = URL_PARAMS.get('capture') === 'og'
 const SHOWCASE_HOLDER = URL_PARAMS.get('showcase') === 'holder'
+const SHOWCASE_TIME_TRIAL = URL_PARAMS.get('showcase') === 'time-trial'
 const MOBILE_COMPANION = document.documentElement.classList.contains('is-mobile')
 
 // --- DOM
@@ -206,6 +208,7 @@ const shipClassEl = document.getElementById('ship-class')!
 const shipVisualEl = document.getElementById('ship-visual')!
 const enemiesEl = document.getElementById('enemies')!
 const flashEl = document.getElementById('damage-flash')!
+const timeTrialBannerEl = document.getElementById('time-trial-banner')!
 const quantumEl = document.getElementById('quantum')!
 const navHintEl = document.getElementById('nav-hint')!
 const objectiveEl = document.getElementById('objective')!
@@ -337,6 +340,7 @@ const STATS_URL = WS_URL.replace(/^ws/, 'http') + '/stats'
 const LEADERBOARD_URLS: Record<LeaderboardMode, string> = {
   career: leaderboardEndpointUrl(WS_URL, 'career'),
   pvp: leaderboardEndpointUrl(WS_URL, 'pvp'),
+  race: leaderboardEndpointUrl(WS_URL, 'race'),
 }
 const lbListLandingEl = document.getElementById('lb-list-landing')!
 const lbListHudEl = document.getElementById('lb-list-hud')!
@@ -345,8 +349,10 @@ const lbTitleLandingEl = document.getElementById('lb-title-landing')!
 const lbTitleHudEl = document.getElementById('lb-title-hud')!
 const lbModeCareerLandingEl = document.getElementById('lb-mode-career-landing') as HTMLButtonElement
 const lbModePvpLandingEl = document.getElementById('lb-mode-pvp-landing') as HTMLButtonElement
+const lbModeRaceLandingEl = document.getElementById('lb-mode-race-landing') as HTMLButtonElement
 const lbModeCareerHudEl = document.getElementById('lb-mode-career-hud') as HTMLButtonElement
 const lbModePvpHudEl = document.getElementById('lb-mode-pvp-hud') as HTMLButtonElement
+const lbModeRaceHudEl = document.getElementById('lb-mode-race-hud') as HTMLButtonElement
 const lbSeasonLandingEl = document.getElementById('lb-season-landing')!
 const lbSeasonHudEl = document.getElementById('lb-season-hud')!
 const lbPrevLandingEl = document.getElementById('lb-prev-landing') as HTMLButtonElement
@@ -380,6 +386,7 @@ function renderLeaderboardRows(listEl: HTMLElement, rows: LeaderboardRow[], offs
 }
 function leaderboardMetric(row: LeaderboardRow, mode: LeaderboardMode): string {
   if (mode === 'pvp') return leaderboardMetricText(row, 'pvp')
+  if (mode === 'race') return leaderboardMetricText(row, 'race')
   const cr = Number(row.earned) || 0
   return `[${rankForCredits(cr).name}] ${leaderboardMetricText(row, 'career')}`
 }
@@ -387,7 +394,9 @@ function renderLeaderboardRowsForMode(listEl: HTMLElement, rows: LeaderboardRow[
   if (!rows.length) {
     listEl.innerHTML = mode === 'pvp'
       ? '<li class="lb-empty">no ranked kills yet</li>'
-      : '<li class="lb-empty">no pilots yet - be the first</li>'
+      : mode === 'race'
+        ? '<li class="lb-empty">no ranked race times yet</li>'
+        : '<li class="lb-empty">no pilots yet - be the first</li>'
     return
   }
   listEl.innerHTML = rows.map((r, i) => {
@@ -406,15 +415,20 @@ function syncLeaderboardModeButtons(slot: 'landing' | 'hud'): void {
   const title = slot === 'landing' ? lbTitleLandingEl : lbTitleHudEl
   const careerBtn = slot === 'landing' ? lbModeCareerLandingEl : lbModeCareerHudEl
   const pvpBtn = slot === 'landing' ? lbModePvpLandingEl : lbModePvpHudEl
+  const raceBtn = slot === 'landing' ? lbModeRaceLandingEl : lbModeRaceHudEl
   const seasonEl = slot === 'landing' ? lbSeasonLandingEl : lbSeasonHudEl
   title.textContent = mode === 'pvp'
-    ? (slot === 'landing' ? '◆ RANKED PVP' : '◆ RANKED PVP · kills')
-    : (slot === 'landing' ? '◆ TOP PILOTS' : '◆ TOP PILOTS · credits')
+    ? (slot === 'landing' ? 'RANKED PVP' : 'RANKED PVP - kills')
+    : mode === 'race'
+      ? (slot === 'landing' ? 'RANKED RACE' : 'RANKED RACE - best time')
+      : (slot === 'landing' ? 'TOP PILOTS' : 'TOP PILOTS - credits')
   renderPvpSeasonPanel(seasonEl, mode)
   careerBtn.classList.toggle('active', mode === 'career')
   pvpBtn.classList.toggle('active', mode === 'pvp')
+  raceBtn.classList.toggle('active', mode === 'race')
   careerBtn.setAttribute('aria-pressed', String(mode === 'career'))
   pvpBtn.setAttribute('aria-pressed', String(mode === 'pvp'))
+  raceBtn.setAttribute('aria-pressed', String(mode === 'race'))
 }
 function renderLeaderboardPage(
   listEl: HTMLElement,
@@ -466,8 +480,10 @@ lbPrevHudEl.addEventListener('click', () => changeLeaderboardPage('hud', -1))
 lbNextHudEl.addEventListener('click', () => changeLeaderboardPage('hud', 1))
 lbModeCareerLandingEl.addEventListener('click', () => setLeaderboardMode('landing', 'career'))
 lbModePvpLandingEl.addEventListener('click', () => setLeaderboardMode('landing', 'pvp'))
+lbModeRaceLandingEl.addEventListener('click', () => setLeaderboardMode('landing', 'race'))
 lbModeCareerHudEl.addEventListener('click', () => setLeaderboardMode('hud', 'career'))
 lbModePvpHudEl.addEventListener('click', () => setLeaderboardMode('hud', 'pvp'))
+lbModeRaceHudEl.addEventListener('click', () => setLeaderboardMode('hud', 'race'))
 syncLeaderboardModeButtons('landing')
 syncLeaderboardModeButtons('hud')
 function refreshLandingStats(): void {
@@ -487,7 +503,7 @@ statsTimer = setInterval(refreshLandingStats, 6000)
 const renderer = new THREE.WebGLRenderer({
   antialias: true,
   logarithmicDepthBuffer: true,
-  preserveDrawingBuffer: SHOWCASE_HOLDER,
+  preserveDrawingBuffer: SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL,
 })
 renderer.setSize(innerWidth, innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
@@ -861,9 +877,27 @@ const hubTimeTrialGates: TimeTrialGate[] = [
   { id: 'hub-gate-9', position: hubRoutePoint(380, 300, 1450), radius: 230 },
   { id: 'hub-gate-10', position: hubRoutePoint(0, 240, 2120), radius: 230 },
 ]
+
+function timeTrialShowcaseApproachPoint(distance: number, lift = 0): THREE.Vector3 {
+  const startGate = hubTimeTrialGates[0].position
+  const nextGate = hubTimeTrialGates[1]?.position ?? timeTrialOrigin
+  return startGate.clone()
+    .add(startGate.clone().sub(nextGate).normalize().multiplyScalar(distance))
+    .add(new THREE.Vector3(0, lift, 0))
+}
+
 const hubTimeTrial = createTimeTrial(hubTimeTrialGates, loadTimeTrialBest())
 let timeTrialMessageUntil = 0
 let timeTrialBannerText = ''
+let timeTrialCenterBannerUntil = 0
+
+function showTimeTrialCenterBanner(text: string, nowSeconds: number, duration = 2.4): void {
+  if (!text) return
+  timeTrialBannerEl.textContent = text
+  timeTrialBannerEl.hidden = false
+  timeTrialBannerEl.style.opacity = '1'
+  timeTrialCenterBannerUntil = nowSeconds + duration
+}
 
 interface TimeTrialGateVisual {
   root: THREE.Group
@@ -1241,6 +1275,7 @@ function saveHangar(): void {
 // Well inside the 1600 safe-zone radius, so you never spawn into pirates.
 function randomSpawn(): THREE.Vector3 {
   if (CAPTURE_OG) return new THREE.Vector3(320, -18, 220)
+  if (SHOWCASE_TIME_TRIAL) return timeTrialShowcaseApproachPoint(260)
   if (SHOWCASE_HOLDER) return new THREE.Vector3(220, -18, 120)
   const a = Math.random() * Math.PI * 2
   const r = 200 + Math.random() * 400 // 200–600: visibly different, still well inside the 1600 safe zone
@@ -1255,6 +1290,8 @@ const ship = createShipState(randomSpawn())
 function faceRefinery(): void {
   const target = SHOWCASE_HOLDER
     ? _showcaseAway.copy(ship.position).sub(SUN_POSITION).normalize().add(ship.position)
+    : SHOWCASE_TIME_TRIAL
+      ? hubTimeTrialGates[0].position
     : REFINERY_POS
   _spawnMat.lookAt(ship.position, target, _spawnUp)
   ship.quaternion.setFromRotationMatrix(_spawnMat)
@@ -2522,6 +2559,10 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     spawnFloat(`+${credits} cr`, ship.position, performance.now(), '#ff5dff')
     addChatLine('PVP', `Bounty claimed from ${victimName}: +${credits} cr`, 3)
   },
+  onRaceRecorded(timeMs) {
+    addChatLine('RACE', `Ranked time recorded: ${formatTrialTime(timeMs / 1000)}`, selfTier)
+    if (!leaderboardPanelEl.hidden && hudLeaderboardMode === 'race') fetchLeaderboard('hud')
+  },
   onKicked() {
     // Same Pilot Code launched elsewhere — this tab is now read-only to avoid save conflicts.
     sessionKicked = true
@@ -2832,10 +2873,23 @@ const _accel = new THREE.Vector3()
 const _gTarget = new THREE.Vector3()
 const _cameraLookAt = new THREE.Vector3()
 const _cameraLookAtOffset = new THREE.Vector3()
+const _timeTrialShowcaseCamera = new THREE.Vector3()
+const _timeTrialShowcaseLookAt = new THREE.Vector3()
 const G_SWAY_K = 0.03   // accel (m/s²) → offset (m)
 const G_SWAY_MAX = 2.6  // clamp so it never gets nauseating
 const G_SWAY_RESP = 6   // spring stiffness
 function updateCamera(dt: number): void {
+  if (SHOWCASE_TIME_TRIAL) {
+    const startGate = hubTimeTrialGates[0].position
+    _timeTrialShowcaseCamera.copy(timeTrialShowcaseApproachPoint(650, 112))
+    _timeTrialShowcaseLookAt.copy(startGate).add(new THREE.Vector3(0, -8, 0))
+    camera.position.copy(_timeTrialShowcaseCamera)
+    camera.lookAt(_timeTrialShowcaseLookAt)
+    camera.fov += (50 - camera.fov) * (1 - Math.exp(-6 * dt))
+    camera.updateProjectionMatrix()
+    return
+  }
+
   // Acceleration this frame → a damped offset opposite to it (push back on boost, dip on brake).
   _accel.copy(ship.velocity).sub(prevCamVel).multiplyScalar(1 / Math.max(dt, 1e-4))
   prevCamVel.copy(ship.velocity)
@@ -2916,8 +2970,8 @@ export function launchGame(callsign?: string): void {
   if (callsign) nicknameEl.value = callsign
   launch()
 }
-if (CAPTURE_OG || SHOWCASE_HOLDER) {
-  nicknameEl.value = SHOWCASE_HOLDER ? HOLDER_SHOWCASE_STEPS[0].callsign : 'test'
+if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) {
+  nicknameEl.value = SHOWCASE_HOLDER ? HOLDER_SHOWCASE_STEPS[0].callsign : SHOWCASE_TIME_TRIAL ? 'RACER' : 'test'
   requestAnimationFrame(() => launch())
 }
 renderer.domElement.addEventListener('click', () => {
@@ -3149,7 +3203,10 @@ function frame(now: number): void {
       ? `[NAV] ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km | [JUMP]`
       : `[B/N] pick destination | ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km   |   [J] jump`
     const input = readInput(dt)
-    stepShip(ship, input, dt, { maxSpeed: effSpeed(), boostMultiplier: effBoost() })
+    const flightTuning = hubTimeTrial.active
+      ? { maxSpeed: baseSpeed, boostMultiplier: baseBoost }
+      : { maxSpeed: effSpeed(), boostMultiplier: effBoost() }
+    stepShip(ship, input, dt, flightTuning)
     resolvePlanetCollisions()
     resolveCapitalCollision()
     enforceRankedArenaAccess(now)
@@ -3163,17 +3220,31 @@ function frame(now: number): void {
     if (trialUpdate.event === 'start') {
       timeTrialBannerText = `HUB TIME TRIAL - START - GATE 2/${hubTimeTrial.gates.length}`
       timeTrialMessageUntil = trialNow + 2.5
+      showTimeTrialCenterBanner(timeTrialEventBannerText(trialUpdate, hubTimeTrial.gates.length), trialNow, 2.6)
       audio.blip('nav')
     } else if (trialUpdate.event === 'gate') {
       timeTrialBannerText = `HUB TIME TRIAL - GATE ${hubTimeTrial.nextGateIndex}/${hubTimeTrial.gates.length}`
       timeTrialMessageUntil = trialNow + 1.6
+      showTimeTrialCenterBanner(timeTrialEventBannerText(trialUpdate, hubTimeTrial.gates.length), trialNow, 1.1)
       audio.blip('nav')
     } else if (trialUpdate.event === 'finish' && trialUpdate.time !== undefined) {
       const isNewBest = previousBest === null || trialUpdate.time < previousBest
       if (hubTimeTrial.bestTime !== null) saveTimeTrialBest(hubTimeTrial.bestTime)
       timeTrialBannerText = `${isNewBest ? 'NEW BEST' : 'FINISH'} - ${formatTrialTime(trialUpdate.time)}`
+      if (walletSession?.pubkey) {
+        net.sendRaceFinish(Math.round(trialUpdate.time * 1000))
+      } else {
+        addChatLine('RACE', 'Local time saved. Connect wallet to enter Ranked Race.', 1)
+      }
       timeTrialMessageUntil = trialNow + 5
+      showTimeTrialCenterBanner(timeTrialEventBannerText(trialUpdate, hubTimeTrial.gates.length, isNewBest), trialNow, 4)
       audio.blip('trade')
+    }
+    if (timeTrialCenterBannerUntil > 0 && trialNow >= timeTrialCenterBannerUntil) {
+      timeTrialBannerEl.hidden = true
+      timeTrialCenterBannerUntil = 0
+    } else if (timeTrialCenterBannerUntil > 0 && trialNow > timeTrialCenterBannerUntil - 0.35) {
+      timeTrialBannerEl.style.opacity = '0'
     }
     const nearTimeTrial = ship.position.distanceToSquared(timeTrialOrigin) < 4200 * 4200
     timeTrialEl.hidden = !hubTimeTrial.active && !nearTimeTrial && trialNow >= timeTrialMessageUntil
@@ -3193,13 +3264,13 @@ function frame(now: number): void {
     camBoost = input.boost
     if (input.boost && !prevBoost) {
       boostKick = 1
-      audio.playBoostPunch(ship.velocity.length() / effSpeed())
+      audio.playBoostPunch(ship.velocity.length() / flightTuning.maxSpeed)
     } // ignition punch
     prevBoost = input.boost
 
     // Engine audio tracks commanded thrust; wind layer tracks actual speed.
     camThrust = Math.min(1, input.thrust.length())
-    audio.setThrust(camThrust, input.boost, ship.velocity.length() / effSpeed())
+    audio.setThrust(camThrust, input.boost, ship.velocity.length() / flightTuning.maxSpeed)
 
     // Market prices drift back toward base over time.
     marketStep(market, dt)
@@ -3401,7 +3472,7 @@ function frame(now: number): void {
     updateAltitudeHUD()
     const atmosphere = updateAtmoVeil()
     if (quantum.phase === 'idle') {
-      audio.setAmbience({ atmosphere, quantum: 0, speedFrac: ship.velocity.length() / effSpeed() })
+      audio.setAmbience({ atmosphere, quantum: 0, speedFrac: ship.velocity.length() / (hubTimeTrial.active ? baseSpeed : effSpeed()) })
     }
   } else {
     sun.visible = true
@@ -3443,7 +3514,7 @@ function frame(now: number): void {
   // name/chat styling and prestige hull parts, so the drive color remains stock.
   boostKick = Math.max(0, boostKick - dt * 3.5)
   updateHolderShowcase(now)
-  const speedFrac = ship.velocity.length() / Math.max(1, effSpeed())
+  const speedFrac = ship.velocity.length() / Math.max(1, hubTimeTrial.active ? baseSpeed : effSpeed())
   applyEngineGlowStyle(playerEngineGlows, engineGlowStyle({
     thrust: camThrust,
     boost: camBoost,

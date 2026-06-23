@@ -1,6 +1,6 @@
 export const LEADERBOARD_PAGE_SIZE = 10
 export const LEADERBOARD_MAX_RANK = 100
-export type LeaderboardMode = 'career' | 'pvp'
+export type LeaderboardMode = 'career' | 'pvp' | 'race'
 
 export function defaultLandingLeaderboardMode(isMobile: boolean): LeaderboardMode {
   return isMobile ? 'pvp' : 'career'
@@ -23,6 +23,8 @@ export interface LeaderboardRow {
   deaths?: number
   streak?: number
   bestStreak?: number
+  timeMs?: number
+  finishes?: number
 }
 
 export interface LeaderboardPage {
@@ -43,7 +45,12 @@ export function leaderboardUrl(baseUrl: string, offset: number): string {
 }
 
 export function leaderboardEndpointUrl(wsUrl: string, mode: LeaderboardMode): string {
-  return wsUrl.replace(/^ws/, 'http') + (mode === 'pvp' ? '/pvp-leaderboard' : '/leaderboard')
+  const path = mode === 'pvp'
+    ? '/pvp-leaderboard'
+    : mode === 'race'
+      ? '/race-leaderboard'
+      : '/leaderboard'
+  return wsUrl.replace(/^ws/, 'http') + path
 }
 
 export function leaderboardMetricText(row: LeaderboardRow, mode: LeaderboardMode): string {
@@ -52,6 +59,13 @@ export function leaderboardMetricText(row: LeaderboardRow, mode: LeaderboardMode
     const deaths = Number(row.deaths) || 0
     const streak = Number(row.streak) || 0
     return `${kills.toLocaleString()} K / ${deaths.toLocaleString()} D · streak ${streak.toLocaleString()}`
+  }
+  if (mode === 'race') {
+    const timeMs = Math.max(0, Math.floor(Number(row.timeMs) || 0))
+    const minutes = Math.floor(timeMs / 60000)
+    const seconds = (timeMs % 60000) / 1000
+    const runs = Math.max(0, Math.floor(Number(row.finishes) || 0))
+    return `${String(minutes).padStart(2, '0')}:${seconds.toFixed(2).padStart(5, '0')} - ${runs.toLocaleString()} runs`
   }
   return `${(Number(row.earned) || 0).toLocaleString()} cr`
 }

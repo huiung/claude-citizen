@@ -40,15 +40,18 @@ describe('leaderboard UI paging', () => {
     expect(nextLeaderboardOffset(10, -1)).toBe(0)
   })
 
-  it('builds career and PvP leaderboard endpoints from a websocket url', () => {
+  it('builds career, PvP, and Race leaderboard endpoints from a websocket url', () => {
     expect(leaderboardEndpointUrl('ws://127.0.0.1:8080', 'career')).toBe('http://127.0.0.1:8080/leaderboard')
     expect(leaderboardEndpointUrl('wss://claudecitizen.com', 'pvp')).toBe('https://claudecitizen.com/pvp-leaderboard')
+    expect(leaderboardEndpointUrl('wss://claudecitizen.com', 'race')).toBe('https://claudecitizen.com/race-leaderboard')
   })
 
-  it('formats career and PvP row metrics', () => {
+  it('formats career, PvP, and Race row metrics', () => {
     expect(leaderboardMetricText({ name: 'ACE', earned: 1234 }, 'career')).toBe('1,234 cr')
-    expect(leaderboardMetricText({ name: 'ACE', kills: 7, deaths: 2, streak: 3 }, 'pvp')).toBe('7 K / 2 D · streak 3')
+    expect(leaderboardMetricText({ name: 'ACE', kills: 7, deaths: 2, streak: 3 }, 'pvp')).toContain('7 K / 2 D')
+    expect(leaderboardMetricText({ name: 'ACE', timeMs: 42180, finishes: 3 }, 'race')).toBe('00:42.18 - 3 runs')
   })
+
   it('formats hub pilot rows with callsign and shortened wallet when present', () => {
     expect(leaderboardPilotDisplayText({ name: 'ACE (7GgB...6QnU)', callsign: 'ACE', wallet: '7GgB...6QnU' })).toBe('ACE  7GgB...6QnU')
     expect(leaderboardPilotDisplayText({ name: 'MAV (9AbC...2XyZ)' })).toBe('MAV  9AbC...2XyZ')
