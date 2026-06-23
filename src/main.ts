@@ -40,6 +40,13 @@ import { engineGlowStyle, type EngineGlowStyle } from './render/engineGlow'
 import { createSeasonHubLifeRig, updateSeasonHubLifeRig } from './render/seasonHub'
 import { cancelTravel, catchUpQuantum, createQuantum, cycleQuantumDestinationIndex, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
+  createTimeTrial,
+  formatTrialTime,
+  timeTrialStatusText,
+  updateTimeTrial,
+  type TimeTrialGate,
+} from './sim/timeTrial'
+import {
   canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
   isDead, type Projectile, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
 } from './sim/combat'
@@ -233,6 +240,7 @@ function currentObjective(): string | null {
 }
 const safeEl = document.getElementById('safe-zone')!
 const pvpEl = document.getElementById('pvp-zone')!
+const timeTrialEl = document.getElementById('time-trial')!
 const chatInputEl = document.getElementById('chat-input') as HTMLInputElement
 const chatLogEl = document.getElementById('chat-log')!
 const statOnlineEl = document.getElementById('stat-online')!
@@ -823,6 +831,82 @@ seasonBoard.name = 'Citizen Season 1 Top Pilots Board'
 seasonBoard.position.copy(CITIZEN_SEASON_HUB_DESTINATION.position).add(new THREE.Vector3(0, 385, 940))
 seasonBoard.rotation.y = -0.78
 scene.add(seasonBoard)
+
+const TIME_TRIAL_BEST_KEY = 'scc.timeTrial.hub.best'
+const timeTrialOrigin = CITIZEN_SEASON_HUB_DESTINATION.position
+function hubRoutePoint(x: number, y: number, z: number): THREE.Vector3 {
+  return timeTrialOrigin.clone().add(new THREE.Vector3(x, y, z))
+}
+
+function loadTimeTrialBest(): number | null {
+  const raw = localStorage.getItem(TIME_TRIAL_BEST_KEY)
+  if (!raw) return null
+  const value = Number(raw)
+  return Number.isFinite(value) && value > 0 ? value : null
+}
+
+function saveTimeTrialBest(value: number): void {
+  try { localStorage.setItem(TIME_TRIAL_BEST_KEY, String(value)) } catch { /* storage blocked */ }
+}
+
+const hubTimeTrialGates: TimeTrialGate[] = [
+  { id: 'hub-gate-1', position: hubRoutePoint(0, 210, 1620), radius: 230 },
+  { id: 'hub-gate-2', position: hubRoutePoint(-760, 280, 1240), radius: 230 },
+  { id: 'hub-gate-3', position: hubRoutePoint(-1380, 320, 360), radius: 230 },
+  { id: 'hub-gate-4', position: hubRoutePoint(-1180, 230, -720), radius: 230 },
+  { id: 'hub-gate-5', position: hubRoutePoint(-250, 390, -1450), radius: 230 },
+  { id: 'hub-gate-6', position: hubRoutePoint(760, 280, -1220), radius: 230 },
+  { id: 'hub-gate-7', position: hubRoutePoint(1440, 250, -240), radius: 230 },
+  { id: 'hub-gate-8', position: hubRoutePoint(1120, 340, 850), radius: 230 },
+  { id: 'hub-gate-9', position: hubRoutePoint(380, 300, 1450), radius: 230 },
+  { id: 'hub-gate-10', position: hubRoutePoint(0, 240, 2120), radius: 230 },
+]
+const hubTimeTrial = createTimeTrial(hubTimeTrialGates, loadTimeTrialBest())
+let timeTrialMessageUntil = 0
+let timeTrialBannerText = ''
+
+interface TimeTrialGateVisual {
+  root: THREE.Group
+  ring: THREE.Mesh<THREE.TorusGeometry, THREE.MeshBasicMaterial>
+  core: THREE.Mesh<THREE.TorusGeometry, THREE.MeshBasicMaterial>
+}
+
+const hubTimeTrialGateVisuals: TimeTrialGateVisual[] = hubTimeTrialGates.map((gate, index) => {
+  const root = new THREE.Group()
+  root.name = `Hub Time Trial Gate ${index + 1}`
+  root.position.copy(gate.position)
+  const next = hubTimeTrialGates[(index + 1) % hubTimeTrialGates.length]?.position ?? timeTrialOrigin
+  root.lookAt(next)
+
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(155, 8, 10, 96),
+    new THREE.MeshBasicMaterial({ color: index === 0 ? 0xffd24d : 0x5df4ff, transparent: true, opacity: 0.48, depthWrite: false }),
+  )
+  ring.name = `${root.name} Ring`
+  const core = new THREE.Mesh(
+    new THREE.TorusGeometry(118, 3, 8, 80),
+    new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.22, depthWrite: false }),
+  )
+  core.name = `${root.name} Core`
+  root.add(ring, core)
+  scene.add(root)
+  return { root, ring, core }
+})
+
+function syncHubTimeTrialGates(nowSeconds: number): void {
+  const nextIndex = hubTimeTrial.nextGateIndex
+  const active = hubTimeTrial.active
+  hubTimeTrialGateVisuals.forEach((visual, index) => {
+    const current = index === nextIndex
+    const complete = active && index < nextIndex
+    const pulse = current ? 1 + Math.sin(nowSeconds * 5.5) * 0.08 : 1
+    visual.root.scale.setScalar(pulse)
+    visual.ring.material.opacity = current ? 0.86 : complete ? 0.18 : 0.36
+    visual.core.material.opacity = current ? 0.46 : complete ? 0.08 : 0.18
+    visual.ring.material.color.setHex(current ? 0xffd24d : complete ? 0x6fdc8c : 0x5df4ff)
+    visual.core.material.color.setHex(current ? 0xffffff : 0x9fefff)
+  })
+}
 
 function drawSeasonHubTopPilots(rows: LeaderboardRow[]): void {
   const ctx = seasonBoardCtx
@@ -3030,6 +3114,7 @@ function frame(now: number): void {
   capital.rotation.y += dt * 0.0015 // capital ship drifts almost imperceptibly
   capitalCarrier.rotation.y -= dt * 0.0011 // different silhouette, different lazy drift
   updateSeasonHubLifeRig(seasonHubLifeRig, now * 0.001, dt)
+  syncHubTimeTrialGates(now * 0.001)
   ;(sun.userData.sunMat as THREE.ShaderMaterial).uniforms.uTime.value = now * 0.001 // boil the star surface
   if (shouldRunBackgroundWorldWork({ running, docked })) {
     streamCelestials(now)
@@ -3071,6 +3156,37 @@ function frame(now: number): void {
     enforceMobilePvpExclusion(now)
     shipMesh.position.copy(ship.position)
     shipMesh.quaternion.copy(ship.quaternion)
+
+    const trialNow = now * 0.001
+    const previousBest = hubTimeTrial.bestTime
+    const trialUpdate = updateTimeTrial(hubTimeTrial, ship.position, trialNow)
+    if (trialUpdate.event === 'start') {
+      timeTrialBannerText = `HUB TIME TRIAL - START - GATE 2/${hubTimeTrial.gates.length}`
+      timeTrialMessageUntil = trialNow + 2.5
+      audio.blip('nav')
+    } else if (trialUpdate.event === 'gate') {
+      timeTrialBannerText = `HUB TIME TRIAL - GATE ${hubTimeTrial.nextGateIndex}/${hubTimeTrial.gates.length}`
+      timeTrialMessageUntil = trialNow + 1.6
+      audio.blip('nav')
+    } else if (trialUpdate.event === 'finish' && trialUpdate.time !== undefined) {
+      const isNewBest = previousBest === null || trialUpdate.time < previousBest
+      if (hubTimeTrial.bestTime !== null) saveTimeTrialBest(hubTimeTrial.bestTime)
+      timeTrialBannerText = `${isNewBest ? 'NEW BEST' : 'FINISH'} - ${formatTrialTime(trialUpdate.time)}`
+      timeTrialMessageUntil = trialNow + 5
+      audio.blip('trade')
+    }
+    const nearTimeTrial = ship.position.distanceToSquared(timeTrialOrigin) < 4200 * 4200
+    timeTrialEl.hidden = !hubTimeTrial.active && !nearTimeTrial && trialNow >= timeTrialMessageUntil
+    if (!timeTrialEl.hidden) {
+      if (trialNow < timeTrialMessageUntil && timeTrialBannerText) {
+        timeTrialEl.textContent = timeTrialBannerText
+      } else if (hubTimeTrial.active) {
+        timeTrialEl.textContent = timeTrialStatusText(hubTimeTrial, trialNow)
+      } else {
+        const best = hubTimeTrial.bestTime === null ? 'NO BEST' : `BEST ${formatTrialTime(hubTimeTrial.bestTime)}`
+        timeTrialEl.textContent = `HUB TIME TRIAL - ENTER GOLD GATE - ${best}`
+      }
+    }
 
     speedEl.textContent = String(Math.round(ship.velocity.length()))
     boostEl.style.visibility = input.boost ? 'visible' : 'hidden'
