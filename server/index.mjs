@@ -46,7 +46,7 @@ const HELIUS_API_KEY = process.env.HELIUS_API_KEY
 const HOLDER_MINT = '6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump'
 const holderCache = createHolderCache()
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? ''
-const HOLDER_SHIP_VISUALS = new Set(['standard', 'doge-runner', 'void-interceptor', 'sovereign-wraith'])
+const HOLDER_SHIP_VISUALS = new Set(['standard', 'doge-runner', 'void-interceptor', 'sovereign-wraith', 'eclipse-corvette'])
 // Area-of-interest: position updates only relay to pilots within this range. Cuts the
 // O(N^2) state broadcast to O(N*k) as players spread out across the sector.
 const AOI_RADIUS = 3000

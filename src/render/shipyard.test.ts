@@ -38,6 +38,8 @@ describe('pirate model asset', () => {
     expect(craftModelUrlForHolderVisual('fighter', 'void-interceptor', 3)).toBe('/assets/ships/holder-void-interceptor.glb')
     expect(craftModelUrlForHolderVisual('miner', 'sovereign-wraith', 2)).toBe('/assets/ships/miner.glb')
     expect(craftModelUrlForHolderVisual('miner', 'sovereign-wraith', 3)).toBe('/assets/ships/holder-sovereign-wraith.glb')
+    expect(craftModelUrlForHolderVisual('hauler', 'eclipse-corvette', 2)).toBe('/assets/ships/hauler.glb')
+    expect(craftModelUrlForHolderVisual('hauler', 'eclipse-corvette', 3)).toBe('/assets/ships/holder-eclipse-corvette.glb')
   })
 
   it('scales the doge runner large enough to read as a prestige racing hull', () => {
@@ -46,6 +48,7 @@ describe('pirate model asset', () => {
     expect(craftModelTargetSizeForHolderVisual('fighter', 'doge-runner', 2)).toBe(9.7)
     expect(craftModelTargetSizeForHolderVisual('fighter', 'void-interceptor', 3)).toBe(10.5)
     expect(craftModelTargetSizeForHolderVisual('miner', 'sovereign-wraith', 3)).toBe(12.2)
+    expect(craftModelTargetSizeForHolderVisual('hauler', 'eclipse-corvette', 3)).toBe(15)
   })
 
   it('points pirates at their dedicated raider GLB', () => {
