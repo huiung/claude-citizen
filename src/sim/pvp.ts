@@ -14,10 +14,12 @@ export const PVP_RANKED_MIN_TOKEN_BALANCE = 1000
 export const TRAINING_RANGE_RADIUS = 1500
 export const TRAINING_DRONE_EXIT_BUFFER = 600
 export const TRAINING_RANGE_CENTER = new Vector3(88000, 26000, -206000)
+export const CITIZEN_SEASON_HUB_CENTER = new Vector3(93000, 26300, -218800)
 export const PVP_PRACTICE_ZONE_CENTER = new Vector3(92000, 26000, -210000)
 export const PVP_RANKED_ZONE_CENTER = new Vector3(96000, 26000, -214000)
 export const PVP_ZONE_CENTER = PVP_PRACTICE_ZONE_CENTER
 export const PVP_ARENA_APPROACH_DISTANCE = Math.max(PVP_RANKED_ZONE_RADIUS * 1.5, 650)
+export const CITIZEN_SEASON_HUB_APPROACH_DISTANCE = 1800
 
 export const TRAINING_RANGE_DESTINATION = {
   id: 'training.range',
@@ -25,6 +27,15 @@ export const TRAINING_RANGE_DESTINATION = {
   kind: 'Drone training arena',
   position: TRAINING_RANGE_CENTER,
   radius: TRAINING_RANGE_RADIUS,
+} as const
+
+export const CITIZEN_SEASON_HUB_DESTINATION = {
+  id: 'landmark.citizen-season-1',
+  name: 'Citizen Season 1 Hub',
+  kind: 'Orbital city hub',
+  position: CITIZEN_SEASON_HUB_CENTER,
+  radius: 1500,
+  approachDistance: CITIZEN_SEASON_HUB_APPROACH_DISTANCE,
 } as const
 
 export interface PvpZone {
@@ -70,12 +81,14 @@ export const PVP_ARENA_DESTINATIONS = [
     position: center,
     radius,
   })),
+  CITIZEN_SEASON_HUB_DESTINATION,
 ] as readonly {
   id: string
   name: string
   kind: string
   position: Vector3
   radius: number
+  approachDistance?: number
 }[]
 
 export const PVP_ARENA_ID = PVP_ARENA_DESTINATIONS[0].id

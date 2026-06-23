@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Vector3 } from 'three'
 import { SUN_POSITION, SYSTEM_RADIUS } from './solarSystem'
 import {
+  CITIZEN_SEASON_HUB_DESTINATION,
   isInPvpZone,
   PVP_KILL_REWARD,
   PVP_REPEAT_REWARD_COOLDOWN_MS,
@@ -46,9 +47,9 @@ describe('pvp zone rules', () => {
   })
 
   it('defines a quantum beacon that drops pilots outside the arena edge', () => {
-    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.id)).toEqual(['training.range', 'pvp.practice', 'pvp.ranked'])
-    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.name)).toEqual(['Training Arena', 'Practice Arena', 'Ranked Arena'])
-    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.kind)).toEqual(['Drone training arena', 'Open combat beacon', 'Holder-ranked beacon'])
+    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.id)).toEqual(['training.range', 'pvp.practice', 'pvp.ranked', 'landmark.citizen-season-1'])
+    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.name)).toEqual(['Training Arena', 'Practice Arena', 'Ranked Arena', 'Citizen Season 1 Hub'])
+    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.kind)).toEqual(['Drone training arena', 'Open combat beacon', 'Holder-ranked beacon', 'Orbital city hub'])
 
     const approach = pvpArenaApproachPoint(new Vector3(0, 0, 0), PVP_RANKED_ZONE_CENTER)
     const distFromCenter = approach.distanceTo(PVP_RANKED_ZONE_CENTER)
@@ -56,6 +57,12 @@ describe('pvp zone rules', () => {
     expect(distFromCenter).toBeCloseTo(PVP_ARENA_APPROACH_DISTANCE, 5)
     expect(distFromCenter).toBeGreaterThan(PVP_ZONE_RADIUS)
     expect(approach.z).toBeGreaterThan(PVP_RANKED_ZONE_CENTER.z)
+  })
+
+  it('places the Citizen Season 1 Hub near ranked PvP but outside the combat ring', () => {
+    expect(CITIZEN_SEASON_HUB_DESTINATION.position.length()).toBeGreaterThan(4000)
+    expect(CITIZEN_SEASON_HUB_DESTINATION.position.distanceTo(PVP_RANKED_ZONE_CENTER)).toBeGreaterThan(PVP_RANKED_ZONE_RADIUS + 2500)
+    expect(CITIZEN_SEASON_HUB_DESTINATION.approachDistance).toBeLessThan(PVP_ARENA_APPROACH_DISTANCE)
   })
 
   it('can place training arrivals inside the drone range', () => {

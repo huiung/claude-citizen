@@ -3,6 +3,7 @@ import {
   canPageLeaderboard,
   leaderboardEndpointUrl,
   leaderboardMetricText,
+  leaderboardPilotDisplayText,
   leaderboardRangeText,
   leaderboardUrl,
   nextLeaderboardOffset,
@@ -48,6 +49,12 @@ describe('leaderboard UI paging', () => {
     expect(leaderboardMetricText({ name: 'ACE', earned: 1234 }, 'career')).toBe('1,234 cr')
     expect(leaderboardMetricText({ name: 'ACE', kills: 7, deaths: 2, streak: 3 }, 'pvp')).toBe('7 K / 2 D · streak 3')
   })
+  it('formats hub pilot rows with callsign and shortened wallet when present', () => {
+    expect(leaderboardPilotDisplayText({ name: 'ACE (7GgB...6QnU)', callsign: 'ACE', wallet: '7GgB...6QnU' })).toBe('ACE  7GgB...6QnU')
+    expect(leaderboardPilotDisplayText({ name: 'MAV (9AbC...2XyZ)' })).toBe('MAV  9AbC...2XyZ')
+    expect(leaderboardPilotDisplayText({ name: 'PILOT' })).toBe('PILOT')
+  })
+
   it('formats PvP season contest copy for the leaderboard panels', () => {
     expect(pvpSeasonCopy(Date.UTC(2026, 5, 22))).toEqual({
       title: 'SEASON 0 LIVE',

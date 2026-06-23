@@ -56,6 +56,13 @@ export function leaderboardMetricText(row: LeaderboardRow, mode: LeaderboardMode
   return `${(Number(row.earned) || 0).toLocaleString()} cr`
 }
 
+export function leaderboardPilotDisplayText(row: LeaderboardRow): string {
+  const parsed = /^(.+?)\s+\(([^)]+)\)$/.exec(row.name)
+  const callsign = (row.callsign || parsed?.[1] || row.name).trim()
+  const wallet = (row.wallet || parsed?.[2] || '').trim()
+  return wallet ? `${callsign}  ${wallet}` : callsign
+}
+
 export function pvpSeasonCopy(now = Date.now()): { title: string; ends: string; prizes: string; rules: string } {
   const status = now <= PVP_SEASON.endUtcMs ? 'LIVE' : 'ENDED'
   return {

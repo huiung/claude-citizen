@@ -11,6 +11,7 @@ import {
   craftModelTargetSizeForHolderVisual,
   craftModelUrlForHolderVisual,
   pirateModelUrl,
+  seasonHubModelUrl,
 } from './shipyard'
 
 function firstMesh(root: THREE.Object3D): THREE.Mesh {
@@ -57,6 +58,10 @@ describe('pirate model asset', () => {
 
   it('points the carrier capital at its dedicated GLB', () => {
     expect(capitalCarrierModelUrl()).toBe('/assets/ships/capital-carrier.glb')
+  })
+
+  it('points the Citizen Season 1 Hub landmark at its dedicated GLB', () => {
+    expect(seasonHubModelUrl()).toBe('/assets/landmarks/citizen-season-1-hub.glb')
   })
 })
 

@@ -12,6 +12,7 @@ import {
   collectCraftEngineGlows,
   loadCapitalCarrierModel,
   loadCapitalModel,
+  loadSeasonHubModel,
   loadCraftModelForType,
   loadPirateModel,
   type CraftEngineGlow,
@@ -36,6 +37,7 @@ import { type Celestial, queryCelestials } from './sim/galaxy'
 import { generatePlanetTextures, samplePlanetSurface, type PlanetTextureKind } from './render/planetTextures'
 import { makeAsteroidMaterial } from './render/asteroidTextures'
 import { engineGlowStyle, type EngineGlowStyle } from './render/engineGlow'
+import { createSeasonHubLifeRig, updateSeasonHubLifeRig } from './render/seasonHub'
 import { cancelTravel, catchUpQuantum, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
   canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
@@ -43,6 +45,7 @@ import {
 } from './sim/combat'
 import {
   allowsPveHostiles,
+  CITIZEN_SEASON_HUB_DESTINATION,
   isInRankedPvpZone,
   isInPvpZone,
   PVP_ARENA_CLEAR_RADIUS,
@@ -81,6 +84,7 @@ import {
   defaultLandingLeaderboardMode,
   leaderboardEndpointUrl,
   leaderboardMetricText,
+  leaderboardPilotDisplayText,
   leaderboardRangeText,
   leaderboardUrl,
   nextLeaderboardOffset,
@@ -787,6 +791,89 @@ rareFrogShrine.rotation.set(-0.03, Math.PI - 0.15, 0.02) // face back toward spa
 rareFrogShrine.scale.setScalar(1.2)
 scene.add(rareFrogShrine)
 capitalSetpieces.push({ root: rareFrogShrine, colliders: fitCapitalColliders(rareFrogShrine) })
+const seasonHub = new THREE.Group()
+seasonHub.name = 'Citizen Season 1 Hub'
+seasonHub.position.copy(CITIZEN_SEASON_HUB_DESTINATION.position)
+seasonHub.rotation.set(0.02, -0.78, 0.015)
+scene.add(seasonHub)
+const seasonHubSetpiece: CapitalSetpiece = { root: seasonHub, colliders: [] }
+capitalSetpieces.push(seasonHubSetpiece)
+const seasonHubLifeRig = createSeasonHubLifeRig()
+seasonHub.add(seasonHubLifeRig.root)
+void loadSeasonHubModel().then((model) => {
+  if (!model) return
+  seasonHub.add(model)
+  seasonHubSetpiece.colliders = fitCapitalColliders(seasonHub)
+})
+const seasonHubLight = new THREE.PointLight(0x5df4ff, 7.2, 3200, 1.28)
+seasonHubLight.position.copy(CITIZEN_SEASON_HUB_DESTINATION.position).add(new THREE.Vector3(0, 620, 0))
+scene.add(seasonHubLight)
+
+const seasonBoardCanvas = document.createElement('canvas')
+seasonBoardCanvas.width = 1024
+seasonBoardCanvas.height = 512
+const seasonBoardCtx = seasonBoardCanvas.getContext('2d')!
+const seasonBoardTexture = new THREE.CanvasTexture(seasonBoardCanvas)
+seasonBoardTexture.colorSpace = THREE.SRGBColorSpace
+const seasonBoard = new THREE.Mesh(
+  new THREE.PlaneGeometry(760, 380),
+  new THREE.MeshBasicMaterial({ map: seasonBoardTexture, transparent: true }),
+)
+seasonBoard.name = 'Citizen Season 1 Top Pilots Board'
+seasonBoard.position.copy(CITIZEN_SEASON_HUB_DESTINATION.position).add(new THREE.Vector3(0, 385, 940))
+seasonBoard.rotation.y = -0.78
+scene.add(seasonBoard)
+
+function drawSeasonHubTopPilots(rows: LeaderboardRow[]): void {
+  const ctx = seasonBoardCtx
+  ctx.clearRect(0, 0, seasonBoardCanvas.width, seasonBoardCanvas.height)
+  ctx.fillStyle = 'rgba(3, 8, 17, 0.92)'
+  ctx.fillRect(0, 0, seasonBoardCanvas.width, seasonBoardCanvas.height)
+  ctx.strokeStyle = '#5df4ff'
+  ctx.lineWidth = 14
+  ctx.strokeRect(18, 18, seasonBoardCanvas.width - 36, seasonBoardCanvas.height - 36)
+  ctx.strokeStyle = '#ffd24d'
+  ctx.lineWidth = 4
+  ctx.strokeRect(42, 42, seasonBoardCanvas.width - 84, seasonBoardCanvas.height - 84)
+
+  ctx.textAlign = 'center'
+  ctx.fillStyle = '#e8fbff'
+  ctx.font = '700 58px Orbitron, monospace'
+  ctx.fillText('CITIZEN SEASON 1', seasonBoardCanvas.width / 2, 104)
+  ctx.fillStyle = '#ffd24d'
+  ctx.font = '700 31px "Share Tech Mono", monospace'
+  ctx.fillText('RANKED PVP // TOP PILOTS', seasonBoardCanvas.width / 2, 154)
+
+  ctx.textAlign = 'left'
+  ctx.font = '700 42px "Share Tech Mono", monospace'
+  const top = rows.slice(0, 3)
+  if (!top.length) {
+    ctx.fillStyle = '#86f8ff'
+    ctx.fillText('AWAITING RANKED KILLS', 178, 285)
+  } else {
+    top.forEach((row, index) => {
+      const y = 245 + index * 74
+      ctx.fillStyle = index === 0 ? '#ffd24d' : index === 1 ? '#d9ecff' : '#c08aff'
+      ctx.fillText(`#${index + 1}`, 94, y)
+      ctx.fillStyle = '#e8fbff'
+      ctx.fillText(leaderboardPilotDisplayText(row).slice(0, 28), 206, y)
+      ctx.fillStyle = '#9fffb0'
+      ctx.font = '700 30px "Share Tech Mono", monospace'
+      ctx.fillText(leaderboardMetricText(row, 'pvp'), 206, y + 34)
+      ctx.font = '700 42px "Share Tech Mono", monospace'
+    })
+  }
+  seasonBoardTexture.needsUpdate = true
+}
+
+function refreshSeasonHubTopPilots(): void {
+  fetch(leaderboardUrl(LEADERBOARD_URLS.pvp, 0)).then((r) => r.json())
+    .then((payload) => drawSeasonHubTopPilots(normalizeLeaderboardPage(payload, 0).rows))
+    .catch(() => drawSeasonHubTopPilots([]))
+}
+drawSeasonHubTopPilots([])
+refreshSeasonHubTopPilots()
+setInterval(refreshSeasonHubTopPilots, 60000)
 
 // Named solar system — giant backdrop + quantum-travel targets. Trade/outposts stay local.
 const sun = buildSun(SUN_RADIUS, SUN_COLOR)
@@ -1151,7 +1238,7 @@ const _fwd = new THREE.Vector3()
 // Safe zones — no pirates near the hand-placed outposts. Trade routes between them are risky;
 // arriving at a station means you can breathe.
 const SAFE_RADIUS = 1600
-const SAFE_ANCHORS = [new THREE.Vector3(0, 0, 0), REFINERY_POS, COLONY_POS]
+const SAFE_ANCHORS = [new THREE.Vector3(0, 0, 0), REFINERY_POS, COLONY_POS, CITIZEN_SEASON_HUB_DESTINATION.position]
 const SAFE_REPAIR_DELAY_MS = 2000
 const SAFE_REPAIR_RATE_PER_SEC = 0.16
 let safeRepairEnteredAt: number | null = null
@@ -1178,6 +1265,7 @@ interface QuantumDestination {
   kind: string
   position: THREE.Vector3
   radius?: number
+  approachDistance?: number
 }
 let customJumpDestination: QuantumDestination | null = null
 
@@ -1201,6 +1289,7 @@ function pvpArenaDestination(idx: number): QuantumDestination {
     kind: dest.kind,
     position: dest.position.clone(),
     radius: dest.radius,
+    approachDistance: dest.approachDistance,
   }
 }
 
@@ -1231,7 +1320,7 @@ function destinationArrival(dest = activeQuantumDestination()): { position: THRE
   if (pvpArenaDestinationIndex(dest.id) >= 0) {
     const approachDistance = dest.id === TRAINING_RANGE_DESTINATION.id
       ? Math.max((dest.radius ?? 0) * 0.45, 650)
-      : undefined
+      : dest.approachDistance
     const position = pvpArenaApproachPoint(ship.position, dest.position, approachDistance)
     return { position, name: dest.name, dist: ship.position.distanceTo(position) }
   }
@@ -2868,6 +2957,7 @@ function drawMinimap(): void {
   for (const planet of PLANETS) plot(planet.position.x, planet.position.z, '#9bb8e0', 2, true)
   plot(REFINERY_POS.x, REFINERY_POS.z, '#6fdc8c', 3.4, true, true)
   plot(COLONY_POS.x, COLONY_POS.z, '#ffb347', 3.4, true, true)
+  plot(CITIZEN_SEASON_HUB_DESTINATION.position.x, CITIZEN_SEASON_HUB_DESTINATION.position.z, '#5df4ff', 3.5, true, true)
   plot(TRAINING_RANGE_DESTINATION.position.x, TRAINING_RANGE_DESTINATION.position.z, '#9fffb0', 3.2, true, true)
   plot(PVP_PRACTICE_ZONE_CENTER.x, PVP_PRACTICE_ZONE_CENTER.z, '#5df4ff', 3.2, true, true)
   plot(PVP_RANKED_ZONE_CENTER.x, PVP_RANKED_ZONE_CENTER.z, '#ffd24d', 3.2, true, true)
@@ -2936,6 +3026,7 @@ function frame(now: number): void {
   for (const g of planetGroups) g.rotation.y += dt * (g.userData.spin as number) // living, rotating worlds
   capital.rotation.y += dt * 0.0015 // capital ship drifts almost imperceptibly
   capitalCarrier.rotation.y -= dt * 0.0011 // different silhouette, different lazy drift
+  updateSeasonHubLifeRig(seasonHubLifeRig, now * 0.001, dt)
   ;(sun.userData.sunMat as THREE.ShaderMaterial).uniforms.uTime.value = now * 0.001 // boil the star surface
   if (shouldRunBackgroundWorldWork({ running, docked })) {
     streamCelestials(now)

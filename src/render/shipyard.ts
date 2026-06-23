@@ -27,6 +27,8 @@ const PIRATE_MODEL_TARGET_SIZE = 8.8
 const CAPITAL_MODEL_URL = '/assets/ships/capital-dreadnought.glb'
 const CAPITAL_CARRIER_MODEL_URL = '/assets/ships/capital-carrier.glb'
 const CAPITAL_MODEL_TARGET_SIZE = 620
+const SEASON_HUB_MODEL_URL = '/assets/landmarks/citizen-season-1-hub.glb'
+const SEASON_HUB_MODEL_TARGET_SIZE = 1700
 
 type CraftModelSceneLoader = (url: string) => Promise<THREE.Group>
 type CraftModelLoader = (url: string, targetSize?: number) => Promise<THREE.Group | null>
@@ -105,6 +107,10 @@ export function capitalModelUrl(): string {
 
 export function capitalCarrierModelUrl(): string {
   return CAPITAL_CARRIER_MODEL_URL
+}
+
+export function seasonHubModelUrl(): string {
+  return SEASON_HUB_MODEL_URL
 }
 
 export function addCraftEngineGlowRig(group: THREE.Group, type: ShipType): void {
@@ -191,6 +197,10 @@ export async function loadCapitalModel(): Promise<THREE.Group | null> {
 
 export async function loadCapitalCarrierModel(): Promise<THREE.Group | null> {
   return loadCraftModel(CAPITAL_CARRIER_MODEL_URL, CAPITAL_MODEL_TARGET_SIZE)
+}
+
+export async function loadSeasonHubModel(): Promise<THREE.Group | null> {
+  return loadCraftModel(SEASON_HUB_MODEL_URL, SEASON_HUB_MODEL_TARGET_SIZE)
 }
 
 /**
