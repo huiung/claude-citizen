@@ -70,7 +70,11 @@ describe('time trial route state', () => {
   it('formats large banner copy for race events', () => {
     expect(timeTrialEventBannerText({ event: 'start' }, 10)).toBe('RACE STARTED')
     expect(timeTrialEventBannerText({ event: 'gate', gateIndex: 2 }, 10)).toBe('GATE 3/10')
-    expect(timeTrialEventBannerText({ event: 'finish', time: 42.18 }, 10, true)).toBe('NEW BEST - 00:42.18')
+    expect(timeTrialEventBannerText({ event: 'finish', time: 42.18 }, 10, true)).toBe('NEW BEST\n00:42.18')
     expect(timeTrialEventBannerText({ event: 'finish', time: 45 }, 10, false)).toBe('FINISH - 00:45.00')
+  })
+
+  it('formats a restrained new-best finish banner with the time delta', () => {
+    expect(timeTrialEventBannerText({ event: 'finish', time: 42.18 }, 10, true, 43.42)).toBe('NEW BEST\n00:42.18\n-1.24s faster')
   })
 })

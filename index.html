@@ -124,11 +124,18 @@
       pointer-events: none; z-index: 7; padding: 14px 30px; min-width: 260px;
       color: #ffe08a; text-align: center; font-family: Orbitron, Share Tech Mono, monospace;
       font-size: 26px; letter-spacing: 4px; text-transform: uppercase;
+      white-space: pre-line; line-height: 1.28;
       background: rgba(22, 16, 2, .68); border: 1px solid rgba(255, 210, 77, .68);
       box-shadow: 0 0 24px rgba(255, 210, 77, .32), inset 0 0 18px rgba(255, 210, 77, .12);
       text-shadow: 0 0 14px rgba(255, 210, 77, .8); opacity: 1; transition: opacity .35s ease-out;
     }
     #time-trial-banner[hidden] { display: none; }
+    #race-finish-glow {
+      position: fixed; inset: 0; pointer-events: none; z-index: 6; opacity: 0;
+      box-shadow: inset 0 0 110px 20px rgba(255, 210, 77, .32), inset 0 0 28px rgba(255, 240, 170, .22);
+      transition: opacity .45s ease-out;
+    }
+    #race-finish-glow[hidden] { display: none; }
     #damage-flash {
       position: fixed; inset: 0; pointer-events: none; z-index: 5; opacity: 0;
       transition: opacity .13s ease-out; box-shadow: inset 0 0 130px 30px rgba(255, 40, 40, .55);
@@ -515,6 +522,7 @@
   </div>
   <div id="damage-flash"></div>
   <div id="time-trial-banner" hidden>RACE STARTED</div>
+  <div id="race-finish-glow" hidden></div>
   <div id="atmo-veil"></div>
   <div id="quantum" hidden></div>
   <div id="objective" hidden></div>

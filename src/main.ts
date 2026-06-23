@@ -209,6 +209,7 @@ const shipVisualEl = document.getElementById('ship-visual')!
 const enemiesEl = document.getElementById('enemies')!
 const flashEl = document.getElementById('damage-flash')!
 const timeTrialBannerEl = document.getElementById('time-trial-banner')!
+const raceFinishGlowEl = document.getElementById('race-finish-glow')!
 const quantumEl = document.getElementById('quantum')!
 const navHintEl = document.getElementById('nav-hint')!
 const objectiveEl = document.getElementById('objective')!
@@ -890,6 +891,7 @@ const hubTimeTrial = createTimeTrial(hubTimeTrialGates, loadTimeTrialBest())
 let timeTrialMessageUntil = 0
 let timeTrialBannerText = ''
 let timeTrialCenterBannerUntil = 0
+let raceFinishGlowUntil = 0
 
 function showTimeTrialCenterBanner(text: string, nowSeconds: number, duration = 2.4): void {
   if (!text) return
@@ -897,6 +899,12 @@ function showTimeTrialCenterBanner(text: string, nowSeconds: number, duration = 
   timeTrialBannerEl.hidden = false
   timeTrialBannerEl.style.opacity = '1'
   timeTrialCenterBannerUntil = nowSeconds + duration
+}
+
+function showRaceFinishGlow(nowSeconds: number): void {
+  raceFinishGlowEl.hidden = false
+  raceFinishGlowEl.style.opacity = '1'
+  raceFinishGlowUntil = nowSeconds + 0.55
 }
 
 interface TimeTrialGateVisual {
@@ -3237,7 +3245,8 @@ function frame(now: number): void {
         addChatLine('RACE', 'Local time saved. Connect wallet to enter Ranked Race.', 1)
       }
       timeTrialMessageUntil = trialNow + 5
-      showTimeTrialCenterBanner(timeTrialEventBannerText(trialUpdate, hubTimeTrial.gates.length, isNewBest), trialNow, 4)
+      showTimeTrialCenterBanner(timeTrialEventBannerText(trialUpdate, hubTimeTrial.gates.length, isNewBest, previousBest), trialNow, 4)
+      showRaceFinishGlow(trialNow)
       audio.blip('trade')
     }
     if (timeTrialCenterBannerUntil > 0 && trialNow >= timeTrialCenterBannerUntil) {
@@ -3245,6 +3254,12 @@ function frame(now: number): void {
       timeTrialCenterBannerUntil = 0
     } else if (timeTrialCenterBannerUntil > 0 && trialNow > timeTrialCenterBannerUntil - 0.35) {
       timeTrialBannerEl.style.opacity = '0'
+    }
+    if (raceFinishGlowUntil > 0 && trialNow >= raceFinishGlowUntil) {
+      raceFinishGlowEl.style.opacity = '0'
+      raceFinishGlowUntil = 0
+    } else if (raceFinishGlowUntil > 0 && trialNow > raceFinishGlowUntil - 0.2) {
+      raceFinishGlowEl.style.opacity = '0'
     }
     const nearTimeTrial = ship.position.distanceToSquared(timeTrialOrigin) < 4200 * 4200
     timeTrialEl.hidden = !hubTimeTrial.active && !nearTimeTrial && trialNow >= timeTrialMessageUntil
