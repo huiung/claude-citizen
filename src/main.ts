@@ -102,6 +102,7 @@ import {
   type LeaderboardPage,
   type LeaderboardRow,
 } from './ui/leaderboard'
+import { flightPlanById, flightPlansForDevice, type FlightPlanId } from './ui/flightPlan'
 import {
   loadHolderShipVisual,
   resolveHolderShipVisual,
@@ -213,10 +214,15 @@ const raceFinishGlowEl = document.getElementById('race-finish-glow')!
 const quantumEl = document.getElementById('quantum')!
 const navHintEl = document.getElementById('nav-hint')!
 const objectiveEl = document.getElementById('objective')!
+const flightPlanEl = document.getElementById('flight-plan')!
+const flightPlanSkipEl = document.getElementById('flight-plan-skip') as HTMLButtonElement
+const flightPlanButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-plan]'))
 // Onboarding: show a "next objective" only to brand-new pilots. localStorage gate (this device
 // hasn't onboarded) is the fast path; a returning token with saved progress also disables it.
 let onboardingActive = !CAPTURE_OG && !localStorage.getItem('scc.onboarded')
 let sessionKicked = false // signed in elsewhere — freeze the objective HUD on the warning
+let flightPlanObjective: string | null = null
+let flightPlanObjectiveUntil = 0
 // Onboarding progress is persisted so a refresh keeps your step (and graduating sticks),
 // even without a relay connection.
 let minedEver = localStorage.getItem('scc.ob.mined') === '1'
@@ -232,6 +238,7 @@ function finishOnboarding(): void {
 /** Action-gated steps — just *show* each system, no forced grind:
  *  mine once → open the station (Space) → kill a pirate → done. */
 function currentObjective(): string | null {
+  if (flightPlanObjective && performance.now() < flightPlanObjectiveUntil) return flightPlanObjective
   if (onboardingActive) {
     if (!minedEver) return 'Mine ORE — fly to a cyan-veined asteroid and hold Left-click'
     if (!dockedEver) return 'Dock at an outpost (Space) — trade, upgrade & buy ships here'
@@ -1424,6 +1431,23 @@ function pvpArenaDestination(idx: number): QuantumDestination {
 
 function pvpArenaDestinationIndex(id: string): number {
   return PVP_ARENA_DESTINATIONS.findIndex((dest) => dest.id === id)
+}
+
+function setQuantumDestinationById(id: string): boolean {
+  const planetIdx = PLANETS.findIndex((p) => id === `planet.${p.name}` || id === p.name)
+  if (planetIdx >= 0) {
+    selectedJumpIdx = planetIdx
+    customJumpDestination = null
+    return true
+  }
+  const arenaIdx = pvpArenaDestinationIndex(id)
+  if (arenaIdx >= 0) {
+    if (MOBILE_COMPANION && id !== CITIZEN_SEASON_HUB_DESTINATION.id) return false
+    selectedJumpIdx = PLANETS.length + arenaIdx
+    customJumpDestination = null
+    return true
+  }
+  return false
 }
 
 function activeQuantumDestination(): QuantumDestination {
@@ -2965,12 +2989,12 @@ function launch(): void {
   nextSpawnAt = performance.now() + 8000 // first hostiles arrive after ~8s
   audio.init()
   audio.resume()
-  requestFlightPointerLock()
   running = true
   selectedJumpIdx = nearestPlanetIdx() // start aimed at the closest planet
   customJumpDestination = null
   setPlayerCraft(selectedShipType) // apply hull (and load its GLB model) on launch
   schedulePlanetUpgrades()
+  showFlightPlan()
 }
 launchEl.addEventListener('click', launch)
 nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') launch() })
@@ -2981,6 +3005,35 @@ export function launchGame(callsign?: string): void {
 if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) {
   nicknameEl.value = SHOWCASE_HOLDER ? HOLDER_SHOWCASE_STEPS[0].callsign : SHOWCASE_TIME_TRIAL ? 'RACER' : 'test'
   requestAnimationFrame(() => launch())
+}
+
+function hideFlightPlan(): void {
+  flightPlanEl.hidden = true
+}
+
+function showFlightPlan(): void {
+  if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) return
+  const visiblePlans = new Set(flightPlansForDevice(MOBILE_COMPANION).map((plan) => plan.id))
+  for (const button of flightPlanButtons) {
+    button.hidden = !visiblePlans.has(button.dataset.plan as FlightPlanId)
+  }
+  flightPlanEl.hidden = false
+  if (document.pointerLockElement) document.exitPointerLock()
+}
+
+function applyFlightPlan(id: FlightPlanId): void {
+  const plan = flightPlanById(id)
+  if (!plan) return
+  if (plan.destinationId) setQuantumDestinationById(plan.destinationId)
+  flightPlanObjective = plan.objective
+  flightPlanObjectiveUntil = performance.now() + 45000
+  hideFlightPlan()
+  audio.blip('nav')
+}
+
+flightPlanSkipEl.addEventListener('click', hideFlightPlan)
+for (const button of flightPlanButtons) {
+  button.addEventListener('click', () => applyFlightPlan(button.dataset.plan as FlightPlanId))
 }
 renderer.domElement.addEventListener('click', () => {
   if (running && !docked && !chatOpen && settingsPanelEl.hidden && !solarMap.isOpen && document.pointerLockElement !== renderer.domElement) {
