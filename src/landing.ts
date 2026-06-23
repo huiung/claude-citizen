@@ -130,7 +130,7 @@ function renderLeaderboard(rows: LeaderboardRow[], offset: number): void {
     lbListLandingEl.innerHTML = leaderboardMode === 'pvp'
       ? '<li class="lb-empty">no ranked kills yet</li>'
       : leaderboardMode === 'race'
-        ? '<li class="lb-empty">no ranked race times yet</li>'
+        ? '<li class="lb-empty">no race times yet</li>'
         : '<li class="lb-empty">no pilots yet - be the first</li>'
     return
   }

@@ -403,7 +403,7 @@ function renderLeaderboardRowsForMode(listEl: HTMLElement, rows: LeaderboardRow[
     listEl.innerHTML = mode === 'pvp'
       ? '<li class="lb-empty">no ranked kills yet</li>'
       : mode === 'race'
-        ? '<li class="lb-empty">no ranked race times yet</li>'
+        ? '<li class="lb-empty">no race times yet</li>'
         : '<li class="lb-empty">no pilots yet - be the first</li>'
     return
   }
@@ -3343,11 +3343,7 @@ function frame(now: number): void {
       const isNewBest = previousBest === null || trialUpdate.time < previousBest
       if (hubTimeTrial.bestTime !== null) saveTimeTrialBest(hubTimeTrial.bestTime)
       timeTrialBannerText = `${isNewBest ? 'NEW BEST' : 'FINISH'} - ${formatTrialTime(trialUpdate.time)}`
-      if (walletSession?.pubkey) {
-        net.sendRaceFinish(Math.round(trialUpdate.time * 1000))
-      } else {
-        addChatLine('RACE', 'Local time saved. Connect wallet to enter Ranked Race.', 1)
-      }
+      net.sendRaceFinish(Math.round(trialUpdate.time * 1000))
       timeTrialMessageUntil = trialNow + 5
       showTimeTrialCenterBanner(timeTrialEventBannerText(trialUpdate, hubTimeTrial.gates.length, isNewBest, previousBest), trialNow, 4)
       showRaceFinishGlow(trialNow)

@@ -20,7 +20,7 @@ function cleanRaceStats(raw) {
 }
 
 function ensureEntry(store, key, name) {
-  if (!isWalletKey(key)) return null
+  if (!key) return null
   const entry = store[key] && typeof store[key] === 'object' ? store[key] : {}
   entry.name = String(name ?? entry.name ?? 'PILOT').slice(0, 16)
   entry.race = cleanRaceStats(entry.race)
@@ -35,7 +35,7 @@ export function mergeRaceStats(progress, previousEntry) {
 
 export function recordRankedRaceFinish(store, { key, name, timeMs, now }) {
   const safeTime = Math.max(0, Math.floor(Number(timeMs) || 0))
-  if (!isWalletKey(key) || safeTime <= 0) return false
+  if (!key || safeTime <= 0) return false
   const entry = ensureEntry(store, key, name)
   if (!entry) return false
   entry.race.finishes += 1
@@ -48,7 +48,7 @@ export function recordRankedRaceFinish(store, { key, name, timeMs, now }) {
 
 export function raceLeaderboardPage(store, { offset = 0, limit = LEADERBOARD_PAGE_SIZE } = {}) {
   const ranked = Object.entries(store)
-    .filter(([key, entry]) => isWalletKey(key) && cleanRaceStats(entry?.race).bestTimeMs > 0)
+    .filter(([, entry]) => cleanRaceStats(entry?.race).bestTimeMs > 0)
     .sort(([keyA, a], [keyB, b]) => {
       const ar = cleanRaceStats(a?.race)
       const br = cleanRaceStats(b?.race)

@@ -5,11 +5,11 @@ const WALLET_A = '7GgB123456789ABCDEFGHJKLMNPQRSTUVWXYZ6QnU'
 const WALLET_B = '9AbC123456789ABCDEFGHJKLMNPQRSTUVWXYZ2XyZ'
 const ANON = 'anon-token'
 
-describe('ranked race leaderboard', () => {
-  it('records only verified wallet race finishes and keeps the best time', () => {
+describe('race leaderboard', () => {
+  it('records anonymous and wallet race finishes and keeps the best time', () => {
     const store = {}
 
-    expect(recordRankedRaceFinish(store, { key: ANON, name: 'ANON', timeMs: 32100, now: 1000 })).toBe(false)
+    expect(recordRankedRaceFinish(store, { key: ANON, name: 'ANON', timeMs: 32100, now: 1000 })).toBe(true)
     expect(recordRankedRaceFinish(store, { key: WALLET_A, name: 'ACE', timeMs: 41230, now: 2000 })).toBe(true)
     expect(recordRankedRaceFinish(store, { key: WALLET_A, name: 'ACE', timeMs: 43999, now: 3000 })).toBe(true)
     expect(recordRankedRaceFinish(store, { key: WALLET_A, name: 'ACE', timeMs: 39870, now: 4000 })).toBe(true)
@@ -19,7 +19,11 @@ describe('ranked race leaderboard', () => {
       finishes: 3,
       lastFinishAt: 4000,
     })
-    expect(store[ANON]).toBeUndefined()
+    expect(store[ANON].race).toEqual({
+      bestTimeMs: 32100,
+      finishes: 1,
+      lastFinishAt: 1000,
+    })
   })
 
   it('sorts lower times first, then more finishes, then newer runs', () => {
@@ -33,12 +37,13 @@ describe('ranked race leaderboard', () => {
     const page = raceLeaderboardPage(store)
 
     expect(page.rows.map((row) => row.name)).toEqual([
+      'ANON',
       'ZEN (1111...1111)',
       'MAV (9AbC...2XyZ)',
       'ACE (7GgB...6QnU)',
     ])
-    expect(page.rows[0].timeMs).toBe(39800)
-    expect(page.total).toBe(3)
+    expect(page.rows[0].timeMs).toBe(12000)
+    expect(page.total).toBe(4)
   })
 
   it('preserves race stats when ordinary progress saves arrive', () => {
