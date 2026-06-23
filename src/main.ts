@@ -102,7 +102,7 @@ import {
   type LeaderboardPage,
   type LeaderboardRow,
 } from './ui/leaderboard'
-import { flightPlanById, flightPlansForDevice, type FlightPlanId } from './ui/flightPlan'
+import { flightPlanById, flightPlansForDevice, type FlightPlanId, type FlightPlanSpawnMode } from './ui/flightPlan'
 import {
   loadHolderShipVisual,
   resolveHolderShipVisual,
@@ -1299,17 +1299,20 @@ function randomSpawn(): THREE.Vector3 {
 const _spawnUp = new THREE.Vector3(0, 1, 0)
 const _spawnMat = new THREE.Matrix4()
 const _showcaseAway = new THREE.Vector3()
+const _flightPlanSpawnDir = new THREE.Vector3()
 
 const ship = createShipState(randomSpawn())
+function faceTarget(target: THREE.Vector3): void {
+  _spawnMat.lookAt(ship.position, target, _spawnUp)
+  ship.quaternion.setFromRotationMatrix(_spawnMat)
+}
 /** Aim the ship at the refinery on spawn, so new pilots open on somewhere to go. */
 function faceRefinery(): void {
-  const target = SHOWCASE_HOLDER
+  faceTarget(SHOWCASE_HOLDER
     ? _showcaseAway.copy(ship.position).sub(SUN_POSITION).normalize().add(ship.position)
     : SHOWCASE_TIME_TRIAL
       ? hubTimeTrialGates[0].position
-    : REFINERY_POS
-  _spawnMat.lookAt(ship.position, target, _spawnUp)
-  ship.quaternion.setFromRotationMatrix(_spawnMat)
+      : REFINERY_POS)
 }
 faceRefinery()
 let shipMesh = buildCraft(selectedShipType, PLAYER_TINT)
@@ -3025,10 +3028,58 @@ function applyFlightPlan(id: FlightPlanId): void {
   const plan = flightPlanById(id)
   if (!plan) return
   if (plan.destinationId) setQuantumDestinationById(plan.destinationId)
+  spawnAtFlightPlan(plan.spawnMode)
   flightPlanObjective = plan.objective
   flightPlanObjectiveUntil = performance.now() + 45000
   hideFlightPlan()
   audio.blip('nav')
+  requestFlightPointerLock()
+}
+
+function placePlayerAt(position: THREE.Vector3, target: THREE.Vector3): void {
+  cancelTravel(quantum)
+  ship.position.copy(position)
+  ship.velocity.set(0, 0, 0)
+  faceTarget(target)
+  shipMesh.position.copy(ship.position)
+  shipMesh.quaternion.copy(ship.quaternion)
+  prevCamVel.set(0, 0, 0)
+  camera.position.copy(ship.position).add(rearCameraOffset(0, cameraRearDistance).applyQuaternion(ship.quaternion))
+  camera.lookAt(target)
+  net.sendState(
+    [ship.position.x, ship.position.y, ship.position.z],
+    [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],
+    performance.now(),
+    selectedShipType,
+  )
+}
+
+function spawnAtFlightPlan(spawnMode: FlightPlanSpawnMode): void {
+  if (spawnMode === 'race-start') {
+    hubTimeTrial.active = false
+    hubTimeTrial.startArmed = true
+    hubTimeTrial.startTime = 0
+    hubTimeTrial.nextGateIndex = 0
+    hubTimeTrial.lastFinishTime = null
+    placePlayerAt(timeTrialShowcaseApproachPoint(560, 20), hubTimeTrialGates[0].position)
+    return
+  }
+  if (spawnMode === 'pvp-practice') {
+    _flightPlanSpawnDir.set(-0.65, 0.08, 0.5).normalize()
+    placePlayerAt(
+      PVP_PRACTICE_ZONE_CENTER.clone().addScaledVector(_flightPlanSpawnDir, PVP_PRACTICE_ZONE_RADIUS * 0.42),
+      PVP_PRACTICE_ZONE_CENTER,
+    )
+    return
+  }
+  if (spawnMode === 'mine-field') {
+    placePlayerAt(randomSpawn(), REFINERY_POS)
+    streamOre()
+    lastOreStream = performance.now()
+    return
+  }
+  faceRefinery()
+  ship.velocity.set(0, 0, 0)
 }
 
 flightPlanSkipEl.addEventListener('click', hideFlightPlan)

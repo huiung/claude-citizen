@@ -1,10 +1,12 @@
 export type FlightPlanId = 'race' | 'mine' | 'pvp' | 'explore'
+export type FlightPlanSpawnMode = 'race-start' | 'mine-field' | 'pvp-practice' | 'default'
 
 export interface FlightPlanOption {
   id: FlightPlanId
   title: string
   kicker: string
   destinationId: string | null
+  spawnMode: FlightPlanSpawnMode
   objective: string
 }
 
@@ -14,27 +16,31 @@ export const FLIGHT_PLAN_OPTIONS: readonly FlightPlanOption[] = [
     title: 'Race',
     kicker: 'Time trial',
     destinationId: 'landmark.citizen-season-1',
-    objective: 'Press J to jump to Citizen Season 1 Hub, then enter the golden ring.',
+    spawnMode: 'race-start',
+    objective: 'Race start selected — fly through the golden ring to begin.',
   },
   {
     id: 'mine',
     title: 'Mine',
     kicker: 'Credits run',
     destinationId: null,
-    objective: 'Find a cyan-veined asteroid and hold Left-click to mine ORE.',
+    spawnMode: 'mine-field',
+    objective: 'Mining field selected — look for cyan-veined asteroids nearby and hold Left-click.',
   },
   {
     id: 'pvp',
     title: 'PvP',
     kicker: 'Practice first',
     destinationId: 'pvp.practice',
-    objective: 'Press J to jump to Practice Arena. Ranked Arena requires 1,000+ tokens.',
+    spawnMode: 'pvp-practice',
+    objective: 'Practice Arena selected — PvP is live inside the ring.',
   },
   {
     id: 'explore',
     title: 'Explore',
     kicker: 'Free flight',
     destinationId: null,
+    spawnMode: 'default',
     objective: 'Use B/N to browse destinations, or open the atlas with M.',
   },
 ]

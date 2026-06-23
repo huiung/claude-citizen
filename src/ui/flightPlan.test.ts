@@ -20,6 +20,13 @@ describe('flight plan options', () => {
     expect(FLIGHT_PLAN_OPTIONS.map((plan) => plan.id)).toEqual(['race', 'mine', 'pvp', 'explore'])
   })
 
+  it('defines immediate spawn behavior for each activity', () => {
+    expect(flightPlanById('race')?.spawnMode).toBe('race-start')
+    expect(flightPlanById('mine')?.spawnMode).toBe('mine-field')
+    expect(flightPlanById('pvp')?.spawnMode).toBe('pvp-practice')
+    expect(flightPlanById('explore')?.spawnMode).toBe('default')
+  })
+
   it('hides PvP from mobile civilian pilots', () => {
     expect(flightPlansForDevice(true).map((plan) => plan.id)).toEqual(['race', 'mine', 'explore'])
     expect(flightPlansForDevice(false).map((plan) => plan.id)).toEqual(['race', 'mine', 'pvp', 'explore'])
