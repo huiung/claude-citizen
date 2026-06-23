@@ -2016,7 +2016,14 @@ const stationMenu = new StationMenu({
 document.body.appendChild(stationMenu.root)
 
 // --- Remote ships
-interface RemoteShip { mesh: THREE.Group; peer: PeerState; label: CSS2DObject; health: ReturnType<typeof createHealth> }
+interface RemoteShip {
+  mesh: THREE.Group
+  peer: PeerState
+  label: CSS2DObject
+  health: ReturnType<typeof createHealth>
+  craftKey: string
+  loadSeq: number
+}
 let selfTier = 0 // token-holder tier, cosmetic identity
 let selfHolderBalance = 0 // exact token balance from the relay; used only for holder-gated ranked PvP
 let selectedHolderShipVisual = loadHolderShipVisual(localStorage)
@@ -2087,6 +2094,39 @@ const remotes = new Map<string, RemoteShip>()
 const PALETTE = [0xc75d5d, 0x5d8ac7, 0xc7a85d, 0x9b5dc7, 0x5dc7b8, 0xc75da6]
 function peerShipType(peer: PeerState): ShipType {
   return peer.ship && peer.ship in SHIP_STATS ? peer.ship as ShipType : 'hauler'
+}
+
+function peerHolderShipVisual(peer: PeerState): HolderShipVisualId {
+  return resolveHolderShipVisual(peer.visual ?? null, peer.tier ?? 0).id
+}
+
+function remoteCraftKey(peer: PeerState): string {
+  return `${peerShipType(peer)}:${peerHolderShipVisual(peer)}:${peer.tier ?? 0}`
+}
+
+function ensureRemoteCraftModel(remote: RemoteShip): void {
+  const key = remoteCraftKey(remote.peer)
+  if (remote.craftKey === key) return
+  remote.craftKey = key
+  const type = peerShipType(remote.peer)
+  const visual = peerHolderShipVisual(remote.peer)
+  const loadSeq = ++remote.loadSeq
+  loadCraftModelForType(type, remote.peer.tier ?? 0, visual).then((model) => {
+    if (!model || remotes.get(remote.peer.id) !== remote || remote.loadSeq !== loadSeq) return
+    const oldMesh = remote.mesh
+    const position = oldMesh.position.clone()
+    const quaternion = oldMesh.quaternion.clone()
+    oldMesh.remove(remote.label)
+    scene.remove(oldMesh)
+    disposeObject(oldMesh)
+    addCraftEngineGlowRig(model, type)
+    model.position.copy(position)
+    model.quaternion.copy(quaternion)
+    remote.label.position.set(0, 2.2, 0)
+    model.add(remote.label)
+    scene.add(model)
+    remote.mesh = model
+  })
 }
 
 const solarMap = new SolarSystemMap({
@@ -2495,20 +2535,24 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     const maxHull = peer.maxHull ?? SHIP_STATS[peerShipType(peer)].hull
     const health = createHealth(maxHull)
     health.hull = peer.hull ?? maxHull
-    remotes.set(peer.id, { mesh, peer, label: labelObj, health })
+    const remote: RemoteShip = { mesh, peer, label: labelObj, health, craftKey: '', loadSeq: 0 }
+    remotes.set(peer.id, remote)
     applyHolderNameplate(label, peer.name, peer.tier ?? 0)
+    ensureRemoteCraftModel(remote)
   },
   onPeerState(peer) {
     const remote = remotes.get(peer.id)
     if (!remote) return
     if (typeof peer.maxHull === 'number') remote.health.max = peer.maxHull
     if (typeof peer.hull === 'number') remote.health.hull = THREE.MathUtils.clamp(peer.hull, 0, remote.health.max)
+    ensureRemoteCraftModel(remote)
   },
   onPeerHolder(id, tier) {
     const remote = remotes.get(id)
     if (remote) {
       remote.peer.tier = tier
       applyHolderNameplate(remote.label.element as HTMLElement, remote.peer.name, tier)
+      ensureRemoteCraftModel(remote)
     }
   },
   onHolder(tier, balance) {
@@ -2576,6 +2620,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
         [ship.position.x, ship.position.y, ship.position.z],
         [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],
         selectedShipType,
+        activeHolderShipVisual(),
       )
     }
   },
@@ -2972,7 +3017,7 @@ function launch(): void {
   if (running) return
   const callsign = nicknameEl.value.trim() || 'PILOT'
   localStorage.setItem('callsign', callsign)
-  net.enterGame(callsign, selectedShipType) // promote from viewer (presence) to an active pilot
+  net.enterGame(callsign, selectedShipType, activeHolderShipVisual()) // promote from viewer (presence) to an active pilot
   if (statsTimer) clearInterval(statsTimer)
   overlayEl.hidden = true
   overlayEl.style.display = 'none'
@@ -3051,6 +3096,7 @@ function placePlayerAt(position: THREE.Vector3, target: THREE.Vector3): void {
     [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],
     performance.now(),
     selectedShipType,
+    activeHolderShipVisual(),
   )
 }
 
@@ -3306,6 +3352,7 @@ function frame(now: number): void {
       [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],
       now,
       selectedShipType,
+      activeHolderShipVisual(),
     )
   } else if (running && !docked) {
     // Idle: small nav hint under the minimap (no big banner).
@@ -3431,6 +3478,7 @@ function frame(now: number): void {
       [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],
       now,
       selectedShipType,
+      activeHolderShipVisual(),
     )
 
     // --- Combat

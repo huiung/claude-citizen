@@ -46,6 +46,7 @@ const HELIUS_API_KEY = process.env.HELIUS_API_KEY
 const HOLDER_MINT = '6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump'
 const holderCache = createHolderCache()
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? ''
+const HOLDER_SHIP_VISUALS = new Set(['standard', 'doge-runner', 'void-interceptor', 'sovereign-wraith'])
 // Area-of-interest: position updates only relay to pilots within this range. Cuts the
 // O(N^2) state broadcast to O(N*k) as players spread out across the sector.
 const AOI_RADIUS = 3000
@@ -220,6 +221,11 @@ function anonymousProgressAllowed(client) {
   return client.authed || !client.token || !claimedAnonTokens.has(client.token)
 }
 
+function normalizeHolderShipVisual(visual) {
+  const v = typeof visual === 'string' ? visual.slice(0, 32) : 'standard'
+  return HOLDER_SHIP_VISUALS.has(v) ? v : 'standard'
+}
+
 wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
     let msg
@@ -232,7 +238,7 @@ wss.on('connection', (ws) => {
       const client = {
         id: Math.random().toString(36).slice(2, 10),
         name: null, color: -1, p: [0, 0, 0], q: [0, 0, 0, 1], token,
-        active: false, authed: false, pubkey: null, tier: 0, holderBalance: 0,
+        active: false, authed: false, pubkey: null, tier: 0, holderBalance: 0, visual: 'standard',
       }
       resetPvpHull(client, 'hauler')
       applySession(client, msg.sessionId)
@@ -253,13 +259,14 @@ wss.on('connection', (ws) => {
         client.name = String(msg.name ?? 'PILOT').slice(0, 16)
         client.color = nextColor++
         if (token) client.token = token
+        client.visual = normalizeHolderShipVisual(msg.visual)
         resetPvpHull(client, normalizeShip(msg.ship))
       } else {
         client = {
           id: Math.random().toString(36).slice(2, 10),
           name: String(msg.name ?? 'PILOT').slice(0, 16),
           color: nextColor++, p: [0, 0, 0], q: [0, 0, 0, 1], token,
-          active: true, authed: false, pubkey: null, tier: 0, holderBalance: 0,
+          active: true, authed: false, pubkey: null, tier: 0, holderBalance: 0, visual: normalizeHolderShipVisual(msg.visual),
         }
         resetPvpHull(client, normalizeShip(msg.ship))
         clients.set(ws, client)
@@ -275,7 +282,7 @@ wss.on('connection', (ws) => {
         if (store[key]) ws.send(JSON.stringify({ t: 'progress', data: store[key] }))
         else if (!(key in store)) { store[key] = null; flush() }
       }
-      broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q, tier: client.tier ?? 0, ship: client.ship, hull: client.hull, maxHull: client.maxHull })
+      broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q, tier: client.tier ?? 0, ship: client.ship, visual: client.visual, hull: client.hull, maxHull: client.maxHull })
       void refreshHolder(ws, client) // (re)check holder flair now that we're an active, visible pilot
       console.log(`[join] ${client.name} (${client.id})${client.token ? ' +token' : ''} — ${clients.size} online`)
       return
@@ -324,9 +331,10 @@ wss.on('connection', (ws) => {
       client.p = msg.p.slice(0, 3).map(Number)
       client.q = msg.q.slice(0, 4).map(Number)
       const ship = normalizeShip(msg.ship)
+      client.visual = normalizeHolderShipVisual(msg.visual ?? client.visual)
       if (ship !== client.ship && !isInPvpZone(client.p)) resetPvpHull(client, ship)
       // Relay only to active pilots within AOI_RADIUS (distant pilots aren't visible anyway).
-      const out = JSON.stringify({ t: 'peer-state', id: client.id, p: client.p, q: client.q, ship: client.ship, hull: client.hull, maxHull: client.maxHull })
+      const out = JSON.stringify({ t: 'peer-state', id: client.id, p: client.p, q: client.q, ship: client.ship, visual: client.visual, hull: client.hull, maxHull: client.maxHull })
       const [px, py, pz] = client.p
       for (const [ws2, c2] of clients) {
         if (ws2 === ws || !c2.active || ws2.readyState !== ws2.OPEN) continue
@@ -343,12 +351,14 @@ wss.on('connection', (ws) => {
         ship: typeof msg.ship === 'string' ? normalizeShip(msg.ship) : undefined,
       })
       if (!result.ok) return
+      client.visual = normalizeHolderShipVisual(msg.visual ?? client.visual)
       const out = {
         t: 'peer-state',
         id: client.id,
         p: client.p,
         q: client.q,
         ship: client.ship,
+        visual: client.visual,
         hull: client.hull,
         maxHull: client.maxHull,
       }
