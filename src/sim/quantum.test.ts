@@ -1,7 +1,7 @@
 import { Vector3 } from 'three'
 import { describe, expect, it } from 'vitest'
 import {
-  cancelTravel, catchUpQuantum, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum,
+  cancelTravel, catchUpQuantum, createQuantum, cycleQuantumDestinationIndex, QUANTUM_TUNING, startTravel, stepQuantum,
 } from './quantum'
 
 /** Run the drive to completion, returning the number of frames and final progress. */
@@ -18,6 +18,13 @@ function runToIdle(
 }
 
 describe('quantum travel', () => {
+  it('cycles destination indexes forward and backward with wraparound', () => {
+    expect(cycleQuantumDestinationIndex(0, 5, 1)).toBe(1)
+    expect(cycleQuantumDestinationIndex(4, 5, 1)).toBe(0)
+    expect(cycleQuantumDestinationIndex(0, 5, -1)).toBe(4)
+    expect(cycleQuantumDestinationIndex(2, 5, -1)).toBe(1)
+  })
+
   it('starts idle with zero progress', () => {
     const q = createQuantum()
     expect(q.phase).toBe('idle')

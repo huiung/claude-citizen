@@ -25,6 +25,11 @@ export const QUANTUM_TUNING = {
   minTravelDistance: 600,
 }
 
+export function cycleQuantumDestinationIndex(current: number, count: number, direction: 1 | -1): number {
+  if (count <= 0) return 0
+  return (current + direction + count) % count
+}
+
 export interface QuantumState {
   phase: QuantumPhase
   /** Countdown remaining in the spooling phase (s). */

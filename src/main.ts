@@ -38,7 +38,7 @@ import { generatePlanetTextures, samplePlanetSurface, type PlanetTextureKind } f
 import { makeAsteroidMaterial } from './render/asteroidTextures'
 import { engineGlowStyle, type EngineGlowStyle } from './render/engineGlow'
 import { createSeasonHubLifeRig, updateSeasonHubLifeRig } from './render/seasonHub'
-import { cancelTravel, catchUpQuantum, createQuantum, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
+import { cancelTravel, catchUpQuantum, createQuantum, cycleQuantumDestinationIndex, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
   canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
   isDead, type Projectile, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
@@ -1336,9 +1336,9 @@ function quantumDestinationCount(): number {
   return PLANETS.length + (MOBILE_COMPANION ? 0 : PVP_ARENA_DESTINATIONS.length)
 }
 
-function cycleQuantumDestination(): void {
+function cycleQuantumDestination(direction: 1 | -1 = 1): void {
   customJumpDestination = null
-  selectedJumpIdx = (selectedJumpIdx + 1) % quantumDestinationCount()
+  selectedJumpIdx = cycleQuantumDestinationIndex(selectedJumpIdx, quantumDestinationCount(), direction)
   audio.blip('nav')
 }
 
@@ -2158,7 +2158,7 @@ if (MOBILE_COMPANION) {
   bindMobileHold(mobileMineEl, (held) => { mobileMineHeld = held })
   mobileDockEl.addEventListener('click', () => { if (running && !docked && dockable) dock(dockable) })
   mobileJumpEl.addEventListener('click', toggleQuantumTravel)
-  mobileNextEl.addEventListener('click', cycleQuantumDestination)
+  mobileNextEl.addEventListener('click', () => cycleQuantumDestination())
   mobileCameraEl.addEventListener('click', () => {
     if (!running || docked) return
     cycleCameraView()
@@ -2211,6 +2211,9 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Space' && running && !docked && dockable) dock(dockable)
   if (e.code === 'KeyN' && running && !docked && quantum.phase === 'idle') {
     cycleQuantumDestination()
+  }
+  if (e.code === 'KeyB' && running && !docked && quantum.phase === 'idle') {
+    cycleQuantumDestination(-1)
   }
   if (!leaderboardPanelEl.hidden && running && !docked && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
     e.preventDefault()
@@ -3059,7 +3062,7 @@ function frame(now: number): void {
     const dest = destinationArrival()
     navHintEl.textContent = MOBILE_COMPANION
       ? `[NAV] ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km | [JUMP]`
-      : `[N] pick planet | ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km   |   [J] jump`
+      : `[B/N] pick destination | ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km   |   [J] jump`
     const input = readInput(dt)
     stepShip(ship, input, dt, { maxSpeed: effSpeed(), boostMultiplier: effBoost() })
     resolvePlanetCollisions()
