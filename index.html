@@ -237,6 +237,8 @@
       width: 560px; max-width: 92vw; background: rgba(4, 18, 9, .95);
       border: 1px solid #2f7a45; border-radius: 8px; padding: 22px 24px;
       box-shadow: 0 0 40px rgba(40, 180, 80, .15);
+      max-height: calc(100dvh - 32px); overflow-y: auto;
+      padding-bottom: max(22px, env(safe-area-inset-bottom));
     }
     .station-head { display: flex; align-items: center; justify-content: space-between; }
     .station-head h2 { font-size: 19px; letter-spacing: 2px; font-weight: 600; }
