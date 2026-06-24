@@ -22,9 +22,20 @@ import {
 import { groupCraftedItems } from './inventory'
 import type { GameAudio } from '../audio/sound'
 import { HOLDER_SHIP_VISUALS, resolveHolderShipVisual, type HolderShipVisualId } from './holderShipVisual'
+import type { MarketListing } from '../net/client'
 
 const COMMODITY_ORDER: CommodityId[] = ['ORE', 'ALLOY']
-type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard' | 'hangar' | 'crafting'
+type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard' | 'hangar' | 'crafting' | 'market'
+
+export const STATION_TABS: readonly { id: Tab; label: string }[] = [
+  { id: 'trade', label: 'TRADE' },
+  { id: 'crafting', label: 'CRAFTING' },
+  { id: 'market', label: 'MARKET' },
+  { id: 'upgrades', label: 'UPGRADES' },
+  { id: 'shipyard', label: 'SHIPYARD' },
+  { id: 'hangar', label: 'HANGAR' },
+  { id: 'contracts', label: 'CONTRACTS' },
+]
 
 export interface HolderIdentityKit {
   tier: number
@@ -59,6 +70,11 @@ export interface StationContext {
   holderTier: () => number
   selectedHolderShipVisual: () => HolderShipVisualId
   onSelectHolderShipVisual: (id: HolderShipVisualId) => void
+  marketplaceRows: () => readonly MarketListing[]
+  marketplaceCanTrade: () => boolean
+  onRefreshMarketplace: () => void
+  onBuyMarketListing: (listingId: string) => void
+  onCancelMarketListing: (listingId: string) => void
 }
 
 /**
@@ -95,12 +111,7 @@ export class StationMenu {
           <span>CARGO <b id="station-cargo">0/0</b></span>
         </div>
         <div class="station-tabs">
-          <button data-tab="trade">TRADE</button>
-          <button data-tab="crafting">CRAFTING</button>
-          <button data-tab="upgrades">UPGRADES</button>
-          <button data-tab="shipyard">SHIPYARD</button>
-          <button data-tab="hangar">HANGAR</button>
-          <button data-tab="contracts">CONTRACTS</button>
+          ${STATION_TABS.map((tab) => `<button data-tab="${tab.id}">${tab.label}</button>`).join('')}
         </div>
         <div id="station-body"></div>
         <div class="station-hint" id="station-hint"></div>
@@ -136,6 +147,11 @@ export class StationMenu {
     return !this.root.hidden
   }
 
+  refresh(): void {
+    if (this.root.hidden) return
+    this.render()
+  }
+
   private hint(msg: string, bad = false): void {
     this.hintEl.textContent = msg
     this.hintEl.classList.toggle('flash', bad)
@@ -150,6 +166,7 @@ export class StationMenu {
     switch (this.tab) {
       case 'trade': return 'Buy low here, sell high at the other outpost. Mine ORE from asteroids for free.'
       case 'crafting': return 'Spend credits, refine Craft Cores, then craft cosmetic kits with rarity rolls.'
+      case 'market': return 'Buy and sell crafted cosmetics with credits. Off-chain pilot market, no SOL escrow yet.'
       case 'upgrades': return 'Spend credits to fly faster and haul more.'
       case 'shipyard': return 'Buy a hull and switch to it. Each trades cargo, speed, and toughness differently.'
       case 'hangar': return 'Holder ship visuals are cosmetic only: no speed, combat, or economy advantage.'
@@ -242,6 +259,7 @@ export class StationMenu {
     this.bodyEl.innerHTML = ''
     if (this.tab === 'trade') this.renderTrade()
     else if (this.tab === 'crafting') this.renderCrafting()
+    else if (this.tab === 'market') this.renderMarket()
     else if (this.tab === 'upgrades') this.renderUpgrades()
     else if (this.tab === 'shipyard') this.renderShipyard()
     else if (this.tab === 'hangar') this.renderHangar()
@@ -349,6 +367,44 @@ export class StationMenu {
       span.className = 'maxed'
       span.textContent = 'STACK'
       actions.appendChild(span)
+      this.bodyEl.appendChild(row)
+    }
+  }
+
+  private renderMarket(): void {
+    const canTrade = this.ctx.marketplaceCanTrade()
+    const note = document.createElement('div')
+    note.className = 'station-empty'
+    note.textContent = canTrade
+      ? 'Credits Marketplace: crafted cosmetics only. Press I to list your own tradable items.'
+      : 'Credits Marketplace: connect a wallet to list, buy, or cancel crafted cosmetics.'
+    this.bodyEl.appendChild(note)
+
+    const refreshRow = this.rowEl('Market Listings', 'Server-synced active listings', `${this.ctx.marketplaceRows().length} LIVE`)
+    refreshRow.querySelector('.s-actions')!.appendChild(this.btn('Refresh', 'buy', false, () => {
+      this.ctx.onRefreshMarketplace()
+      this.hint('Refreshing market listings.')
+    }))
+    this.bodyEl.appendChild(refreshRow)
+
+    const rows = this.ctx.marketplaceRows()
+    if (rows.length === 0) {
+      const empty = document.createElement('div')
+      empty.className = 'station-empty'
+      empty.textContent = 'No active listings yet.'
+      this.bodyEl.appendChild(empty)
+      return
+    }
+
+    for (const listing of rows) {
+      const rarity = CRAFTING_RARITY_LABELS[listing.item.rarity as keyof typeof CRAFTING_RARITY_LABELS] ?? listing.item.rarity
+      const row = this.rowEl(`${rarity} ${listing.item.variant}`, `Seller ${listing.sellerName}`, `${listing.price.toLocaleString()} cr`)
+      const actions = row.querySelector('.s-actions')!
+      if (listing.owned) {
+        actions.appendChild(this.btn('Cancel', 'sell', !canTrade, () => this.ctx.onCancelMarketListing(listing.id)))
+      } else {
+        actions.appendChild(this.btn('Buy', 'buy', !canTrade || listing.price > this.ctx.econ.credits, () => this.ctx.onBuyMarketListing(listing.id)))
+      }
       this.bodyEl.appendChild(row)
     }
   }

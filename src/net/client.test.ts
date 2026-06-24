@@ -127,4 +127,32 @@ describe('NetClient holder ship visual sync', () => {
       visual: 'sovereign-wraith',
     }))
   })
+
+  it('sends marketplace commands and emits marketplace responses', () => {
+    const onMarketList = vi.fn()
+    const onMarketAction = vi.fn()
+    const net = new NetClient('ACE', 'tok', events({ onMarketList, onMarketAction }))
+
+    net.connect()
+    const ws = FakeWebSocket.instances[0]
+    ws.open()
+
+    expect(net.requestMarketList()).toBe(true)
+    expect(net.createMarketListing('item-1', 25000)).toBe(true)
+    expect(net.buyMarketListing('listing-1')).toBe(true)
+    expect(net.cancelMarketListing('listing-1')).toBe(true)
+
+    expect(ws.sent.slice(1)).toEqual([
+      { t: 'market-list' },
+      { t: 'market-create', itemId: 'item-1', price: 25000 },
+      { t: 'market-buy', listingId: 'listing-1' },
+      { t: 'market-cancel', listingId: 'listing-1' },
+    ])
+
+    ws.emit({ t: 'market-list', rows: [{ id: 'listing-1', price: 25000 }] })
+    ws.emit({ t: 'market-action', ok: true, action: 'buy', progress: { credits: 25000 } })
+
+    expect(onMarketList).toHaveBeenCalledWith([{ id: 'listing-1', price: 25000 }])
+    expect(onMarketAction).toHaveBeenCalledWith({ ok: true, action: 'buy', progress: { credits: 25000 } })
+  })
 })

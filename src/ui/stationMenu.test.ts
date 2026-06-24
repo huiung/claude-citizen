@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { HOLDER_IDENTITY_KITS } from './stationMenu'
+import { HOLDER_IDENTITY_KITS, STATION_TABS } from './stationMenu'
 
 describe('station hangar holder identity kits', () => {
   it('lists all three holder name color tiers', () => {
@@ -9,5 +9,10 @@ describe('station hangar holder identity kits', () => {
       name: 'T3 Name Color',
       description: 'Purple callsign styling on nameplates and chat.',
     })
+  })
+
+  it('includes a marketplace tab for crafted cosmetic trading', () => {
+    expect(STATION_TABS.map((tab) => tab.id)).toContain('market')
+    expect(STATION_TABS.map((tab) => tab.label)).toContain('MARKET')
   })
 })

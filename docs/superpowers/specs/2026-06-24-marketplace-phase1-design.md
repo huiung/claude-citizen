@@ -6,11 +6,12 @@ Create a first marketplace loop for crafted cosmetic items. Phase 1 uses in-game
 
 ## Scope
 
-- Players can list tradable crafted cosmetic items for credits.
+- Wallet-connected players can list tradable crafted cosmetic items for credits.
 - Listed items are removed from the seller inventory and held by the server listing store.
 - Buyers can purchase active listings if they have enough credits.
 - Purchases transfer credits to the seller and transfer the item to the buyer inventory.
 - Sellers can cancel their own listings and receive the item back.
+- Anonymous pilots can view the market but cannot list, buy, or cancel listings.
 - The station UI gains a `MARKET` tab for browsing listings.
 - The inventory UI gains a sell/list action for tradable items.
 
@@ -51,14 +52,14 @@ The server remains the authority for final marketplace state.
 - `market-buy`: validates buyer identity, listing status, and buyer credits, then moves credits to seller progress and item to buyer progress.
 - `market-cancel`: validates seller ownership, marks listing cancelled, and restores the item to seller progress.
 
-All mutations sanitize progress before writing to the store. Anonymous and wallet identities both work because the existing `identityKey(client)` already selects wallet pubkey when connected.
+All mutations sanitize progress before writing to the store. Marketplace mutations require a verified wallet session and use the wallet pubkey as the seller or buyer key. Anonymous pilots can browse active listings but cannot trade.
 
 ## Client Flow
 
 The station menu gets a `MARKET` tab:
 
 - Lists active items with rarity, variant, seller, and price.
-- Has `Buy` buttons for affordable listings.
+- Has `Buy` buttons for affordable listings when a wallet is connected.
 - Has `Cancel` buttons for the player's own active listings.
 - Refreshes after list/buy/cancel actions.
 
@@ -73,6 +74,7 @@ Client messages should surface short, direct errors:
 - Item is no longer in inventory.
 - Only the seller can cancel this listing.
 - Server unavailable.
+- Connect wallet to trade.
 
 The server must reject duplicate purchase attempts by checking active status at mutation time.
 

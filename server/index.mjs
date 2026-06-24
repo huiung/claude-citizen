@@ -15,6 +15,15 @@ import { raceLeaderboardPage, mergeRaceStats, recordRankedRaceFinish } from './r
 import { applyPvpHit, applyPvpRespawn, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
 import { identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
 import { sanitizeProgress } from './progress.mjs'
+import {
+  buyListing,
+  cancelListing,
+  createListing,
+  createMarketplace,
+  marketplaceRowsFor,
+  marketplaceSnapshot,
+  publicMarketplaceRow,
+} from './marketplace.mjs'
 
 function loadEnvFile(path = '.env') {
   let text
@@ -38,6 +47,7 @@ const PORT = process.env.PORT ?? 8080
 const STORE_FILE = process.env.STORE_FILE ?? './progress.json'
 const PVP_KILL_LOG_FILE = process.env.PVP_KILL_LOG_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'pvp-kills.json')
 const CLAIMED_ANON_FILE = process.env.CLAIMED_ANON_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'claimed-anon.json')
+const MARKETPLACE_FILE = process.env.MARKETPLACE_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'marketplace.json')
 // Verified sessions persist beside the progress store (same volume) so a relay restart
 // doesn't drop wallet logins — otherwise reconnects fall back to anonymous + lose holder flair.
 const SESSION_FILE = process.env.SESSION_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'sessions.json')
@@ -188,6 +198,36 @@ function broadcastAll(msg) {
   for (const ws of clients.keys()) {
     if (ws.readyState === ws.OPEN) ws.send(data)
   }
+}
+
+function sendToIdentity(key, msg) {
+  if (!key) return
+  for (const [ws, client] of clients) {
+    if (identityKey(client) === key) send(ws, msg)
+  }
+}
+
+function sendMarketList(ws, client) {
+  const viewerKey = client?.authed && client?.pubkey ? client.pubkey : null
+  send(ws, { t: 'market-list', rows: marketplaceRowsFor(marketplace, viewerKey) })
+}
+
+function broadcastMarketList() {
+  for (const [ws, client] of clients) {
+    if (ws.readyState === ws.OPEN) sendMarketList(ws, client)
+  }
+}
+
+let marketplaceSeed = {}
+try { marketplaceSeed = JSON.parse(readFileSync(MARKETPLACE_FILE, 'utf8')) } catch { marketplaceSeed = {} }
+const marketplace = createMarketplace(marketplaceSeed)
+let marketplaceFlushTimer = null
+function flushMarketplace() {
+  if (marketplaceFlushTimer) return
+  marketplaceFlushTimer = setTimeout(() => {
+    marketplaceFlushTimer = null
+    try { writeFileSync(MARKETPLACE_FILE, JSON.stringify(marketplaceSnapshot(marketplace))) } catch { /* disk unavailable */ }
+  }, 500)
 }
 
 function kickDuplicatePeers(ws, client) {
@@ -422,6 +462,80 @@ wss.on('connection', (ws) => {
         flush()
         send(ws, { t: 'race-recorded', timeMs: Math.max(0, Math.floor(Number(msg.timeMs) || 0)) })
       }
+      return
+    }
+
+    if (msg.t === 'market-list') {
+      sendMarketList(ws, client)
+      return
+    }
+
+    if (msg.t === 'market-create' && client.active) {
+      const key = client.authed && client.pubkey ? client.pubkey : null
+      const result = key
+        ? createListing(marketplace, store, key, client.name, msg.itemId, msg.price, Date.now)
+        : { ok: false, reason: 'wallet-required' }
+      if (result.ok) {
+        flush()
+        flushMarketplace()
+      }
+      send(ws, {
+        t: 'market-action',
+        action: 'create',
+        ...result,
+        listing: result.ok ? publicMarketplaceRow(result.listing, key) : undefined,
+        progress: key ? store[key] : undefined,
+      })
+      sendMarketList(ws, client)
+      return
+    }
+
+    if (msg.t === 'market-buy' && client.active) {
+      const key = client.authed && client.pubkey ? client.pubkey : null
+      const result = key
+        ? buyListing(marketplace, store, key, msg.listingId, Date.now)
+        : { ok: false, reason: 'wallet-required' }
+      if (result.ok) {
+        flush()
+        flushMarketplace()
+        sendToIdentity(result.listing.sellerKey, {
+          t: 'market-action',
+          ok: true,
+          action: 'sold',
+          listing: publicMarketplaceRow(result.listing, result.listing.sellerKey),
+          progress: store[result.listing.sellerKey],
+        })
+        broadcastMarketList()
+      }
+      send(ws, {
+        t: 'market-action',
+        action: 'buy',
+        ...result,
+        listing: result.ok ? publicMarketplaceRow(result.listing, key) : undefined,
+        progress: key ? store[key] : undefined,
+      })
+      if (!result.ok) sendMarketList(ws, client)
+      return
+    }
+
+    if (msg.t === 'market-cancel' && client.active) {
+      const key = client.authed && client.pubkey ? client.pubkey : null
+      const result = key
+        ? cancelListing(marketplace, store, key, msg.listingId, Date.now)
+        : { ok: false, reason: 'wallet-required' }
+      if (result.ok) {
+        flush()
+        flushMarketplace()
+        broadcastMarketList()
+      }
+      send(ws, {
+        t: 'market-action',
+        action: 'cancel',
+        ...result,
+        listing: result.ok && result.listing ? publicMarketplaceRow(result.listing, key) : undefined,
+        progress: key ? store[key] : undefined,
+      })
+      if (!result.ok) sendMarketList(ws, client)
       return
     }
 

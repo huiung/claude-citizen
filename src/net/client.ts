@@ -36,6 +36,36 @@ export interface PlayerProgress {
   }
 }
 
+export interface MarketListingItem {
+  id: string
+  recipeId: string
+  rarity: string
+  variant: string
+  createdAt: number
+  tradable: boolean
+}
+
+export interface MarketListing {
+  id: string
+  sellerKey?: string
+  sellerName: string
+  item: MarketListingItem
+  price: number
+  currency: 'credits'
+  status: 'active' | 'sold' | 'cancelled'
+  createdAt: number
+  updatedAt: number
+  owned?: boolean
+}
+
+export interface MarketActionResult {
+  ok: boolean
+  action: 'create' | 'buy' | 'cancel' | 'sold'
+  reason?: string
+  listing?: MarketListing
+  progress?: PlayerProgress
+}
+
 export interface NetEvents {
   onPeerJoin(peer: PeerState): void
   onPeerState(peer: PeerState): void
@@ -63,6 +93,8 @@ export interface NetEvents {
   onPvpKill?(killerName: string, victimName: string, reward: number, killerIsSelf: boolean, victimIsSelf: boolean): void
   onPvpReward?(credits: number, victimName: string): void
   onRaceRecorded?(timeMs: number): void
+  onMarketList?(rows: MarketListing[]): void
+  onMarketAction?(result: MarketActionResult): void
 }
 
 const SEND_HZ = 10
@@ -220,6 +252,14 @@ export class NetClient {
       case 'race-recorded':
         this.events.onRaceRecorded?.(Math.max(0, Math.floor(Number(msg.timeMs) || 0)))
         break
+      case 'market-list':
+        this.events.onMarketList?.(Array.isArray(msg.rows) ? msg.rows as MarketListing[] : [])
+        break
+      case 'market-action': {
+        const { t: _t, ...result } = msg
+        this.events.onMarketAction?.(result as MarketActionResult)
+        break
+      }
       case 'challenge':
         if (typeof msg.message === 'string') this.events.onChallenge?.(msg.message)
         break
@@ -318,6 +358,30 @@ export class NetClient {
   sendRaceFinish(timeMs: number): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
     this.ws.send(JSON.stringify({ t: 'race-finish', timeMs }))
+    return true
+  }
+
+  requestMarketList(): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    this.ws.send(JSON.stringify({ t: 'market-list' }))
+    return true
+  }
+
+  createMarketListing(itemId: string, price: number): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    this.ws.send(JSON.stringify({ t: 'market-create', itemId, price }))
+    return true
+  }
+
+  buyMarketListing(listingId: string): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    this.ws.send(JSON.stringify({ t: 'market-buy', listingId }))
+    return true
+  }
+
+  cancelMarketListing(listingId: string): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    this.ws.send(JSON.stringify({ t: 'market-cancel', listingId }))
     return true
   }
 

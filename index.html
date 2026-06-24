@@ -248,9 +248,9 @@
     #station-undock:hover { background: #1b5a30; }
     .station-stats { display: flex; gap: 28px; margin: 14px 0 14px; font-size: 13px; opacity: .85; }
     .station-stats b { color: #ffe08a; font-size: 15px; }
-    .station-tabs { display: flex; gap: 6px; margin-bottom: 6px; }
+    .station-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
     .station-tabs button {
-      flex: 1; font-family: inherit; font-size: 12px; letter-spacing: 2px; padding: 8px;
+      flex: 1 1 72px; font-family: inherit; font-size: 12px; letter-spacing: 2px; padding: 8px;
       border: 1px solid #2f7a45; background: transparent; color: #7fc99a; cursor: pointer; border-radius: 4px;
     }
     .station-tabs button.active { background: #123c20; color: #9fffb0; }
@@ -482,6 +482,15 @@
       align-self: start; min-width: 34px; text-align: center; border-radius: 999px; padding: 3px 7px;
       border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.32); color: #ffe08a; font-size: 11px;
     }
+    .inventory-actions {
+      position: absolute; right: 12px; bottom: 10px;
+    }
+    .inventory-list {
+      font: 700 10px "Share Tech Mono", ui-monospace, monospace; letter-spacing: 1px;
+      border-radius: 4px; cursor: pointer; padding: 4px 8px;
+      border: 1px solid rgba(159, 255, 176, .34); background: rgba(16, 48, 25, .72); color: #9fffb0;
+    }
+    .inventory-list:hover { border-color: rgba(159, 255, 176, .72); color: #fff; }
     .inventory-empty { grid-column: 1 / -1; padding: 28px 10px; text-align: center; color: #7fc99a; opacity: .68; font-size: 12px; line-height: 1.5; }
     .rarity-common { color: #cfe3d0; }
     .rarity-rare { color: #6fe8ff; border-color: rgba(111, 232, 255, .38); }

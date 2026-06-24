@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupCraftedItems } from './inventory'
+import { groupCraftedItems, listableItemId } from './inventory'
 import type { CraftedCosmeticItem } from '../sim/crafting'
 
 const item = (id: string, recipeId: CraftedCosmeticItem['recipeId'], rarity: CraftedCosmeticItem['rarity'], variant: string): CraftedCosmeticItem => ({
@@ -37,5 +37,16 @@ describe('crafted inventory UI grouping', () => {
         ids: ['item-1', 'item-2'],
       },
     ])
+  })
+
+  it('selects the oldest tradable item from a grouped stack for listing', () => {
+    const items = [
+      item('item-2', 'aurum-trail-kit', 'rare', 'Blue Aurum Trail'),
+      item('item-1', 'aurum-trail-kit', 'rare', 'Blue Aurum Trail'),
+      { ...item('item-0', 'aurum-trail-kit', 'rare', 'Blue Aurum Trail'), tradable: false },
+    ]
+    const [group] = groupCraftedItems(items)
+
+    expect(listableItemId(group, items)).toBe('item-1')
   })
 })

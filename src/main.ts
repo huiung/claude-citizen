@@ -26,7 +26,7 @@ import {
   buildMuchLaunchTower, buildRareFrogShrine, buildSun, buildWarpField, COLONY_POS, REFINERY_POS, SPAWN_PLANET, updateDustField, updateWarpField,
 } from './render/world'
 import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS, type SurfaceKind } from './sim/solarSystem'
-import { NetClient, type PeerState, type PlayerProgress } from './net/client'
+import { NetClient, type MarketActionResult, type MarketListing, type PeerState, type PlayerProgress } from './net/client'
 import { dockableTarget, type DockTarget } from './sim/docking'
 import { cargoUsed, gainCredits, loadEconomy, OUTPOSTS, saveEconomy } from './sim/economy'
 import { createAsteroidField, mineStep } from './sim/mining'
@@ -2007,6 +2007,30 @@ function currentProgress(): PlayerProgress {
   }
 }
 
+function applyServerProgress(p: PlayerProgress): void {
+  econ.credits = p.credits
+  econ.earned = p.earned ?? p.credits
+  econ.cargo.ORE = p.cargo.ORE
+  econ.cargo.ALLOY = p.cargo.ALLOY
+  upgrades.tiers.cargo = p.upgrades.cargo
+  upgrades.tiers.speed = p.upgrades.speed
+  upgrades.tiers.boost = p.upgrades.boost
+  upgrades.tiers.mining = p.upgrades.mining ?? 0
+  const nextCrafting = normalizeCraftingState(p.crafting)
+  crafting.cores = nextCrafting.cores
+  crafting.items.splice(0, crafting.items.length, ...nextCrafting.items)
+  ownedShips.clear()
+  for (const t of p.hangar.owned) if (t in SHIP_STATS) ownedShips.add(t as ShipType)
+  ownedShips.add('hauler')
+  const sel = (p.hangar.selected in SHIP_STATS ? p.hangar.selected : 'hauler') as ShipType
+  setPlayerCraft(ownedShips.has(sel) ? sel : 'hauler')
+  saveEconomy(econ)
+  saveUpgrades(upgrades)
+  saveCraftingState(crafting, localStorage)
+  saveHangar()
+  updateWalletHUD()
+}
+
 function refreshWallet(): void {
   updateWalletHUD()
   saveEconomy(econ)
@@ -2020,6 +2044,55 @@ const stationMenu = new StationMenu({
   onUndock: undock,
 })
 document.body.appendChild(stationMenu.root)
+let marketplaceRows: MarketListing[] = []
+
+function refreshMarketplaceViews(): void {
+  stationMenu.refresh()
+  if (inventoryPanel.isOpen) inventoryPanel.render()
+}
+
+function requestMarketplaceRefresh(): void {
+  net.requestMarketList()
+}
+
+function listCraftedItemForSale(itemId: string, price: number): void {
+  if (!walletSession) {
+    addChatLine('MARKET', 'Connect wallet to trade crafted items.', selfTier)
+    return
+  }
+  refreshWallet()
+  if (!net.createMarketListing(itemId, price)) addChatLine('MARKET', 'Server unavailable. Listing not created.', selfTier)
+}
+
+function handleMarketAction(result: MarketActionResult): void {
+  if (result.progress) applyServerProgress(result.progress)
+  const messages: Record<string, string> = {
+    'missing-progress': 'Progress not synced yet. Try again in a moment.',
+    'invalid-price': 'Invalid listing price.',
+    'item-not-found': 'Item is no longer in inventory.',
+    'not-tradable': 'That item cannot be traded.',
+    'missing-credits': 'Not enough credits.',
+    'not-found': 'Listing no longer exists.',
+    'not-active': 'Listing is no longer active.',
+    'not-seller': 'Only the seller can cancel that listing.',
+    'own-listing': 'You cannot buy your own listing.',
+    'missing-identity': 'No active pilot identity.',
+    'wallet-required': 'Connect wallet to trade crafted items.',
+  }
+  if (result.ok) {
+    const okText: Record<string, string> = {
+      create: 'Listing created.',
+      buy: 'Marketplace purchase complete.',
+      cancel: 'Listing cancelled.',
+      sold: 'Marketplace sale complete.',
+    }
+    addChatLine('MARKET', okText[result.action] ?? 'Marketplace updated.', selfTier)
+    net.requestMarketList()
+  } else {
+    addChatLine('MARKET', messages[result.reason ?? ''] ?? 'Marketplace action failed.', selfTier)
+  }
+  refreshMarketplaceViews()
+}
 
 // --- Remote ships
 interface RemoteShip {
@@ -2219,7 +2292,27 @@ function dock(id: string): void {
         saveHolderShipVisual(localStorage, id)
         setPlayerCraft(selectedShipType)
       },
+      marketplaceRows: () => marketplaceRows,
+      marketplaceCanTrade: () => Boolean(walletSession),
+      onRefreshMarketplace: requestMarketplaceRefresh,
+      onBuyMarketListing: (listingId) => {
+        if (!walletSession) {
+          addChatLine('MARKET', 'Connect wallet to trade crafted items.', selfTier)
+          return
+        }
+        refreshWallet()
+        net.buyMarketListing(listingId)
+      },
+      onCancelMarketListing: (listingId) => {
+        if (!walletSession) {
+          addChatLine('MARKET', 'Connect wallet to trade crafted items.', selfTier)
+          return
+        }
+        refreshWallet()
+        net.cancelMarketListing(listingId)
+      },
     })
+    net.requestMarketList()
   })
 }
 
@@ -2269,7 +2362,11 @@ function restoreFlightInputAfterPanel(): void {
   if (running && !docked && !chatOpen && !solarMap.isOpen && settingsPanelEl.hidden && leaderboardPanelEl.hidden) requestFlightPointerLock()
 }
 
-const inventoryPanel = new InventoryPanel({ onClose: restoreFlightInputAfterPanel })
+const inventoryPanel = new InventoryPanel({
+  onClose: restoreFlightInputAfterPanel,
+  onListItem: listCraftedItemForSale,
+  canListItem: () => Boolean(walletSession),
+})
 
 function openInventoryPanel(): void {
   if (!running) return
@@ -2556,27 +2653,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   },
   onProgress(p) {
     // Server is the source of truth — adopt saved progress when it arrives.
-    econ.credits = p.credits
-    econ.earned = p.earned ?? p.credits // migration: pre-earned saves seed lifetime from balance
-    econ.cargo.ORE = p.cargo.ORE
-    econ.cargo.ALLOY = p.cargo.ALLOY
-    upgrades.tiers.cargo = p.upgrades.cargo
-    upgrades.tiers.speed = p.upgrades.speed
-    upgrades.tiers.boost = p.upgrades.boost
-    upgrades.tiers.mining = p.upgrades.mining ?? 0
-    const nextCrafting = normalizeCraftingState(p.crafting)
-    crafting.cores = nextCrafting.cores
-    crafting.items.splice(0, crafting.items.length, ...nextCrafting.items)
-    ownedShips.clear()
-    for (const t of p.hangar.owned) if (t in SHIP_STATS) ownedShips.add(t as ShipType)
-    ownedShips.add('hauler')
-    const sel = (p.hangar.selected in SHIP_STATS ? p.hangar.selected : 'hauler') as ShipType
-    setPlayerCraft(ownedShips.has(sel) ? sel : 'hauler')
-    saveEconomy(econ)
-    saveUpgrades(upgrades)
-    saveCraftingState(crafting, localStorage)
-    saveHangar()
-    updateWalletHUD()
+    applyServerProgress(p)
     finishOnboarding() // a returning token already knows the ropes
   },
   onPeerJoin(peer) {
@@ -2698,6 +2775,13 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   onRaceRecorded(timeMs) {
     addChatLine('RACE', `Ranked time recorded: ${formatTrialTime(timeMs / 1000)}`, selfTier)
     if (!leaderboardPanelEl.hidden && hudLeaderboardMode === 'race') fetchLeaderboard('hud')
+  },
+  onMarketList(rows) {
+    marketplaceRows = rows
+    refreshMarketplaceViews()
+  },
+  onMarketAction(result) {
+    handleMarketAction(result)
   },
   onKicked() {
     // Same Pilot Code launched elsewhere — this tab is now read-only to avoid save conflicts.

@@ -49,6 +49,14 @@ export function groupCraftedItems(items: readonly CraftedCosmeticItem[]): Crafte
   })
 }
 
+export function listableItemId(group: CraftedItemGroup, items: readonly CraftedCosmeticItem[]): string | null {
+  const ids = new Set(group.ids)
+  const candidates = items
+    .filter((item) => ids.has(item.id) && item.tradable !== false)
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+  return candidates[0]?.id ?? null
+}
+
 function recipeName(recipeId: CraftingCosmeticId): string {
   return CRAFTING_RECIPES.find((recipe) => recipe.id === recipeId)?.name ?? recipeId
 }
@@ -59,9 +67,17 @@ export class InventoryPanel {
   private gridEl!: HTMLElement
   private state: CraftingState | null = null
   private onClose?: () => void
+  private onListItem?: (itemId: string, price: number) => void
+  private canListItem: () => boolean
 
-  constructor(opts: { onClose?: () => void } = {}) {
+  constructor(opts: {
+    onClose?: () => void
+    onListItem?: (itemId: string, price: number) => void
+    canListItem?: () => boolean
+  } = {}) {
     this.onClose = opts.onClose
+    this.onListItem = opts.onListItem
+    this.canListItem = opts.canListItem ?? (() => false)
     this.root = document.getElementById('inventory-panel') ?? document.createElement('div')
     this.titleEl = this.root.querySelector('#inventory-count') as HTMLElement
     this.gridEl = this.root.querySelector('#inventory-grid') as HTMLElement
@@ -112,6 +128,7 @@ export class InventoryPanel {
   private card(group: CraftedItemGroup): HTMLElement {
     const card = document.createElement('div')
     card.className = `inventory-card rarity-${group.rarity}`
+    const itemId = this.state ? listableItemId(group, this.state.items) : null
     card.innerHTML = `
       <div class="inventory-thumb" aria-hidden="true"><i></i></div>
       <div class="inventory-meta">
@@ -121,6 +138,20 @@ export class InventoryPanel {
       </div>
       <div class="inventory-count-badge">x${group.count}</div>
     `
+    if (itemId && this.onListItem && this.canListItem()) {
+      const actions = document.createElement('div')
+      actions.className = 'inventory-actions'
+      const button = document.createElement('button')
+      button.className = 'inventory-list'
+      button.textContent = 'List'
+      button.addEventListener('click', () => {
+        const raw = window.prompt('List price in credits', '25000')
+        const price = Math.max(0, Math.floor(Number(raw) || 0))
+        if (price > 0) this.onListItem?.(itemId, price)
+      })
+      actions.appendChild(button)
+      card.appendChild(actions)
+    }
     return card
   }
 }
