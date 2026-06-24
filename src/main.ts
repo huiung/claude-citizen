@@ -1,3 +1,6 @@
+import { Buffer } from 'buffer'
+;(globalThis as unknown as { Buffer: typeof Buffer }).Buffer ??= Buffer
+
 import '@fontsource/share-tech-mono/400.css' // HUD / body — self-hosted, OS-consistent
 import '@fontsource/orbitron/700.css' // title display — sci-fi
 import * as THREE from 'three'
