@@ -8,6 +8,7 @@ export interface PeerState {
   q: [number, number, number, number]
   ship?: string
   visual?: string
+  cosmetics?: string
   hull?: number
   maxHull?: number
   receivedAt: number
@@ -123,6 +124,7 @@ export class NetClient {
   private id: string | null = null
   private activeShip: string | undefined
   private activeVisual: string | undefined
+  private activeCosmetics: string | undefined
   private sessionId: string | null = null
 
   constructor(private name: string, private token: string, private events: NetEvents) {}
@@ -154,7 +156,7 @@ export class NetClient {
       this.reconnectDelay = 2000 // connected — reset backoff
       // Viewer presence by default; a full 'join' once the player launches.
       this.ws?.send(JSON.stringify(this.active
-        ? { t: 'join', name: this.name, token: this.token, sessionId: this.sessionId, ship: this.activeShip, visual: this.activeVisual }
+        ? { t: 'join', name: this.name, token: this.token, sessionId: this.sessionId, ship: this.activeShip, visual: this.activeVisual, cosmetics: this.activeCosmetics }
         : { t: 'hello', token: this.token, sessionId: this.sessionId }))
       this.events.onStatus(true, this.online)
     }
@@ -204,6 +206,7 @@ export class NetClient {
         peer.p = msg.p; peer.q = msg.q; peer.receivedAt = performance.now()
         peer.ship = typeof msg.ship === 'string' ? msg.ship : peer.ship
         peer.visual = typeof msg.visual === 'string' ? msg.visual : peer.visual
+        peer.cosmetics = typeof msg.cosmetics === 'string' ? msg.cosmetics : peer.cosmetics
         peer.hull = Number.isFinite(Number(msg.hull)) ? Number(msg.hull) : peer.hull
         peer.maxHull = Number.isFinite(Number(msg.maxHull)) ? Number(msg.maxHull) : peer.maxHull
         this.events.onPeerState(peer)
@@ -300,6 +303,7 @@ export class NetClient {
       p: raw.p ?? [0, 0, 0], q: raw.q ?? [0, 0, 0, 1],
       ship: typeof raw.ship === 'string' ? raw.ship : undefined,
       visual: typeof raw.visual === 'string' ? raw.visual : undefined,
+      cosmetics: typeof raw.cosmetics === 'string' ? raw.cosmetics : undefined,
       hull: Number.isFinite(Number(raw.hull)) ? Number(raw.hull) : undefined,
       maxHull: Number.isFinite(Number(raw.maxHull)) ? Number(raw.maxHull) : undefined,
       receivedAt: performance.now(),
@@ -315,12 +319,17 @@ export class NetClient {
     this.lastSend = now
     if (ship) this.activeShip = ship
     if (visual) this.activeVisual = visual
-    this.ws.send(JSON.stringify({ t: 'state', p, q, ship: this.activeShip, visual: this.activeVisual }))
+    this.ws.send(JSON.stringify({ t: 'state', p, q, ship: this.activeShip, visual: this.activeVisual, cosmetics: this.activeCosmetics }))
   }
 
   /** Update the callsign sent on join (call before connect once the player picks one). */
   setName(name: string): void {
     this.name = name
+  }
+
+  /** Cache the equipped-cosmetics wire string sent on subsequent join/state frames. */
+  setCosmetics(cosmetics: string): void {
+    this.activeCosmetics = cosmetics
   }
 
   /** Promote from viewer (presence) to an active in-game pilot — call on LAUNCH. */
@@ -330,7 +339,7 @@ export class NetClient {
     if (visual) this.activeVisual = visual
     this.active = true
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ t: 'join', name, token: this.token, sessionId: this.sessionId, ship: this.activeShip, visual: this.activeVisual }))
+      this.ws.send(JSON.stringify({ t: 'join', name, token: this.token, sessionId: this.sessionId, ship: this.activeShip, visual: this.activeVisual, cosmetics: this.activeCosmetics }))
     }
     // If the socket isn't open yet, onopen will send 'join' since active is now true.
   }
@@ -370,7 +379,7 @@ export class NetClient {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
     if (ship) this.activeShip = ship
     if (visual) this.activeVisual = visual
-    this.ws.send(JSON.stringify({ t: 'pvp-respawn', p, q, ship: this.activeShip, visual: this.activeVisual }))
+    this.ws.send(JSON.stringify({ t: 'pvp-respawn', p, q, ship: this.activeShip, visual: this.activeVisual, cosmetics: this.activeCosmetics }))
     return true
   }
 

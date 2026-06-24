@@ -229,3 +229,40 @@ describe('NetClient holder ship visual sync', () => {
     expect(onCallsign).toHaveBeenCalledWith('ACE')
   })
 })
+
+describe('cosmetics protocol', () => {
+  const OriginalWebSocket = globalThis.WebSocket
+
+  beforeEach(() => {
+    FakeWebSocket.instances = []
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    vi.stubGlobal('location', { protocol: 'http:', hostname: 'localhost' })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    if (OriginalWebSocket) vi.stubGlobal('WebSocket', OriginalWebSocket)
+  })
+
+  it('includes cached cosmetics in the state frame after setCosmetics', () => {
+    const net = new NetClient('ACE', 'tok', events())
+    net.setCosmetics('aurum-trail-kit:legendary,,')
+    net.connect()
+    const ws = FakeWebSocket.instances[0]
+    ws.open()
+    net.sendState([0, 0, 0], [0, 0, 0, 1], 999999, 'hauler')
+    const sent = ws.sent
+    expect(sent.at(-1)).toMatchObject({ t: 'state', cosmetics: 'aurum-trail-kit:legendary,,' })
+  })
+
+  it('reads cosmetics from an inbound peer-join', () => {
+    const onPeerJoin = vi.fn()
+    const net = new NetClient('VIEWER', 'tok', events({ onPeerJoin }))
+    net.connect()
+    const ws = FakeWebSocket.instances[0]
+    ws.open()
+    ws.emit({ t: 'peer-join', id: 'p1', name: 'ACE', color: 1, p: [0, 0, 0], q: [0, 0, 0, 1], cosmetics: 'nebula-hull-kit:epic,,' })
+    const peer = [...net.getPeers().values()].find((x) => x.id === 'p1')
+    expect(peer?.cosmetics).toBe('nebula-hull-kit:epic,,')
+  })
+})
