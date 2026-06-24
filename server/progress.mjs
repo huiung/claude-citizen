@@ -82,7 +82,14 @@ export function sanitizeCrafting(value) {
       if (items.length >= 200) break
     }
   }
-  return { cores, items }
+  const rawEquipped = value?.equipped && typeof value.equipped === 'object' ? value.equipped : {}
+  const ids = new Set(items.map((it) => it.id))
+  const equipped = { trail: null, hull: null, aura: null }
+  for (const slot of ['trail', 'hull', 'aura']) {
+    const id = rawEquipped[slot]
+    if (typeof id === 'string' && ids.has(id)) equipped[slot] = id
+  }
+  return { cores, items, equipped }
 }
 
 /** Accept only the small, known progress shape - never trust the client blindly. */

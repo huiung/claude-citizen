@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeProgress } from './progress.mjs'
+import { sanitizeProgress, sanitizeCrafting } from './progress.mjs'
 
 describe('progress sanitization', () => {
   it('keeps known crafted inventory items and drops unknown entries', () => {
@@ -38,6 +38,7 @@ describe('progress sanitization', () => {
           tradable: false,
         },
       ],
+      equipped: { trail: null, hull: null, aura: null },
     })
   })
 
@@ -49,7 +50,7 @@ describe('progress sanitization', () => {
       hangar: {},
     })
 
-    expect(clean?.crafting).toEqual({ cores: 0, items: [] })
+    expect(clean?.crafting).toEqual({ cores: 0, items: [], equipped: { trail: null, hull: null, aura: null } })
   })
 
   it('migrates legacy crafted cosmetic ids into common inventory items', () => {
@@ -67,5 +68,18 @@ describe('progress sanitization', () => {
       ['legacy-aurum-trail-kit-0', 'aurum-trail-kit', 'common', true],
       ['legacy-void-runner-kit-1', 'void-runner-kit', 'common', true],
     ])
+  })
+})
+
+describe('sanitizeCrafting equipped', () => {
+  const item = { id: 'i1', recipeId: 'aurum-trail-kit', rarity: 'legendary', variant: 'Radiant Aurum Trail', createdAt: 1, tradable: true }
+
+  it('defaults equipped to empty slots for old state', () => {
+    expect(sanitizeCrafting({ cores: 0, items: [] }).equipped).toEqual({ trail: null, hull: null, aura: null })
+  })
+
+  it('keeps an equipped slot only when the item id is present', () => {
+    const out = sanitizeCrafting({ cores: 0, items: [item], equipped: { trail: 'i1', hull: 'ghost', aura: null } })
+    expect(out.equipped).toEqual({ trail: 'i1', hull: null, aura: null })
   })
 })
