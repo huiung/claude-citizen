@@ -6,6 +6,7 @@ import {
   createMarketplace,
   marketplaceList,
   marketplaceRowsFor,
+  publicMarketplaceRow,
   reserveListing,
   settleTokenListing,
 } from './marketplace.mjs'
@@ -175,6 +176,16 @@ describe('marketplace currency', () => {
     expect(store.seller.credits).toBe(0)
     expect(r.listing.status).toBe('sold')
     expect(market.reservations.has(listing.id)).toBe(false)
+  })
+
+  it('exposes a short wallet suffix on public rows and hides the raw sellerKey', () => {
+    const wallet = '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU'
+    const store = { [wallet]: { credits: 0, crafting: { cores: 0, items: [cloneItem()] } } }
+    const market = createMarketplace()
+    const { listing } = createListing(market, store, wallet, 'ACE', 'item-1', 1250, () => 1000, 'token')
+    const pub = publicMarketplaceRow(listing, 'viewer-x')
+    expect(pub.sellerShort).toBe('7xKX...gAsU')
+    expect(pub.sellerKey).toBeUndefined()
   })
 
   it('refuses to settle for a buyer who does not hold the reservation', () => {

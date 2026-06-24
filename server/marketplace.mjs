@@ -13,6 +13,16 @@ function safeText(value, fallback, max = 64) {
   return (text || fallback).slice(0, max)
 }
 
+function isWalletKey(key) {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(key ?? ''))
+}
+
+function shortWallet(key) {
+  const text = String(key ?? '')
+  if (!isWalletKey(text)) return null
+  return `${text.slice(0, 4)}...${text.slice(-4)}`
+}
+
 function cloneItem(item) {
   return {
     id: safeText(item?.id, '', 96),
@@ -96,7 +106,7 @@ export function marketplaceList(marketplace) {
 export function publicMarketplaceRow(row, viewerKey) {
   if (!row) return null
   const { sellerKey: _sellerKey, ...publicRow } = row
-  return { ...publicRow, item: cloneItem(row.item), owned: row.sellerKey === viewerKey }
+  return { ...publicRow, item: cloneItem(row.item), sellerShort: shortWallet(row.sellerKey), owned: row.sellerKey === viewerKey }
 }
 
 export function marketplaceRowsFor(marketplace, viewerKey) {

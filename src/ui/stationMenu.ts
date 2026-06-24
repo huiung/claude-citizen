@@ -399,7 +399,8 @@ export class StationMenu {
     for (const listing of rows) {
       const rarity = CRAFTING_RARITY_LABELS[listing.item.rarity as keyof typeof CRAFTING_RARITY_LABELS] ?? listing.item.rarity
       const unit = listing.currency === 'token' ? '$CITIZEN' : 'cr'
-      const row = this.rowEl(`${rarity} ${listing.item.variant}`, `Seller ${listing.sellerName}`, `${listing.price.toLocaleString()} ${unit}`)
+      const seller = listing.sellerShort ? `Seller ${listing.sellerName} (${listing.sellerShort})` : `Seller ${listing.sellerName}`
+      const row = this.rowEl(`${rarity} ${listing.item.variant}`, seller, `${listing.price.toLocaleString()} ${unit}`)
       const actions = row.querySelector('.s-actions')!
       if (listing.owned) {
         actions.appendChild(this.btn('Cancel', 'sell', !canTrade, () => this.ctx.onCancelMarketListing(listing.id)))

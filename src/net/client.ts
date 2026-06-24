@@ -49,6 +49,7 @@ export interface MarketListing {
   id: string
   sellerKey?: string
   sellerName: string
+  sellerShort?: string
   item: MarketListingItem
   price: number
   currency: 'credits' | 'token'

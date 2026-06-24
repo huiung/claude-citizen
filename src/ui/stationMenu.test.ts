@@ -27,6 +27,7 @@ describe('stationMenu market tab currency display', () => {
     const tokenRow = {
       id: 'mkt-1',
       sellerName: 'ACE',
+      sellerShort: '7xKX...gAsU',
       price: 1250,
       currency: 'token' as const,
       status: 'active' as const,
@@ -68,6 +69,7 @@ describe('stationMenu market tab currency display', () => {
     ;(menu.root.querySelector('[data-tab="market"]') as HTMLButtonElement).click()
 
     expect(menu.root.textContent).toContain('1,250 $CITIZEN')
+    expect(menu.root.textContent).toContain('ACE (7xKX...gAsU)')
 
     const buyBtn = Array.from(menu.root.querySelectorAll('button')).find(
       (b) => b.textContent === 'Buy',
