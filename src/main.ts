@@ -30,6 +30,7 @@ import { NetClient, type PeerState, type PlayerProgress } from './net/client'
 import { dockableTarget, type DockTarget } from './sim/docking'
 import { cargoUsed, gainCredits, loadEconomy, OUTPOSTS, saveEconomy } from './sim/economy'
 import { createAsteroidField, mineStep } from './sim/mining'
+import { loadCraftingState, normalizeCraftingState, saveCraftingState } from './sim/crafting'
 import { createMarket, step as marketStep } from './sim/market'
 import { generateContracts } from './sim/contracts'
 import { boostMultiplier, cargoCapacity, loadUpgrades, miningYield, saveUpgrades, topSpeed } from './sim/upgrades'
@@ -85,6 +86,7 @@ import {
 } from './sim/trainingDrones'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
+import { InventoryPanel } from './ui/inventory'
 import { SolarSystemMap, type SolarMapDestinationResult, type SolarMapNavigationTarget } from './ui/solarSystemMap'
 import { holderChatNameClass, holderNameplateClass, holderNameplateText } from './ui/nameplate'
 import {
@@ -110,6 +112,7 @@ import {
   type HolderShipVisualId,
 } from './ui/holderShipVisual'
 import { hudShipIdentity } from './ui/shipIdentity'
+import { readLocalDevHolderOverride } from './ui/devHolder'
 import {
   defaultOrbitDistance,
   defaultRearDistance,
@@ -1837,6 +1840,7 @@ function updateTrainingDroneWrecks(now: number, dt: number): void {
 
 // --- Game systems (main owns all state; modules are pure)
 const econ = loadEconomy()
+const crafting = loadCraftingState(localStorage)
 const upgrades = loadUpgrades()
 // Objective chain (post-onboarding): conditions read live progress — no extra tracking or saving.
 const upgradeTotal = (): number => upgrades.tiers.cargo + upgrades.tiers.speed + upgrades.tiers.boost + upgrades.tiers.mining
@@ -1999,6 +2003,7 @@ function currentProgress(): PlayerProgress {
     cargo: { ORE: econ.cargo.ORE, ALLOY: econ.cargo.ALLOY },
     upgrades: { cargo: upgrades.tiers.cargo, speed: upgrades.tiers.speed, boost: upgrades.tiers.boost, mining: upgrades.tiers.mining },
     hangar: { selected: selectedShipType, owned: [...ownedShips] },
+    crafting: { cores: crafting.cores, items: [...crafting.items] },
   }
 }
 
@@ -2006,6 +2011,7 @@ function refreshWallet(): void {
   updateWalletHUD()
   saveEconomy(econ)
   saveUpgrades(upgrades)
+  saveCraftingState(crafting, localStorage)
   net.saveProgress(currentProgress())
 }
 
@@ -2029,6 +2035,13 @@ let selfHolderBalance = 0 // exact token balance from the relay; used only for h
 let selectedHolderShipVisual = loadHolderShipVisual(localStorage)
 let rankedPvpDeniedUntil = 0
 const _rankedBounceDir = new THREE.Vector3()
+function applyLocalDevHolderOverride(): void {
+  const override = readLocalDevHolderOverride(localStorage, window.location)
+  if (!override) return
+  selfTier = override.tier
+  selfHolderBalance = override.balance
+}
+applyLocalDevHolderOverride()
 function activeHolderShipVisual(): HolderShipVisualId {
   return resolveHolderShipVisual(selectedHolderShipVisual, selfTier).id
 }
@@ -2184,7 +2197,7 @@ function dock(id: string): void {
   requestAnimationFrame(() => {
     if (!docked || openRequest !== dockOpenRequest) return
     stationMenu.open({
-      outpostId: id, econ, market, upgrades, contracts, audio,
+      outpostId: id, econ, market, crafting, upgrades, contracts, audio,
       capacity: effCargo,
       selectedShip: () => selectedShipType,
       ownedShips,
@@ -2249,6 +2262,32 @@ function closeSettingsPanel(): void {
   settingsPanelEl.hidden = true
   if (MOBILE_COMPANION && running && !docked && !chatOpen) mobileControlsEl.hidden = false
   if (running && !docked && !chatOpen && !solarMap.isOpen) requestFlightPointerLock()
+}
+
+function restoreFlightInputAfterPanel(): void {
+  if (MOBILE_COMPANION && running && !docked && !chatOpen && settingsPanelEl.hidden) mobileControlsEl.hidden = false
+  if (running && !docked && !chatOpen && !solarMap.isOpen && settingsPanelEl.hidden && leaderboardPanelEl.hidden) requestFlightPointerLock()
+}
+
+const inventoryPanel = new InventoryPanel({ onClose: restoreFlightInputAfterPanel })
+
+function openInventoryPanel(): void {
+  if (!running) return
+  keys.clear()
+  miningActive = false
+  weaponActive = false
+  mineEl.hidden = true
+  beam.visible = false
+  impact.visible = false
+  leaderboardPanelEl.hidden = true
+  settingsPanelEl.hidden = true
+  if (MOBILE_COMPANION) mobileControlsEl.hidden = true
+  if (document.pointerLockElement) document.exitPointerLock()
+  inventoryPanel.open(crafting)
+}
+
+function closeInventoryPanel(): void {
+  inventoryPanel.close()
 }
 
 settingsCloseEl.addEventListener('click', closeSettingsPanel)
@@ -2365,6 +2404,13 @@ if (MOBILE_COMPANION) {
 addEventListener('keydown', (e) => {
   if (chatOpen) return // chat input owns the keyboard while open
   if (solarMap.isOpen) return // map owns M/Escape via its capture listener
+  if (inventoryPanel.isOpen) {
+    if (e.code === 'Escape' || e.code === 'KeyI') {
+      e.preventDefault()
+      closeInventoryPanel()
+    }
+    return
+  }
   if (!settingsPanelEl.hidden) {
     if (e.code === 'Escape' || e.code === 'KeyO') {
       e.preventDefault()
@@ -2393,6 +2439,11 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyO' && running && !docked) {
     e.preventDefault()
     openSettingsPanel()
+    return
+  }
+  if (e.code === 'KeyI' && running) {
+    e.preventDefault()
+    openInventoryPanel()
     return
   }
   keys.add(e.code)
@@ -2513,6 +2564,9 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     upgrades.tiers.speed = p.upgrades.speed
     upgrades.tiers.boost = p.upgrades.boost
     upgrades.tiers.mining = p.upgrades.mining ?? 0
+    const nextCrafting = normalizeCraftingState(p.crafting)
+    crafting.cores = nextCrafting.cores
+    crafting.items.splice(0, crafting.items.length, ...nextCrafting.items)
     ownedShips.clear()
     for (const t of p.hangar.owned) if (t in SHIP_STATS) ownedShips.add(t as ShipType)
     ownedShips.add('hauler')
@@ -2520,6 +2574,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     setPlayerCraft(ownedShips.has(sel) ? sel : 'hauler')
     saveEconomy(econ)
     saveUpgrades(upgrades)
+    saveCraftingState(crafting, localStorage)
     saveHangar()
     updateWalletHUD()
     finishOnboarding() // a returning token already knows the ropes
@@ -2558,6 +2613,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   onHolder(tier, balance) {
     selfTier = tier
     selfHolderBalance = balance
+    applyLocalDevHolderOverride()
     setPlayerCraft(selectedShipType)
   },
   onPeerLeave(id) {

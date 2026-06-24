@@ -22,6 +22,18 @@ export interface PlayerProgress {
   cargo: { ORE: number; ALLOY: number }
   upgrades: { cargo: number; speed: number; boost: number; mining: number }
   hangar: { selected: string; owned: string[] }
+  crafting?: {
+    cores?: number
+    items?: {
+      id: string
+      recipeId: string
+      rarity: string
+      variant: string
+      createdAt: number
+      tradable: boolean
+    }[]
+    cosmetics?: string[]
+  }
 }
 
 export interface NetEvents {

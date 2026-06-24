@@ -14,6 +14,7 @@ import { createPvpKillAuditLog, pvpLeaderboardPage, mergePvpStats, recordRankedP
 import { raceLeaderboardPage, mergeRaceStats, recordRankedRaceFinish } from './raceLeaderboard.mjs'
 import { applyPvpHit, applyPvpRespawn, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
 import { identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
+import { sanitizeProgress } from './progress.mjs'
 
 function loadEnvFile(path = '.env') {
   let text
@@ -169,28 +170,6 @@ function flush() {
     flushTimer = null
     try { writeFileSync(STORE_FILE, JSON.stringify(store)) } catch { /* disk unavailable */ }
   }, 2000)
-}
-
-/** Accept only the small, known progress shape — never trust the client blindly. */
-function sanitizeProgress(p) {
-  if (!p || typeof p !== 'object') return null
-  const credits = Number(p.credits) || 0
-  return {
-    credits,
-    // Lifetime earnings drive rank; older saves without it seed from current balance.
-    earned: typeof p.earned === 'number' && p.earned >= 0 ? Number(p.earned) : credits,
-    cargo: { ORE: Number(p.cargo?.ORE) || 0, ALLOY: Number(p.cargo?.ALLOY) || 0 },
-    upgrades: {
-      cargo: Number(p.upgrades?.cargo) || 0,
-      speed: Number(p.upgrades?.speed) || 0,
-      boost: Number(p.upgrades?.boost) || 0,
-      mining: Number(p.upgrades?.mining) || 0,
-    },
-    hangar: {
-      selected: String(p.hangar?.selected ?? 'hauler').slice(0, 16),
-      owned: Array.isArray(p.hangar?.owned) ? p.hangar.owned.slice(0, 16).map((t) => String(t).slice(0, 16)) : ['hauler'],
-    },
-  }
 }
 
 function broadcast(from, msg) {

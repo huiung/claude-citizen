@@ -438,6 +438,62 @@
     }
     .settings-actions button:hover { border-color: rgba(159, 255, 176, .65); color: #fff; }
     .settings-key { color: #aee9ff; font-size: 11px; opacity: .48; }
+    #inventory-panel {
+      position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      width: min(720px, calc(100vw - 32px)); max-height: min(620px, calc(100vh - 32px)); z-index: 33;
+      background: rgba(2, 8, 12, .92); border: 1px solid rgba(159, 255, 176, .32);
+      border-radius: 8px; padding: 16px 18px; box-shadow: 0 0 38px rgba(40, 180, 80, .14);
+      pointer-events: auto; overflow: hidden;
+    }
+    #inventory-panel[hidden] { display: none; }
+    .inventory-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .inventory-head h2 { font-size: 14px; letter-spacing: 2px; color: #9fffb0; font-weight: 600; }
+    #inventory-close {
+      width: 28px; height: 24px; border-radius: 4px; cursor: pointer;
+      border: 1px solid rgba(159, 255, 176, .28); background: rgba(0, 18, 8, .55);
+      color: #9fffb0; font: 700 13px "Share Tech Mono", ui-monospace, monospace;
+    }
+    #inventory-close:hover { border-color: rgba(159, 255, 176, .65); color: #fff; }
+    .inventory-kicker { margin-top: 4px; color: #aee9ff; font-size: 10px; letter-spacing: 1.4px; opacity: .72; }
+    #inventory-grid {
+      margin-top: 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;
+      max-height: 460px; overflow-y: auto; padding-right: 2px;
+    }
+    .inventory-card {
+      position: relative; min-height: 96px; display: grid; grid-template-columns: 76px 1fr auto; gap: 12px;
+      align-items: center; border-radius: 7px; padding: 10px 12px;
+      border: 1px solid rgba(159, 255, 176, .2); background: rgba(0, 18, 8, .45);
+    }
+    .inventory-thumb {
+      width: 72px; height: 72px; border-radius: 7px; border: 1px solid currentColor; overflow: hidden;
+      background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.22), transparent 24%),
+        linear-gradient(135deg, rgba(255,255,255,.08), rgba(0,0,0,.1));
+      box-shadow: inset 0 0 18px rgba(255,255,255,.08), 0 0 18px rgba(255,255,255,.05);
+    }
+    .inventory-thumb i {
+      display: block; width: 42px; height: 18px; margin: 27px auto;
+      border-radius: 50% 12% 50% 12%; background: currentColor; opacity: .78;
+      box-shadow: 0 0 18px currentColor; transform: skewX(-20deg);
+    }
+    .inventory-rarity { font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase; opacity: .78; }
+    .inventory-name { margin-top: 3px; color: #fff; font-size: 13px; line-height: 1.25; }
+    .inventory-recipe { margin-top: 5px; color: #aee9ff; font-size: 11px; opacity: .62; }
+    .inventory-count-badge {
+      align-self: start; min-width: 34px; text-align: center; border-radius: 999px; padding: 3px 7px;
+      border: 1px solid rgba(255,255,255,.18); background: rgba(0,0,0,.32); color: #ffe08a; font-size: 11px;
+    }
+    .inventory-empty { grid-column: 1 / -1; padding: 28px 10px; text-align: center; color: #7fc99a; opacity: .68; font-size: 12px; line-height: 1.5; }
+    .rarity-common { color: #cfe3d0; }
+    .rarity-rare { color: #6fe8ff; border-color: rgba(111, 232, 255, .38); }
+    .rarity-epic { color: #c08aff; border-color: rgba(192, 138, 255, .42); box-shadow: 0 0 22px rgba(192, 138, 255, .08); }
+    .rarity-legendary { color: #ffe08a; border-color: rgba(255, 224, 138, .48); box-shadow: 0 0 26px rgba(255, 224, 138, .12); }
+    .inventory-foot { margin-top: 12px; display: flex; justify-content: space-between; gap: 10px; color: #aee9ff; font-size: 11px; opacity: .54; }
+    @media (max-width: 680px) {
+      #inventory-grid { grid-template-columns: 1fr; }
+      .inventory-card { grid-template-columns: 64px 1fr auto; }
+      .inventory-thumb { width: 60px; height: 60px; }
+      .inventory-thumb i { margin: 21px auto; }
+    }
     #landing-links { display: flex; gap: 22px; margin-top: 4px; }
     #landing-links a {
       color: #7fc99a; font-size: 12px; text-decoration: none;
@@ -529,6 +585,18 @@
       <span class="settings-key">[O] close</span>
     </div>
   </div>
+  <div id="inventory-panel" hidden role="dialog" aria-modal="true" aria-labelledby="inventory-title">
+    <div class="inventory-head">
+      <h2 id="inventory-title">CRAFTED INVENTORY</h2>
+      <button id="inventory-close" type="button" aria-label="Close inventory">X</button>
+    </div>
+    <div class="inventory-kicker"><span id="inventory-count">0 items</span> - cosmetic kits, stacked by rarity and variant</div>
+    <div id="inventory-grid"></div>
+    <div class="inventory-foot">
+      <span>Equip and marketplace actions are coming next.</span>
+      <span>[I] close</span>
+    </div>
+  </div>
   <div id="hud" hidden>
     <div class="big"><span id="speed">0</span> m/s</div>
     <div>FLIGHT ASSIST: <span id="assist">COUPLED</span></div>
@@ -583,7 +651,7 @@
     MOUSE aim · W/S thrust · A/D strafe · R/F vertical · Q/E roll<br />
     SHIFT boost · X brake · V flight assist · ESC release mouse<br />
     LEFT-CLICK mine · RIGHT-CLICK fire · SPACE dock · B/N pick destination · J quantum-jump<br />
-    M solar atlas 쨌 L leaderboard 쨌 O settings 쨌 ENTER chat
+    M solar atlas 쨌 L leaderboard 쨌 I inventory 쨌 O settings 쨌 ENTER chat
   </div>
   <div id="mobile-controls" hidden aria-label="Mobile civilian flight controls">
     <div class="mobile-stick" id="mobile-stick" aria-label="Steering control"><i id="mobile-stick-knob"></i></div>

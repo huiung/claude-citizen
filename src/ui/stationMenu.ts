@@ -10,11 +10,21 @@ import {
 import { abandon, accept, completeContract, type Contract } from '../sim/contracts'
 import { SHIP_RANK_REQ, SHIP_STATS, SHIP_TYPES, type ShipType } from '../sim/shipTypes'
 import { rankForCredits, RANKS } from '../sim/ranks'
+import {
+  CRAFT_CORE_RECIPE,
+  CRAFTING_RECIPES,
+  CRAFTING_RARITY_LABELS,
+  craftCosmetic,
+  refineCraftCore,
+  type CraftingState,
+  type CraftingCosmeticId,
+} from '../sim/crafting'
+import { groupCraftedItems } from './inventory'
 import type { GameAudio } from '../audio/sound'
 import { HOLDER_SHIP_VISUALS, resolveHolderShipVisual, type HolderShipVisualId } from './holderShipVisual'
 
 const COMMODITY_ORDER: CommodityId[] = ['ORE', 'ALLOY']
-type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard' | 'hangar'
+type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard' | 'hangar' | 'crafting'
 
 export interface HolderIdentityKit {
   tier: number
@@ -32,6 +42,7 @@ export interface StationContext {
   outpostId: string
   econ: PlayerEconomy
   market: MarketState
+  crafting: CraftingState
   upgrades: ShipUpgrades
   contracts: Contract[]
   audio: GameAudio
@@ -85,6 +96,7 @@ export class StationMenu {
         </div>
         <div class="station-tabs">
           <button data-tab="trade">TRADE</button>
+          <button data-tab="crafting">CRAFTING</button>
           <button data-tab="upgrades">UPGRADES</button>
           <button data-tab="shipyard">SHIPYARD</button>
           <button data-tab="hangar">HANGAR</button>
@@ -137,6 +149,7 @@ export class StationMenu {
   private defaultHint(): string {
     switch (this.tab) {
       case 'trade': return 'Buy low here, sell high at the other outpost. Mine ORE from asteroids for free.'
+      case 'crafting': return 'Mine ORE, refine Craft Cores, then craft cosmetic kits with rarity rolls.'
       case 'upgrades': return 'Spend credits to fly faster and haul more.'
       case 'shipyard': return 'Buy a hull and switch to it. Each trades cargo, speed, and toughness differently.'
       case 'hangar': return 'Holder ship visuals are cosmetic only: no speed, combat, or economy advantage.'
@@ -228,6 +241,7 @@ export class StationMenu {
     this.hintEl.textContent = this.defaultHint()
     this.bodyEl.innerHTML = ''
     if (this.tab === 'trade') this.renderTrade()
+    else if (this.tab === 'crafting') this.renderCrafting()
     else if (this.tab === 'upgrades') this.renderUpgrades()
     else if (this.tab === 'shipyard') this.renderShipyard()
     else if (this.tab === 'hangar') this.renderHangar()
@@ -250,6 +264,93 @@ export class StationMenu {
           (kind === 'sell' && held < Math.max(1, qty))
         actions.appendChild(this.btn(label, kind, disabled, () => this.trade(kind, id, Math.max(1, qty))))
       }
+      this.bodyEl.appendChild(row)
+    }
+  }
+
+  private craft(id: CraftingCosmeticId): void {
+    const r = craftCosmetic(this.ctx.econ, this.ctx.crafting, id)
+    if (!r.ok) {
+      this.ctx.audio.blip('error')
+      const msg: Record<typeof r.reason, string> = {
+        'unknown-recipe': 'Unknown crafting recipe.',
+        'missing-materials': 'Not enough ORE or ALLOY.',
+        'missing-cores': 'Not enough Craft Cores.',
+      }
+      this.hint(msg[r.reason], true)
+      return
+    }
+    this.ctx.audio.blip('trade')
+    this.hint(`Crafted ${CRAFTING_RARITY_LABELS[r.item.rarity]} ${r.item.variant}.`)
+    this.onChange()
+    this.render()
+  }
+
+  private refineCore(): void {
+    const r = refineCraftCore(this.ctx.econ, this.ctx.crafting)
+    if (!r.ok) {
+      this.ctx.audio.blip('error')
+      this.hint('Not enough ORE or ALLOY to refine a Craft Core.', true)
+      return
+    }
+    this.ctx.audio.blip('trade')
+    this.hint('Craft Core refined.')
+    this.onChange()
+    this.render()
+  }
+
+  private craftingCostText(cost: Partial<Record<CommodityId, number>>, coreCost = 0): string {
+    const parts = COMMODITY_ORDER
+      .filter((id) => (cost[id] ?? 0) > 0)
+      .map((id) => `${(cost[id] ?? 0).toLocaleString()} ${id}`)
+    if (coreCost > 0) parts.push(`${coreCost} CORE`)
+    return parts.join(' + ')
+  }
+
+  private renderCrafting(): void {
+    const note = document.createElement('div')
+    note.className = 'station-empty'
+    note.textContent = 'Cosmetic only for now. Crafted items become the base for future equip and marketplace features.'
+    this.bodyEl.appendChild(note)
+
+    const coreCost = this.craftingCostText(CRAFT_CORE_RECIPE)
+    const canRefine = COMMODITY_ORDER.every((id) => this.ctx.econ.cargo[id] >= (CRAFT_CORE_RECIPE[id] ?? 0))
+    const coreRow = this.rowEl('Craft Core', 'Refine high-density ore into a rare crafting catalyst.', `${this.ctx.crafting.cores} CORE`)
+    coreRow.querySelector('.s-price')!.textContent = coreCost
+    coreRow.querySelector('.s-actions')!.appendChild(this.btn('Refine', 'buy', !canRefine, () => this.refineCore()))
+    this.bodyEl.appendChild(coreRow)
+
+    for (const recipe of CRAFTING_RECIPES) {
+      const cost = this.craftingCostText(recipe.cost, recipe.coreCost)
+      const affordable =
+        COMMODITY_ORDER.every((id) => this.ctx.econ.cargo[id] >= (recipe.cost[id] ?? 0)) &&
+        this.ctx.crafting.cores >= (recipe.coreCost ?? 0)
+      const craftedCount = this.ctx.crafting.items.filter((item) => item.recipeId === recipe.id).length
+      const row = this.rowEl(recipe.name, recipe.description, craftedCount > 0 ? `${craftedCount} OWNED` : cost)
+      const actions = row.querySelector('.s-actions')!
+      actions.appendChild(this.btn('Craft', 'buy', !affordable, () => this.craft(recipe.id)))
+      this.bodyEl.appendChild(row)
+    }
+
+    this.renderCraftingInventory()
+  }
+
+  private renderCraftingInventory(): void {
+    const header = document.createElement('div')
+    header.className = 'station-empty'
+    header.textContent = this.ctx.crafting.items.length === 0
+      ? 'Crafted Inventory: empty'
+      : `Inventory stacks: ${groupCraftedItems(this.ctx.crafting.items).length} stack${groupCraftedItems(this.ctx.crafting.items).length === 1 ? '' : 's'} (${this.ctx.crafting.items.length} items). Press I for details.`
+    this.bodyEl.appendChild(header)
+
+    for (const group of groupCraftedItems(this.ctx.crafting.items).slice(0, 4)) {
+      const recipe = CRAFTING_RECIPES.find((candidate) => candidate.id === group.recipeId)
+      const row = this.rowEl(`${CRAFTING_RARITY_LABELS[group.rarity]} ${group.variant}`, recipe?.name ?? group.recipeId, `x${group.count}`)
+      const actions = row.querySelector('.s-actions')!
+      const span = document.createElement('span')
+      span.className = 'maxed'
+      span.textContent = 'STACK'
+      actions.appendChild(span)
       this.bodyEl.appendChild(row)
     }
   }
