@@ -2847,6 +2847,14 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     objectiveEl.textContent = '⚠ This Pilot Code is now active in another tab/device. Refresh to play here.'
     objectiveEl.hidden = false
   },
+  onCallsign(name) {
+    if (name && name.toLowerCase() !== 'pilot') {
+      nicknameEl.value = name
+      localStorage.setItem('callsign', name)
+      net.setName(name)
+      nicknameEl.readOnly = true
+    }
+  },
 })
 net.setSession(walletSession?.sessionId ?? null) // resume a verified wallet session if we have one
 net.connect() // connect on page load as a viewer (presence) — counts toward "online" on the landing

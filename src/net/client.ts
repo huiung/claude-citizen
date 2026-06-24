@@ -104,6 +104,8 @@ export interface NetEvents {
   onMarketList?(rows: MarketListing[]): void
   onMarketAction?(result: MarketActionResult): void
   onMarketIntent?(result: MarketIntentResult): void
+  /** Server confirmed/synced the wallet-locked callsign for this session. */
+  onCallsign?(name: string): void
 }
 
 const SEND_HZ = 10
@@ -285,6 +287,9 @@ export class NetClient {
         break
       case 'auth-error':
         this.events.onAuthError?.()
+        break
+      case 'callsign':
+        if (typeof msg.name === 'string') this.events.onCallsign?.(msg.name)
         break
     }
   }

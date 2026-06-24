@@ -284,6 +284,10 @@ wss.on('connection', (ws) => {
       const key = identityKey(client)
       if (key && anonymousProgressAllowed(client) && !(key in store)) { store[key] = null; flush() } // seen → counts as registered
       void refreshHolder(ws, client) // resolve holder flair if this viewer carried a verified session
+      if (client.authed && client.pubkey) {
+        const locked = resolveCallsign({ authed: true, storedName: store[client.pubkey]?.name, requestedName: client.name })
+        if (locked && locked.toLowerCase() !== 'pilot') { client.name = locked; send(ws, { t: 'callsign', name: locked }) }
+      }
       console.log(`[hello] viewer — ${clients.size} online`)
       return
     }
@@ -311,6 +315,7 @@ wss.on('connection', (ws) => {
       }
       if (!client.authed) applySession(client, msg.sessionId)
       client.name = resolveCallsign({ authed: client.authed, storedName: store[identityKey(client)]?.name, requestedName: client.name })
+      if (client.authed && client.name && client.name.toLowerCase() !== 'pilot') send(ws, { t: 'callsign', name: client.name })
       const key = identityKey(client)
       // Single live session per identity — kick any other live pilot on the same key.
       kickDuplicatePeers(ws, client)

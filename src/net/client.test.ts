@@ -216,4 +216,16 @@ describe('NetClient holder ship visual sync', () => {
 
     expect(onMarketIntent).toHaveBeenCalledWith({ ok: true, listingId: 'mkt-1', txBase64: 'AAA=' })
   })
+
+  it('routes a callsign message to onCallsign', () => {
+    const onCallsign = vi.fn()
+    const net = new NetClient('ACE', 'tok', events({ onCallsign }))
+    net.connect()
+    const ws = FakeWebSocket.instances[0]
+    ws.open()
+
+    ws.emit({ t: 'callsign', name: 'ACE' })
+
+    expect(onCallsign).toHaveBeenCalledWith('ACE')
+  })
 })

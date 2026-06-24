@@ -201,6 +201,14 @@ function setWalletStatus(text: string): void {
   walletStatusEl.textContent = text
 }
 
+function applyLockedCallsign(name: string): void {
+  if (!name || name.toLowerCase() === 'pilot') return
+  nicknameEl.value = name
+  localStorage.setItem('callsign', name)
+  nicknameEl.readOnly = true
+  nicknameEl.title = 'Callsign locked to your wallet'
+}
+
 function lockWalletButton(pubkey: string): void {
   connectWalletBtn.disabled = true
   connectWalletBtn.textContent = `${pubkey.slice(0, 4)}...${pubkey.slice(-4)}`
@@ -224,10 +232,10 @@ const net = new NetClient(nicknameEl.value || 'PILOT', activeIdentity(playerToke
     pendingPubkey = null
     lockWalletButton(pubkey)
     setWalletStatus(`Connected ${pubkey.slice(0, 4)}...${pubkey.slice(-4)} - press LAUNCH to play`)
-    if (name && name.toLowerCase() !== 'pilot') {
-      nicknameEl.value = name
-      localStorage.setItem('callsign', name)
-    }
+    if (name) applyLockedCallsign(name)
+  },
+  onCallsign(name) {
+    applyLockedCallsign(name)
   },
   onAuthError() {
     pendingPubkey = null
