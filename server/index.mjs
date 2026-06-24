@@ -80,6 +80,29 @@ async function tokenMintInfo() {
   } catch { cachedMintInfo = { programId: null, decimals: 6 } }
   return cachedMintInfo
 }
+
+// Pre-simulate an unsigned tx (sigVerify off) so we never hand the wallet a tx that fails on-chain —
+// Phantom shows a "could be malicious" warning whenever it can't cleanly simulate. Returns:
+//   { ok: true }                  → simulated clean, safe to send
+//   { ok: false, err, logs }      → real on-chain failure, block + log
+//   { ok: true, infra: true, err} → RPC/infra hiccup, allow through but log (don't punish users)
+async function simulateTokenTx(txBase64) {
+  try {
+    const res = await fetch(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 'sim', method: 'simulateTransaction',
+        params: [txBase64, { sigVerify: false, replaceRecentBlockhash: true, encoding: 'base64', commitment: 'processed' }],
+      }),
+    })
+    const json = await res.json()
+    const value = json?.result?.value
+    if (!value) return { ok: true, infra: true, err: json?.error ?? 'no-result' }
+    return value.err ? { ok: false, err: value.err, logs: value.logs ?? [] } : { ok: true }
+  } catch (e) {
+    return { ok: true, infra: true, err: String(e) }
+  }
+}
 const holderCache = createHolderCache()
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? ''
 const HOLDER_SHIP_VISUALS = new Set(['standard', 'doge-runner', 'void-interceptor', 'sovereign-wraith', 'eclipse-corvette'])
@@ -538,6 +561,15 @@ wss.on('connection', (ws) => {
           buyer: key, seller: reserved.listing.sellerKey, treasury: TREASURY_WALLET, mint: HOLDER_MINT,
           decimals, sellerRaw, feeRaw, nonce, tokenProgram: programId ? programId.toBase58() : undefined,
         })
+        const sim = await simulateTokenTx(txBase64)
+        if (sim.infra) {
+          console.warn(`[market-intent] pre-sim RPC unavailable, proceeding: listing=${msg.listingId}`, sim.err)
+        } else if (!sim.ok) {
+          console.warn(`[market-intent] sim failed listing=${msg.listingId} buyer=${key}:`, JSON.stringify(sim.err), (sim.logs || []).slice(-6))
+          marketplace.reservations.delete(msg.listingId)
+          send(ws, { t: 'market-intent-result', ok: false, reason: 'sim-failed', listingId: msg.listingId })
+          return
+        }
         send(ws, { t: 'market-intent-result', ok: true, listingId: msg.listingId, txBase64 })
       } catch {
         marketplace.reservations.delete(msg.listingId)

@@ -2823,6 +2823,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
         'not-token': 'That listing is not a token listing.',
         'own-listing': 'You cannot buy your own listing.',
         'build-failed': 'Could not prepare the payment. Try again.',
+        'sim-failed': 'Payment can’t be completed — check your $Citizen balance (and some SOL for fees) and try again.',
         'not-found': 'Listing no longer exists.',
         'not-active': 'Listing is no longer active.',
       }
