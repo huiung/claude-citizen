@@ -66,13 +66,26 @@ function buildAura(style: CosmeticStyle): THREE.Sprite {
   return sprite
 }
 
+// Fade the trail head→tail toward black so additive blending makes the tail vanish — turns a
+// uniform dot cloud (scattered at boost speed) into a directional, tapering comet streak.
+function fillTrailColors(attr: THREE.BufferAttribute, color: THREE.Color): void {
+  const n = attr.count
+  for (let i = 0; i < n; i++) {
+    const f = Math.pow(1 - i / (n - 1), 1.8)
+    attr.setXYZ(i, color.r * f, color.g * f, color.b * f)
+  }
+  attr.needsUpdate = true
+}
+
 function buildTrail(style: CosmeticStyle): THREE.Points {
-  const positions = new Float32Array(TRAIL_POINTS * 3)
   const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_POINTS * 3), 3))
+  const colorAttr = new THREE.BufferAttribute(new Float32Array(TRAIL_POINTS * 3), 3)
+  fillTrailColors(colorAttr, new THREE.Color(style.color))
+  geo.setAttribute('color', colorAttr)
   const mat = new THREE.PointsMaterial({
-    color: style.color, size: 0.35 + style.intensity * 0.9, transparent: true,
-    opacity: 0.2 + style.intensity * 0.4, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+    size: 0.3 + style.intensity * 0.7, vertexColors: true, transparent: true,
+    opacity: 0.5 + style.intensity * 0.4, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
   })
   const points = new THREE.Points(geo, mat)
   points.userData.cosmeticTrail = true
@@ -115,13 +128,14 @@ export function createShipCosmetics(shipGroup: THREE.Group, scene: THREE.Scene):
       } else { // trail — lives in the scene, follows the ship in world space
         const points = buildTrail(style); scene.add(points)
         const attr = points.geometry.getAttribute('position') as THREE.BufferAttribute
+        const colorAttr = points.geometry.getAttribute('color') as THREE.BufferAttribute
         let seeded = false
         effects.push({ object: points, parent: scene, style, update(_dt, worldPos, t) {
           if (!seeded) { for (let i = 0; i < TRAIL_POINTS; i++) attr.setXYZ(i, worldPos.x, worldPos.y, worldPos.z); seeded = true }
           for (let i = TRAIL_POINTS - 1; i > 0; i--) attr.setXYZ(i, attr.getX(i - 1), attr.getY(i - 1), attr.getZ(i - 1))
           attr.setXYZ(0, worldPos.x, worldPos.y, worldPos.z)
           attr.needsUpdate = true
-          if (style.legendary) (points.material as THREE.PointsMaterial).color.copy(tmp.setHSL((t * 0.15) % 1, 0.85, 0.6))
+          if (style.legendary) fillTrailColors(colorAttr, tmp.setHSL((t * 0.15) % 1, 0.85, 0.6))
         } })
       }
     }
