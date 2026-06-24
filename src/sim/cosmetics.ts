@@ -32,10 +32,13 @@ const RARITY_INTENSITY: Readonly<Record<CraftingRarity, number>> = {
   legendary: 1,
 }
 
-const RECIPE_COLOR: Readonly<Record<CraftingCosmeticId, number>> = {
-  'aurum-trail-kit': 0xffd24a,
-  'nebula-hull-kit': 0x9f6bff,
-  'void-runner-kit': 0x4ef0ff,
+// Color encodes RARITY (loot-tier palette) for an at-a-glance tier read. The cosmetic's category
+// is already conveyed by the effect type (trail/hull/aura), so the color channel signals rarity.
+const RARITY_COLOR: Readonly<Record<CraftingRarity, number>> = {
+  common: 0xb8c4d0, // cool grey-white
+  rare: 0x4ea3ff, // blue
+  epic: 0xb65cff, // purple
+  legendary: 0xffb838, // gold (also hue-cycles at render time)
 }
 
 const KNOWN_RARITIES = new Set<CraftingRarity>(['common', 'rare', 'epic', 'legendary'])
@@ -46,7 +49,7 @@ function isRecipe(id: string): id is CraftingCosmeticId {
 export function cosmeticStyle(recipeId: CraftingCosmeticId, rarity: CraftingRarity): CosmeticStyle {
   return {
     category: COSMETIC_CATEGORY[recipeId],
-    color: RECIPE_COLOR[recipeId],
+    color: RARITY_COLOR[rarity] ?? RARITY_COLOR.common,
     intensity: RARITY_INTENSITY[rarity] ?? RARITY_INTENSITY.common,
     legendary: rarity === 'legendary',
   }
