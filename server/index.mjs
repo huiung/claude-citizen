@@ -23,8 +23,9 @@ import {
   marketplaceRowsFor,
   marketplaceSnapshot,
   publicMarketplaceRow,
+  reserveListing,
+  settleTokenListing,
 } from './marketplace.mjs'
-import { reserveListing, settleTokenListing } from './marketplace.mjs'
 import { verifyTokenPayment } from './solanaPay.mjs'
 import { buildTokenPaymentTx } from './tokenTx.mjs'
 import { toBaseUnits, splitFee } from './tokenSettlement.mjs'
@@ -267,6 +268,7 @@ wss.on('connection', (ws) => {
     let msg
     try { msg = JSON.parse(raw) } catch { return }
 
+    try {
     // Viewer presence — someone on the landing page. Counts toward "online" but is NOT
     // a peer (no ship, never broadcast). Promoted to an active pilot on 'join' (LAUNCH).
     if (msg.t === 'hello' && !clients.has(ws)) {
@@ -541,7 +543,7 @@ wss.on('connection', (ws) => {
       if (target && target.status === 'active' && target.currency === 'token') {
         const decimals = await tokenDecimals()
         const reservation = marketplace.reservations.get(msg.listingId)
-        if (!reservation || reservation.buyerKey !== key) {
+        if (!reservation || reservation.buyerKey !== key || reservation.expiresAt <= Date.now()) {
           result = { ok: false, reason: 'not-reserved' }
         } else {
           const totalRaw = toBaseUnits(target.price, decimals)
@@ -611,6 +613,7 @@ wss.on('connection', (ws) => {
       }
       return
     }
+    } catch { /* per-message failure: drop it, keep the relay alive */ }
   })
 
   ws.on('close', () => {
