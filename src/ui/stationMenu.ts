@@ -166,7 +166,7 @@ export class StationMenu {
     switch (this.tab) {
       case 'trade': return 'Buy low here, sell high at the other outpost. Mine ORE from asteroids for free.'
       case 'crafting': return 'Spend credits, refine Craft Cores, then craft cosmetic kits with rarity rolls.'
-      case 'market': return 'Buy and sell crafted cosmetics with credits. Off-chain pilot market, no SOL escrow yet.'
+      case 'market': return 'Buy and sell crafted cosmetics with credits or the $CITIZEN token. Token sales settle on-chain.'
       case 'upgrades': return 'Spend credits to fly faster and haul more.'
       case 'shipyard': return 'Buy a hull and switch to it. Each trades cargo, speed, and toughness differently.'
       case 'hangar': return 'Holder ship visuals are cosmetic only: no speed, combat, or economy advantage.'
@@ -376,8 +376,8 @@ export class StationMenu {
     const note = document.createElement('div')
     note.className = 'station-empty'
     note.textContent = canTrade
-      ? 'Credits Marketplace: crafted cosmetics only. Press I to list your own tradable items.'
-      : 'Credits Marketplace: connect a wallet to list, buy, or cancel crafted cosmetics.'
+      ? 'Marketplace: trade crafted cosmetics for credits or $CITIZEN. Press I to list your own items.'
+      : 'Marketplace: connect a wallet to list, buy, or cancel crafted cosmetics.'
     this.bodyEl.appendChild(note)
 
     const refreshRow = this.rowEl('Market Listings', 'Server-synced active listings', `${this.ctx.marketplaceRows().length} LIVE`)
@@ -398,12 +398,14 @@ export class StationMenu {
 
     for (const listing of rows) {
       const rarity = CRAFTING_RARITY_LABELS[listing.item.rarity as keyof typeof CRAFTING_RARITY_LABELS] ?? listing.item.rarity
-      const row = this.rowEl(`${rarity} ${listing.item.variant}`, `Seller ${listing.sellerName}`, `${listing.price.toLocaleString()} cr`)
+      const unit = listing.currency === 'token' ? '$CITIZEN' : 'cr'
+      const row = this.rowEl(`${rarity} ${listing.item.variant}`, `Seller ${listing.sellerName}`, `${listing.price.toLocaleString()} ${unit}`)
       const actions = row.querySelector('.s-actions')!
       if (listing.owned) {
         actions.appendChild(this.btn('Cancel', 'sell', !canTrade, () => this.ctx.onCancelMarketListing(listing.id)))
       } else {
-        actions.appendChild(this.btn('Buy', 'buy', !canTrade || listing.price > this.ctx.econ.credits, () => this.ctx.onBuyMarketListing(listing.id)))
+        const tooPoor = listing.currency === 'credits' && listing.price > this.ctx.econ.credits
+        actions.appendChild(this.btn('Buy', 'buy', !canTrade || tooPoor, () => this.ctx.onBuyMarketListing(listing.id)))
       }
       this.bodyEl.appendChild(row)
     }
