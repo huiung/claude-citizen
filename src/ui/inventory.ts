@@ -67,21 +67,29 @@ export class InventoryPanel {
   private gridEl!: HTMLElement
   private state: CraftingState | null = null
   private onClose?: () => void
-  private onListItem?: (itemId: string, price: number) => void
+  private onListItem?: (itemId: string, price: number, currency: 'credits' | 'token') => void
   private canListItem: () => boolean
+  private walletConnected: () => boolean
+  private listModal: HTMLElement | null
+  private pendingItemId: string | null = null
+  private listCurrency: 'credits' | 'token' = 'credits'
 
   constructor(opts: {
     onClose?: () => void
-    onListItem?: (itemId: string, price: number) => void
+    onListItem?: (itemId: string, price: number, currency: 'credits' | 'token') => void
     canListItem?: () => boolean
+    walletConnected?: () => boolean
   } = {}) {
     this.onClose = opts.onClose
     this.onListItem = opts.onListItem
     this.canListItem = opts.canListItem ?? (() => false)
+    this.walletConnected = opts.walletConnected ?? (() => false)
     this.root = document.getElementById('inventory-panel') ?? document.createElement('div')
     this.titleEl = this.root.querySelector('#inventory-count') as HTMLElement
     this.gridEl = this.root.querySelector('#inventory-grid') as HTMLElement
     this.root.querySelector('#inventory-close')?.addEventListener('click', () => this.close())
+    this.listModal = document.getElementById('list-modal')
+    this.wireListModal()
   }
 
   open(state: CraftingState): void {
@@ -125,6 +133,55 @@ export class InventoryPanel {
     for (const group of groups) this.gridEl.appendChild(this.card(group))
   }
 
+  private wireListModal(): void {
+    const m = this.listModal
+    if (!m) return
+    const credits = m.querySelector('#list-cur-credits') as HTMLButtonElement | null
+    const token = m.querySelector('#list-cur-token') as HTMLButtonElement | null
+    credits?.addEventListener('click', () => this.setListCurrency('credits'))
+    token?.addEventListener('click', () => this.setListCurrency('token'))
+    m.querySelector('#list-cancel')?.addEventListener('click', () => this.closeListModal())
+    m.querySelector('#list-confirm')?.addEventListener('click', () => this.confirmList())
+  }
+
+  private setListCurrency(currency: 'credits' | 'token'): void {
+    if (currency === 'token' && !this.walletConnected()) return
+    this.listCurrency = currency
+    const m = this.listModal!
+    m.querySelector('#list-cur-credits')!.classList.toggle('active', currency === 'credits')
+    m.querySelector('#list-cur-token')!.classList.toggle('active', currency === 'token')
+    ;(m.querySelector('#list-price-unit') as HTMLElement).textContent = currency === 'token' ? '$CITIZEN' : 'cr'
+  }
+
+  private openListModal(itemId: string, variant: string): void {
+    const m = this.listModal
+    if (!m) return
+    this.pendingItemId = itemId
+    ;(m.querySelector('#list-modal-title') as HTMLElement).textContent = variant
+    const token = m.querySelector('#list-cur-token') as HTMLButtonElement
+    token.disabled = !this.walletConnected()
+    if (token.disabled) token.title = 'Connect a wallet to sell for $CITIZEN'
+    this.setListCurrency('credits')
+    const price = m.querySelector('#list-price') as HTMLInputElement
+    price.value = '25000'
+    m.hidden = false
+    price.focus()
+  }
+
+  private closeListModal(): void {
+    if (this.listModal) this.listModal.hidden = true
+    this.pendingItemId = null
+  }
+
+  private confirmList(): void {
+    const m = this.listModal
+    if (!m || !this.pendingItemId) return
+    const raw = (m.querySelector('#list-price') as HTMLInputElement).value
+    const price = this.listCurrency === 'token' ? Math.max(0, Number(raw) || 0) : Math.max(0, Math.floor(Number(raw) || 0))
+    if (price > 0) this.onListItem?.(this.pendingItemId, price, this.listCurrency)
+    this.closeListModal()
+  }
+
   private card(group: CraftedItemGroup): HTMLElement {
     const card = document.createElement('div')
     card.className = `inventory-card rarity-${group.rarity}`
@@ -144,11 +201,7 @@ export class InventoryPanel {
       const button = document.createElement('button')
       button.className = 'inventory-list'
       button.textContent = 'List'
-      button.addEventListener('click', () => {
-        const raw = window.prompt('List price in credits', '25000')
-        const price = Math.max(0, Math.floor(Number(raw) || 0))
-        if (price > 0) this.onListItem?.(itemId, price)
-      })
+      button.addEventListener('click', () => this.openListModal(itemId, group.variant))
       actions.appendChild(button)
       card.appendChild(actions)
     }

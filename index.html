@@ -503,6 +503,26 @@
       .inventory-thumb { width: 60px; height: 60px; }
       .inventory-thumb i { margin: 21px auto; }
     }
+    #list-modal { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at center, rgba(2,12,6,.7), rgba(0,0,0,.85)); }
+    #list-modal[hidden] { display: none; }
+    .list-modal-card { width: min(420px, calc(100vw - 32px)); max-height: min(80dvh, 560px); overflow-y: auto;
+      background: rgba(4,18,9,.97); border: 1px solid #2f7a45; border-radius: 8px; padding: 18px 20px;
+      box-shadow: 0 0 40px rgba(40,180,80,.18); pointer-events: auto; }
+    .list-modal-head h2 { font: 600 14px "Orbitron", sans-serif; letter-spacing: 2px; color: #9fffb0; }
+    .list-modal-title { margin: 6px 0 14px; color: #fff; font-size: 13px; }
+    .list-modal-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+    .list-modal-label { width: 72px; font-size: 10px; letter-spacing: 1.4px; color: #aee9ff; opacity: .7; }
+    .list-cur-toggle { display: flex; gap: 6px; }
+    .list-cur-toggle button { font: 700 11px "Share Tech Mono", monospace; padding: 5px 10px; border-radius: 4px; cursor: pointer;
+      border: 1px solid rgba(159,255,176,.3); background: rgba(0,18,8,.5); color: #9fffb0; }
+    .list-cur-toggle button.active { background: #123c20; color: #9fffb0; border-color: rgba(159,255,176,.7); }
+    .list-cur-toggle button:disabled { opacity: .35; cursor: not-allowed; }
+    #list-price { flex: 1; background: rgba(0,18,8,.6); border: 1px solid rgba(159,255,176,.3); border-radius: 4px;
+      color: #fff; font: 13px "Share Tech Mono", monospace; padding: 6px 8px; }
+    #list-price-unit { color: #ffe08a; font-size: 12px; min-width: 56px; }
+    .list-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+    .list-modal-actions button { font: 700 11px "Share Tech Mono", monospace; padding: 7px 14px; border-radius: 4px; cursor: pointer; }
     #landing-links { display: flex; gap: 22px; margin-top: 4px; }
     #landing-links a {
       color: #7fc99a; font-size: 12px; text-decoration: none;
@@ -604,6 +624,28 @@
     <div class="inventory-foot">
       <span>Equip and marketplace actions are coming next.</span>
       <span>[I] close</span>
+    </div>
+  </div>
+  <div id="list-modal" hidden>
+    <div class="list-modal-card">
+      <div class="list-modal-head"><h2>LIST ITEM</h2></div>
+      <div id="list-modal-title" class="list-modal-title"></div>
+      <div class="list-modal-row">
+        <span class="list-modal-label">CURRENCY</span>
+        <div class="list-cur-toggle">
+          <button id="list-cur-credits" class="active">CREDITS</button>
+          <button id="list-cur-token">$CITIZEN</button>
+        </div>
+      </div>
+      <div class="list-modal-row">
+        <span class="list-modal-label">PRICE</span>
+        <input id="list-price" type="number" min="0" inputmode="decimal" />
+        <span id="list-price-unit">cr</span>
+      </div>
+      <div class="list-modal-actions">
+        <button id="list-cancel" class="sell">CANCEL</button>
+        <button id="list-confirm" class="buy">LIST</button>
+      </div>
     </div>
   </div>
   <div id="hud" hidden>
