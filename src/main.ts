@@ -1887,6 +1887,7 @@ function effCargo(): number {
 }
 
 function setPlayerCraft(type: ShipType): void {
+  playerCosmetics.dispose()
   scene.remove(shipMesh)
   disposeObject(shipMesh)
   shipMesh = buildCraft(type, PLAYER_TINT) // procedural hull shows immediately
@@ -1894,7 +1895,6 @@ function setPlayerCraft(type: ShipType): void {
   shipMesh.quaternion.copy(ship.quaternion)
   scene.add(shipMesh)
   playerEngineGlows = collectCraftEngineGlows(shipMesh)
-  playerCosmetics.dispose()
   playerCosmetics = createShipCosmetics(shipMesh, scene)
   applyPlayerCosmetics()
   selectedShipType = type
@@ -1907,6 +1907,7 @@ function setPlayerCraft(type: ShipType): void {
   const loadSeq = ++shipLoadSeq
   loadCraftModelForType(type, selfTier, holderVisual).then((model) => {
     if (!model || selectedShipType !== type || loadSeq !== shipLoadSeq) return // asset missing, or state changed mid-load
+    playerCosmetics.dispose()
     scene.remove(shipMesh)
     disposeObject(shipMesh)
     addCraftEngineGlowRig(model, type)
@@ -1915,7 +1916,6 @@ function setPlayerCraft(type: ShipType): void {
     shipMesh.quaternion.copy(ship.quaternion)
     scene.add(shipMesh)
     playerEngineGlows = collectCraftEngineGlows(shipMesh)
-    playerCosmetics.dispose()
     playerCosmetics = createShipCosmetics(shipMesh, scene)
     applyPlayerCosmetics()
   })
@@ -2019,7 +2019,7 @@ function currentProgress(): PlayerProgress {
     cargo: { ORE: econ.cargo.ORE, ALLOY: econ.cargo.ALLOY },
     upgrades: { cargo: upgrades.tiers.cargo, speed: upgrades.tiers.speed, boost: upgrades.tiers.boost, mining: upgrades.tiers.mining },
     hangar: { selected: selectedShipType, owned: [...ownedShips] },
-    crafting: { cores: crafting.cores, items: [...crafting.items] },
+    crafting: { cores: crafting.cores, items: [...crafting.items], equipped: crafting.equipped },
   }
 }
 
@@ -2035,6 +2035,7 @@ function applyServerProgress(p: PlayerProgress): void {
   const nextCrafting = normalizeCraftingState(p.crafting)
   crafting.cores = nextCrafting.cores
   crafting.items.splice(0, crafting.items.length, ...nextCrafting.items)
+  crafting.equipped = nextCrafting.equipped
   ownedShips.clear()
   for (const t of p.hangar.owned) if (t in SHIP_STATS) ownedShips.add(t as ShipType)
   ownedShips.add('hauler')
@@ -2301,6 +2302,7 @@ function ensureRemoteCraftModel(remote: RemoteShip): void {
     const position = oldMesh.position.clone()
     const quaternion = oldMesh.quaternion.clone()
     oldMesh.remove(remote.label)
+    remote.cosmetics.dispose()
     scene.remove(oldMesh)
     disposeObject(oldMesh)
     addCraftEngineGlowRig(model, type)
@@ -2310,7 +2312,6 @@ function ensureRemoteCraftModel(remote: RemoteShip): void {
     model.add(remote.label)
     scene.add(model)
     remote.mesh = model
-    remote.cosmetics.dispose()
     remote.cosmetics = createShipCosmetics(remote.mesh, scene)
     remote.cosmeticsKey = ''
   })
@@ -2822,8 +2823,8 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
       remote.mesh.remove(remote.label)
       remote.label.element.remove() // CSS2D label lives in the DOM — drop it or the name lingers
       scene.remove(remote.mesh)
-      disposeObject(remote.mesh)
       remote.cosmetics.dispose()
+      disposeObject(remote.mesh)
       remotes.delete(id)
     }
   },

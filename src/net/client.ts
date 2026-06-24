@@ -34,6 +34,7 @@ export interface PlayerProgress {
       tradable: boolean
     }[]
     cosmetics?: string[]
+    equipped?: { trail: string | null; hull: string | null; aura: string | null }
   }
 }
 
