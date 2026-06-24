@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
+import { resolveCallsign, identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
 
 function socket() {
   return {
@@ -11,6 +11,25 @@ function socket() {
     close() { this.closed = true },
   }
 }
+
+describe('resolveCallsign', () => {
+  it('anonymous pilots use their requested name even if a stored name is passed', () => {
+    expect(resolveCallsign({ authed: false, storedName: 'ACE', requestedName: 'NEW' })).toBe('NEW')
+  })
+  it('authed pilots with a stored name keep it (ignore the requested name)', () => {
+    expect(resolveCallsign({ authed: true, storedName: 'ACE', requestedName: 'NEW' })).toBe('ACE')
+  })
+  it('authed pilots with no stored name take the requested name (first-time lock)', () => {
+    expect(resolveCallsign({ authed: true, storedName: '', requestedName: 'NEW' })).toBe('NEW')
+  })
+  it('a stored placeholder PILOT name does not lock', () => {
+    expect(resolveCallsign({ authed: true, storedName: 'PILOT', requestedName: 'NEW' })).toBe('NEW')
+  })
+  it('sanitizes: caps at 16 chars and defaults empty to PILOT', () => {
+    expect(resolveCallsign({ authed: false, storedName: '', requestedName: 'X'.repeat(40) })).toBe('X'.repeat(16))
+    expect(resolveCallsign({ authed: false, storedName: '', requestedName: '' })).toBe('PILOT')
+  })
+})
 
 describe('live session peer identity handling', () => {
   it('uses the verified wallet pubkey before the anonymous token', () => {

@@ -2663,12 +2663,17 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
       if (pendingPubkey) net.submitAuth(pendingPubkey, sig)
     }).catch(() => { setWalletStatus('Signature cancelled.'); pendingPubkey = null })
   },
-  onAuthOk: (pubkey, sessionId) => {
+  onAuthOk: (pubkey, sessionId, name) => {
     walletSession = { pubkey, sessionId, connectedAt: Date.now() }
     saveWalletSession(localStorage, walletSession)
     pendingPubkey = null
     lockWalletButton(pubkey)
     setWalletStatus(`Connected ${pubkey.slice(0, 4)}…${pubkey.slice(-4)} — press LAUNCH to play`)
+    if (name) {
+      nicknameEl.value = name
+      localStorage.setItem('callsign', name)
+      net.setName(name)
+    }
   },
   onAuthError: () => {
     pendingPubkey = null

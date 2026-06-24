@@ -86,8 +86,8 @@ export interface NetEvents {
   onKicked?(): void
   /** Server issued a nonce message to sign. */
   onChallenge?(message: string): void
-  /** Auth verified — store pubkey + sessionId. */
-  onAuthOk?(pubkey: string, sessionId: string): void
+  /** Auth verified — store pubkey + sessionId. The server also echoes the locked callsign. */
+  onAuthOk?(pubkey: string, sessionId: string, name?: string): void
   /** Auth failed or was rejected — stay anonymous. */
   onAuthError?(): void
   /** Our own token-holder status resolved. Tier drives cosmetics; balance drives holder-gated ranked PvP. */
@@ -279,7 +279,7 @@ export class NetClient {
       case 'auth-ok':
         if (typeof msg.pubkey === 'string' && typeof msg.sessionId === 'string') {
           this.sessionId = msg.sessionId
-          this.events.onAuthOk?.(msg.pubkey, msg.sessionId)
+          this.events.onAuthOk?.(msg.pubkey, msg.sessionId, typeof msg.name === 'string' ? msg.name : undefined)
         }
         break
       case 'auth-error':

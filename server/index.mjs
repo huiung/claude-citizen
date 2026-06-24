@@ -13,7 +13,7 @@ import { leaderboardPage, parseLeaderboardParams } from './leaderboard.mjs'
 import { createPvpKillAuditLog, pvpLeaderboardPage, mergePvpStats, recordRankedPvpKill } from './pvpLeaderboard.mjs'
 import { raceLeaderboardPage, mergeRaceStats, recordRankedRaceFinish } from './raceLeaderboard.mjs'
 import { applyPvpHit, applyPvpRespawn, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
-import { identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
+import { resolveCallsign, identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
 import { sanitizeProgress } from './progress.mjs'
 import {
   buyListing,
@@ -310,6 +310,7 @@ wss.on('connection', (ws) => {
         clients.set(ws, client)
       }
       if (!client.authed) applySession(client, msg.sessionId)
+      client.name = resolveCallsign({ authed: client.authed, storedName: store[identityKey(client)]?.name, requestedName: client.name })
       const key = identityKey(client)
       // Single live session per identity — kick any other live pilot on the same key.
       kickDuplicatePeers(ws, client)
@@ -353,13 +354,14 @@ wss.on('connection', (ws) => {
       // Verified. Bind this connection to the pubkey and run the claim.
       client.authed = true
       client.pubkey = pubkey
+      client.name = resolveCallsign({ authed: true, storedName: store[pubkey]?.name, requestedName: client.name })
       kickDuplicatePeers(ws, client)
       resolveClaim(store, pubkey, anonToken)
       if (anonToken && anonToken !== pubkey && claimedAnonTokens.claim(anonToken)) flushClaimedAnonTokens()
       flush()
       const sessionId = sessions.create(pubkey)
       flushSessions() // persist so this login survives a relay restart
-      ws.send(JSON.stringify({ t: 'auth-ok', pubkey, sessionId }))
+      ws.send(JSON.stringify({ t: 'auth-ok', pubkey, sessionId, name: client.name }))
       if (store[pubkey]) ws.send(JSON.stringify({ t: 'progress', data: store[pubkey] }))
       void refreshHolder(ws, client) // grant holder flair if this wallet holds the token
       return

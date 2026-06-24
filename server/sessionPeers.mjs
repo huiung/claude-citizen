@@ -1,3 +1,12 @@
+/** Wallet identities get a sticky callsign: once a pubkey has a stored (non-placeholder) name,
+ *  later launches under a different name are ignored. Anonymous pilots use their requested name. */
+export function resolveCallsign({ authed, storedName, requestedName }) {
+  const requested = String(requestedName ?? 'PILOT').slice(0, 16) || 'PILOT'
+  if (!authed) return requested
+  const stored = String(storedName ?? '').slice(0, 16)
+  return stored && stored.toLowerCase() !== 'pilot' ? stored : requested
+}
+
 /** The progress/live-session key for a client: verified pubkey if authed, else the raw token. */
 export function identityKey(client) {
   return client?.authed && client.pubkey ? client.pubkey : client?.token
