@@ -2087,6 +2087,28 @@ buyModalEl?.querySelector('#buy-confirm')?.addEventListener('click', () => {
   if (id) startTokenBuy(id)
 })
 
+// A token payment is submitted on-chain by the wallet BEFORE the server confirms it. If the
+// market-buy message never reaches the server (offline / tab closed), the buyer paid but never
+// gets the item. Persist any in-flight (listingId, txSig) locally so we can resend on reconnect,
+// and surface the signature so it's never silently lost.
+const PENDING_BUYS_KEY = 'scc.pendingBuys'
+function loadPendingBuys(): { listingId: string; txSig: string }[] {
+  try { const v = JSON.parse(localStorage.getItem(PENDING_BUYS_KEY) ?? '[]'); return Array.isArray(v) ? v : [] } catch { return [] }
+}
+function savePendingBuys(list: { listingId: string; txSig: string }[]): void {
+  localStorage.setItem(PENDING_BUYS_KEY, JSON.stringify(list.slice(-10)))
+}
+function rememberPendingBuy(listingId: string, txSig: string): void {
+  const list = loadPendingBuys()
+  if (!list.some((p) => p.txSig === txSig)) { list.push({ listingId, txSig }); savePendingBuys(list) }
+}
+function clearPendingBuy(listingId: string): void {
+  savePendingBuys(loadPendingBuys().filter((p) => p.listingId !== listingId))
+}
+function resendPendingBuys(): void {
+  for (const p of loadPendingBuys()) net.buyMarketListing(p.listingId, p.txSig)
+}
+
 function refreshMarketplaceViews(): void {
   stationMenu.refresh()
   if (inventoryPanel.isOpen) inventoryPanel.render()
@@ -2130,6 +2152,7 @@ function handleMarketAction(result: MarketActionResult): void {
       cancel: 'Listing cancelled.',
       sold: 'Marketplace sale complete.',
     }
+    if (result.action === 'buy' && result.listing) clearPendingBuy(result.listing.id) // settled — stop resending
     addChatLine('MARKET', okText[result.action] ?? 'Marketplace updated.', selfTier)
     net.requestMarketList()
   } else {
@@ -2775,6 +2798,10 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
       // Show our own presence immediately, then confirm with the server (don't wait the 6s tick).
       statOnlineEl.textContent = String(Math.max(1, Number(statOnlineEl.textContent) || 0))
       setTimeout(refreshLandingStats, 500)
+      // Re-deliver any token payment whose market-buy never reached the server (delayed so the
+      // session/identity has restored first). Settled buys clear themselves; unsettleable ones are
+      // logged server-side and the signature was shown to the player.
+      setTimeout(resendPendingBuys, 2000)
     }
   },
   onChat(name, text, tier) {
@@ -2868,8 +2895,13 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     const listingId = result.listingId
     signAndSendTransaction(result.txBase64)
       .then((txSig) => {
-        addChatLine('MARKET', 'Payment sent — verifying on-chain…', selfTier)
-        net.buyMarketListing(listingId, txSig)
+        // Payment is now on-chain. Persist before we rely on the network so a dropped connection
+        // can't lose it; cleared once the server confirms the sale (handleMarketAction).
+        rememberPendingBuy(listingId, txSig)
+        const delivered = net.buyMarketListing(listingId, txSig)
+        addChatLine('MARKET', delivered
+          ? 'Payment sent — verifying on-chain…'
+          : `Payment sent but offline — saved, will finish on reconnect. Signature: ${txSig}`, selfTier)
       })
       .catch((err) => {
         addChatLine('MARKET', err instanceof WalletError && err.message === NO_WALLET ? 'No wallet found.' : 'Wallet transaction rejected.', selfTier)

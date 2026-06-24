@@ -598,11 +598,16 @@ wss.on('connection', (ws) => {
             apiKey: HELIUS_API_KEY, mint: HOLDER_MINT, seller: target.sellerKey, treasury: TREASURY_WALLET,
             sellerRaw, feeRaw, nonce: reservation.nonce,
           })
-          if (!paid) console.warn(`[market-buy] payment NOT verified listing=${msg.listingId} buyer=${key} txSig=${msg.txSig} — item NOT released`)
           result = paid ? settleTokenListing(marketplace, store, key, msg.listingId, Date.now) : { ok: false, reason: 'payment-unverified' }
         }
       } else {
         result = buyListing(marketplace, store, key, msg.listingId, Date.now)
+      }
+      // Any buy carrying a txSig that did NOT settle = a payment may have moved on-chain without the
+      // item being released. Log it on every failure path (not-reserved, payment-unverified, not-active…)
+      // so nothing is silently lost — reconcile with the txSig on-chain.
+      if (!result.ok && msg.txSig) {
+        console.warn(`[market-buy] NOT settled reason=${result.reason} listing=${msg.listingId} buyer=${key} txSig=${msg.txSig} — verify on-chain before reconciling`)
       }
       if (result.ok) {
         flush()
