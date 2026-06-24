@@ -24,6 +24,13 @@ import {
   marketplaceSnapshot,
   publicMarketplaceRow,
 } from './marketplace.mjs'
+import { reserveListing, settleTokenListing } from './marketplace.mjs'
+import { verifyTokenPayment } from './solanaPay.mjs'
+import { buildTokenPaymentTx } from './tokenTx.mjs'
+import { toBaseUnits, splitFee } from './tokenSettlement.mjs'
+import { Connection, PublicKey } from '@solana/web3.js'
+import { getMint } from '@solana/spl-token'
+import { randomBytes } from 'crypto'
 
 function loadEnvFile(path = '.env') {
   let text
@@ -55,6 +62,16 @@ const SESSION_FILE = process.env.SESSION_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 
 // key just means no flair and no holder-gated ranked PvP access.
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY
 const HOLDER_MINT = '6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump'
+const TREASURY_WALLET = process.env.TREASURY_WALLET ?? '59vPXLdd9xvTcYAeQs3dZhbPVfFEiitP8btagF56NFj3'
+const FEE_BPS = 500
+const heliusRpc = HELIUS_API_KEY ? new Connection(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`, 'finalized') : null
+let cachedDecimals = null
+async function tokenDecimals() {
+  if (cachedDecimals != null) return cachedDecimals
+  if (!heliusRpc) return 6
+  try { cachedDecimals = (await getMint(heliusRpc, new PublicKey(HOLDER_MINT))).decimals } catch { cachedDecimals = 6 }
+  return cachedDecimals
+}
 const holderCache = createHolderCache()
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? ''
 const HOLDER_SHIP_VISUALS = new Set(['standard', 'doge-runner', 'void-interceptor', 'sovereign-wraith', 'eclipse-corvette'])
@@ -246,7 +263,7 @@ function normalizeHolderShipVisual(visual) {
 }
 
 wss.on('connection', (ws) => {
-  ws.on('message', (raw) => {
+  ws.on('message', async (raw) => {
     let msg
     try { msg = JSON.parse(raw) } catch { return }
 
@@ -473,7 +490,7 @@ wss.on('connection', (ws) => {
     if (msg.t === 'market-create' && client.active) {
       const key = client.authed && client.pubkey ? client.pubkey : null
       const result = key
-        ? createListing(marketplace, store, key, client.name, msg.itemId, msg.price, Date.now)
+        ? createListing(marketplace, store, key, client.name, msg.itemId, msg.price, Date.now, msg.currency === 'token' ? 'token' : 'credits')
         : { ok: false, reason: 'wallet-required' }
       if (result.ok) {
         flush()
@@ -490,11 +507,54 @@ wss.on('connection', (ws) => {
       return
     }
 
+    if (msg.t === 'market-intent' && client.active) {
+      const key = client.authed && client.pubkey ? client.pubkey : null
+      if (!key) { send(ws, { t: 'market-intent-result', ok: false, reason: 'wallet-required', listingId: msg.listingId }); return }
+      if (!heliusRpc) { send(ws, { t: 'market-intent-result', ok: false, reason: 'token-disabled', listingId: msg.listingId }); return }
+      const nonce = randomBytes(16).toString('hex')
+      const reserved = reserveListing(marketplace, key, msg.listingId, nonce, Date.now)
+      if (!reserved.ok) { send(ws, { t: 'market-intent-result', ok: false, reason: reserved.reason, listingId: msg.listingId }); return }
+      try {
+        const decimals = await tokenDecimals()
+        const totalRaw = toBaseUnits(reserved.listing.price, decimals)
+        const { feeRaw, sellerRaw } = splitFee(totalRaw, FEE_BPS)
+        const txBase64 = await buildTokenPaymentTx(heliusRpc, {
+          buyer: key, seller: reserved.listing.sellerKey, treasury: TREASURY_WALLET, mint: HOLDER_MINT,
+          decimals, sellerRaw, feeRaw, nonce,
+        })
+        send(ws, { t: 'market-intent-result', ok: true, listingId: msg.listingId, txBase64 })
+      } catch {
+        marketplace.reservations.delete(msg.listingId)
+        send(ws, { t: 'market-intent-result', ok: false, reason: 'build-failed', listingId: msg.listingId })
+      }
+      return
+    }
+
     if (msg.t === 'market-buy' && client.active) {
       const key = client.authed && client.pubkey ? client.pubkey : null
-      const result = key
-        ? buyListing(marketplace, store, key, msg.listingId, Date.now)
-        : { ok: false, reason: 'wallet-required' }
+      if (!key) {
+        send(ws, { t: 'market-action', action: 'buy', ok: false, reason: 'wallet-required' })
+        return
+      }
+      const target = marketplace.listings.find((row) => row.id === msg.listingId)
+      let result
+      if (target && target.status === 'active' && target.currency === 'token') {
+        const decimals = await tokenDecimals()
+        const reservation = marketplace.reservations.get(msg.listingId)
+        if (!reservation || reservation.buyerKey !== key) {
+          result = { ok: false, reason: 'not-reserved' }
+        } else {
+          const totalRaw = toBaseUnits(target.price, decimals)
+          const { feeRaw, sellerRaw } = splitFee(totalRaw, FEE_BPS)
+          const paid = await verifyTokenPayment(msg.txSig, {
+            apiKey: HELIUS_API_KEY, mint: HOLDER_MINT, seller: target.sellerKey, treasury: TREASURY_WALLET,
+            sellerRaw, feeRaw, nonce: reservation.nonce,
+          })
+          result = paid ? settleTokenListing(marketplace, store, key, msg.listingId, Date.now) : { ok: false, reason: 'payment-unverified' }
+        }
+      } else {
+        result = buyListing(marketplace, store, key, msg.listingId, Date.now)
+      }
       if (result.ok) {
         flush()
         flushMarketplace()
@@ -512,7 +572,7 @@ wss.on('connection', (ws) => {
         action: 'buy',
         ...result,
         listing: result.ok ? publicMarketplaceRow(result.listing, key) : undefined,
-        progress: key ? store[key] : undefined,
+        progress: store[key],
       })
       if (!result.ok) sendMarketList(ws, client)
       return
