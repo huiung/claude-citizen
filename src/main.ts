@@ -2050,6 +2050,43 @@ document.body.appendChild(stationMenu.root)
 let marketplaceRows: MarketListing[] = []
 let pendingTokenBuy: string | null = null
 
+// In-app confirmation before the wallet prompt for $Citizen purchases: shows the buyer exactly
+// what they'll pay (95% seller / 5% treasury) since Phantom's preview can be sparse for Token-2022.
+const buyModalEl = document.getElementById('buy-modal') as HTMLElement | null
+let buyConfirmListingId: string | null = null
+const fmtCitizen = (n: number): string => `${n.toLocaleString(undefined, { maximumFractionDigits: 6 })} $Citizen`
+
+function openBuyConfirm(listing: MarketListing): void {
+  if (!buyModalEl) { startTokenBuy(listing.id); return } // modal markup missing — fall back to direct buy
+  const total = listing.price
+  const fee = Math.floor(total * 0.05 * 1e6) / 1e6
+  const seller = Math.round((total - fee) * 1e6) / 1e6
+  buyConfirmListingId = listing.id
+  ;(buyModalEl.querySelector('#buy-modal-title') as HTMLElement).textContent = `${listing.item.variant}`
+  ;(buyModalEl.querySelector('#buy-total') as HTMLElement).textContent = fmtCitizen(total)
+  ;(buyModalEl.querySelector('#buy-seller') as HTMLElement).textContent = fmtCitizen(seller)
+  ;(buyModalEl.querySelector('#buy-treasury') as HTMLElement).textContent = fmtCitizen(fee)
+  buyModalEl.hidden = false
+}
+
+function closeBuyConfirm(): void {
+  if (buyModalEl) buyModalEl.hidden = true
+  buyConfirmListingId = null
+}
+
+function startTokenBuy(listingId: string): void {
+  addChatLine('MARKET', 'Preparing on-chain payment…', selfTier)
+  pendingTokenBuy = listingId
+  net.requestMarketIntent(listingId)
+}
+
+buyModalEl?.querySelector('#buy-cancel')?.addEventListener('click', () => closeBuyConfirm())
+buyModalEl?.querySelector('#buy-confirm')?.addEventListener('click', () => {
+  const id = buyConfirmListingId
+  closeBuyConfirm()
+  if (id) startTokenBuy(id)
+})
+
 function refreshMarketplaceViews(): void {
   stationMenu.refresh()
   if (inventoryPanel.isOpen) inventoryPanel.render()
@@ -2318,9 +2355,7 @@ function dock(id: string): void {
           return
         }
         if (listing.currency === 'token') {
-          addChatLine('MARKET', 'Preparing on-chain payment…', selfTier)
-          pendingTokenBuy = listingId
-          net.requestMarketIntent(listingId)
+          openBuyConfirm(listing) // show the cost breakdown; Confirm triggers the wallet
         } else {
           net.buyMarketListing(listingId)
         }
