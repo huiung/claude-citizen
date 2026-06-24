@@ -66,12 +66,19 @@ const HOLDER_MINT = '6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump'
 const TREASURY_WALLET = process.env.TREASURY_WALLET ?? '59vPXLdd9xvTcYAeQs3dZhbPVfFEiitP8btagF56NFj3'
 const FEE_BPS = 500
 const heliusRpc = HELIUS_API_KEY ? new Connection(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`, 'finalized') : null
-let cachedDecimals = null
-async function tokenDecimals() {
-  if (cachedDecimals != null) return cachedDecimals
-  if (!heliusRpc) return 6
-  try { cachedDecimals = (await getMint(heliusRpc, new PublicKey(HOLDER_MINT))).decimals } catch { cachedDecimals = 6 }
-  return cachedDecimals
+let cachedMintInfo = null
+// Resolve the mint's owning token program (classic SPL vs Token-2022) + decimals, once.
+// The Citizen mint is a Token-2022 mint, so payment instructions must target that program.
+async function tokenMintInfo() {
+  if (cachedMintInfo) return cachedMintInfo
+  if (!heliusRpc) return { programId: null, decimals: 6 }
+  try {
+    const mintPk = new PublicKey(HOLDER_MINT)
+    const programId = (await heliusRpc.getAccountInfo(mintPk))?.owner ?? null
+    const decimals = (await getMint(heliusRpc, mintPk, undefined, programId ?? undefined)).decimals
+    cachedMintInfo = { programId, decimals }
+  } catch { cachedMintInfo = { programId: null, decimals: 6 } }
+  return cachedMintInfo
 }
 const holderCache = createHolderCache()
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? ''
@@ -524,12 +531,12 @@ wss.on('connection', (ws) => {
       const reserved = reserveListing(marketplace, key, msg.listingId, nonce, Date.now)
       if (!reserved.ok) { send(ws, { t: 'market-intent-result', ok: false, reason: reserved.reason, listingId: msg.listingId }); return }
       try {
-        const decimals = await tokenDecimals()
+        const { programId, decimals } = await tokenMintInfo()
         const totalRaw = toBaseUnits(reserved.listing.price, decimals)
         const { feeRaw, sellerRaw } = splitFee(totalRaw, FEE_BPS)
         const txBase64 = await buildTokenPaymentTx(heliusRpc, {
           buyer: key, seller: reserved.listing.sellerKey, treasury: TREASURY_WALLET, mint: HOLDER_MINT,
-          decimals, sellerRaw, feeRaw, nonce,
+          decimals, sellerRaw, feeRaw, nonce, tokenProgram: programId ? programId.toBase58() : undefined,
         })
         send(ws, { t: 'market-intent-result', ok: true, listingId: msg.listingId, txBase64 })
       } catch {
@@ -548,7 +555,7 @@ wss.on('connection', (ws) => {
       const target = marketplace.listings.find((row) => row.id === msg.listingId)
       let result
       if (target && target.status === 'active' && target.currency === 'token') {
-        const decimals = await tokenDecimals()
+        const { decimals } = await tokenMintInfo()
         const reservation = marketplace.reservations.get(msg.listingId)
         if (!reservation || reservation.buyerKey !== key || reservation.expiresAt <= Date.now()) {
           result = { ok: false, reason: 'not-reserved' }
