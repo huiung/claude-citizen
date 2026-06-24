@@ -33,7 +33,9 @@ import { NetClient, type MarketActionResult, type MarketIntentResult, type Marke
 import { dockableTarget, type DockTarget } from './sim/docking'
 import { cargoUsed, gainCredits, loadEconomy, OUTPOSTS, saveEconomy } from './sim/economy'
 import { createAsteroidField, mineStep } from './sim/mining'
-import { loadCraftingState, normalizeCraftingState, saveCraftingState } from './sim/crafting'
+import { loadCraftingState, normalizeCraftingState, saveCraftingState, equipCosmetic, unequipCosmetic } from './sim/crafting'
+import { createShipCosmetics, type ShipCosmetics } from './render/craftCosmetics'
+import { equippedStyles, encodeEquipped, decodeCosmetics } from './sim/cosmetics'
 import { createMarket, step as marketStep } from './sim/market'
 import { generateContracts } from './sim/contracts'
 import { boostMultiplier, cargoCapacity, loadUpgrades, miningYield, saveUpgrades, topSpeed } from './sim/upgrades'
@@ -1325,6 +1327,11 @@ let shipMesh = buildCraft(selectedShipType, PLAYER_TINT)
 scene.add(shipMesh)
 
 let playerEngineGlows: CraftEngineGlow[] = collectCraftEngineGlows(shipMesh)
+let playerCosmetics: ShipCosmetics = createShipCosmetics(shipMesh, scene)
+function applyPlayerCosmetics(): void {
+  playerCosmetics.apply(equippedStyles(crafting))
+  net.setCosmetics(encodeEquipped(crafting))
+}
 
 // --- Mining VFX: cyan laser beam + impact glow + floating +ORE text
 const beamMat = new THREE.MeshBasicMaterial({
@@ -1887,6 +1894,9 @@ function setPlayerCraft(type: ShipType): void {
   shipMesh.quaternion.copy(ship.quaternion)
   scene.add(shipMesh)
   playerEngineGlows = collectCraftEngineGlows(shipMesh)
+  playerCosmetics.dispose()
+  playerCosmetics = createShipCosmetics(shipMesh, scene)
+  applyPlayerCosmetics()
   selectedShipType = type
   playerHealth.max = SHIP_STATS[type].hull
   playerHealth.hull = playerHealth.max
@@ -1905,6 +1915,9 @@ function setPlayerCraft(type: ShipType): void {
     shipMesh.quaternion.copy(ship.quaternion)
     scene.add(shipMesh)
     playerEngineGlows = collectCraftEngineGlows(shipMesh)
+    playerCosmetics.dispose()
+    playerCosmetics = createShipCosmetics(shipMesh, scene)
+    applyPlayerCosmetics()
   })
 }
 
@@ -2127,6 +2140,22 @@ function listCraftedItemForSale(itemId: string, price: number, currency: 'credit
   if (!net.createMarketListing(itemId, price, currency)) addChatLine('MARKET', 'Server unavailable. Listing not created.', selfTier)
 }
 
+export function equipCraftedItem(itemId: string): void {
+  equipCosmetic(crafting, itemId)
+  saveCraftingState(crafting, localStorage)
+  net.saveProgress(currentProgress())
+  applyPlayerCosmetics()
+  inventoryPanel.render()
+}
+
+export function unequipCraftedSlot(slot: 'trail' | 'hull' | 'aura'): void {
+  unequipCosmetic(crafting, slot)
+  saveCraftingState(crafting, localStorage)
+  net.saveProgress(currentProgress())
+  applyPlayerCosmetics()
+  inventoryPanel.render()
+}
+
 function handleMarketAction(result: MarketActionResult): void {
   if (result.progress) applyServerProgress(result.progress)
   const messages: Record<string, string> = {
@@ -2169,6 +2198,8 @@ interface RemoteShip {
   health: ReturnType<typeof createHealth>
   craftKey: string
   loadSeq: number
+  cosmetics: ShipCosmetics
+  cosmeticsKey: string
 }
 let selfTier = 0 // token-holder tier, cosmetic identity
 let selfHolderBalance = 0 // exact token balance from the relay; used only for holder-gated ranked PvP
@@ -2279,6 +2310,9 @@ function ensureRemoteCraftModel(remote: RemoteShip): void {
     model.add(remote.label)
     scene.add(model)
     remote.mesh = model
+    remote.cosmetics.dispose()
+    remote.cosmetics = createShipCosmetics(remote.mesh, scene)
+    remote.cosmeticsKey = ''
   })
 }
 
@@ -2753,7 +2787,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     const maxHull = peer.maxHull ?? SHIP_STATS[peerShipType(peer)].hull
     const health = createHealth(maxHull)
     health.hull = peer.hull ?? maxHull
-    const remote: RemoteShip = { mesh, peer, label: labelObj, health, craftKey: '', loadSeq: 0 }
+    const remote: RemoteShip = { mesh, peer, label: labelObj, health, craftKey: '', loadSeq: 0, cosmetics: createShipCosmetics(mesh, scene), cosmeticsKey: '' }
     remotes.set(peer.id, remote)
     applyHolderNameplate(label, peer.name, peer.tier ?? 0)
     ensureRemoteCraftModel(remote)
@@ -2786,6 +2820,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
       remote.label.element.remove() // CSS2D label lives in the DOM — drop it or the name lingers
       scene.remove(remote.mesh)
       disposeObject(remote.mesh)
+      remote.cosmetics.dispose()
       remotes.delete(id)
     }
   },
@@ -2926,6 +2961,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
 })
 net.setSession(walletSession?.sessionId ?? null) // resume a verified wallet session if we have one
 net.connect() // connect on page load as a viewer (presence) — counts toward "online" on the landing
+applyPlayerCosmetics() // broadcast initial equipped loadout now that net is constructed
 
 // --- Chat
 let chatOpen = false
@@ -3902,6 +3938,14 @@ function frame(now: number): void {
   if (running) {
     updateDeepSpaceVisibility()
     updateRemotes()
+    for (const remote of remotes.values()) {
+      const key = remote.peer.cosmetics ?? ''
+      if (key !== remote.cosmeticsKey) {
+        remote.cosmetics.apply(decodeCosmetics(key))
+        remote.cosmeticsKey = key
+      }
+      remote.cosmetics.update(dt, remote.mesh.position)
+    }
     updateCamera(dt)
     drawMinimap()
     updateDepthHUD()
@@ -3958,6 +4002,7 @@ function frame(now: number): void {
     cosmeticTier: 0,
     time: now * 0.001,
   }))
+  playerCosmetics.update(dt, ship.position)
 
   // Onboarding objective — new pilots get a "next step" until they hunt their first pirate.
   // (Frozen if kicked: the objective slot shows the "signed in elsewhere" warning instead.)
