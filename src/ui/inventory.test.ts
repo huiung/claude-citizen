@@ -97,3 +97,30 @@ describe('listing modal', () => {
     expect((document.getElementById('list-cur-token') as HTMLButtonElement).disabled).toBe(true)
   })
 })
+
+describe('equip controls', () => {
+  const state = {
+    cores: 0,
+    equipped: { trail: 'i1', hull: null, aura: null },
+    items: [{ id: 'i1', recipeId: 'aurum-trail-kit', rarity: 'epic', variant: 'Solar Aurum Trail', createdAt: 1, tradable: true }],
+  }
+  it('shows EQUIPPED on the equipped group and calls onUnequip when toggled', () => {
+    document.body.innerHTML = '<div id="inventory-panel" hidden><div id="inventory-count"></div><div id="inventory-grid"></div><button id="inventory-close"></button></div>'
+    const onEquip = vi.fn(); const onUnequip = vi.fn()
+    const panel = new InventoryPanel({ onEquipItem: onEquip, onUnequipSlot: onUnequip, equippedSlots: () => state.equipped })
+    panel.open(state as any)
+    expect(document.querySelector('.inventory-equipped')).toBeTruthy()
+    ;(document.querySelector('.inventory-equip') as HTMLButtonElement).click()
+    expect(onUnequip).toHaveBeenCalledWith('trail')
+  })
+
+  it('calls onEquip with the item id when an unequipped group is toggled', () => {
+    document.body.innerHTML = '<div id="inventory-panel" hidden><div id="inventory-count"></div><div id="inventory-grid"></div><button id="inventory-close"></button></div>'
+    const onEquip = vi.fn()
+    const s2 = { cores: 0, equipped: { trail: null, hull: null, aura: null }, items: [{ id: 'i1', recipeId: 'aurum-trail-kit', rarity: 'epic', variant: 'Solar Aurum Trail', createdAt: 1, tradable: true }] }
+    const panel = new InventoryPanel({ onEquipItem: onEquip, onUnequipSlot: vi.fn(), equippedSlots: () => s2.equipped })
+    panel.open(s2 as any)
+    ;(document.querySelector('.inventory-equip') as HTMLButtonElement).click()
+    expect(onEquip).toHaveBeenCalledWith('i1')
+  })
+})

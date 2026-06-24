@@ -6,6 +6,7 @@ import {
   type CraftingRarity,
   type CraftingState,
 } from '../sim/crafting'
+import { COSMETIC_CATEGORY } from '../sim/cosmetics'
 
 export interface CraftedItemGroup {
   key: string
@@ -73,17 +74,26 @@ export class InventoryPanel {
   private listModal: HTMLElement | null
   private pendingItemId: string | null = null
   private listCurrency: 'credits' | 'token' = 'credits'
+  private onEquipItem?: (itemId: string) => void
+  private onUnequipSlot?: (slot: 'trail' | 'hull' | 'aura') => void
+  private equippedSlots: () => { trail: string | null; hull: string | null; aura: string | null }
 
   constructor(opts: {
     onClose?: () => void
     onListItem?: (itemId: string, price: number, currency: 'credits' | 'token') => void
     canListItem?: () => boolean
     walletConnected?: () => boolean
+    onEquipItem?: (itemId: string) => void
+    onUnequipSlot?: (slot: 'trail' | 'hull' | 'aura') => void
+    equippedSlots?: () => { trail: string | null; hull: string | null; aura: string | null }
   } = {}) {
     this.onClose = opts.onClose
     this.onListItem = opts.onListItem
     this.canListItem = opts.canListItem ?? (() => false)
     this.walletConnected = opts.walletConnected ?? (() => false)
+    this.onEquipItem = opts.onEquipItem
+    this.onUnequipSlot = opts.onUnequipSlot
+    this.equippedSlots = opts.equippedSlots ?? (() => ({ trail: null, hull: null, aura: null }))
     this.root = document.getElementById('inventory-panel') ?? document.createElement('div')
     this.titleEl = this.root.querySelector('#inventory-count') as HTMLElement
     this.gridEl = this.root.querySelector('#inventory-grid') as HTMLElement
@@ -204,6 +214,22 @@ export class InventoryPanel {
       button.addEventListener('click', () => this.openListModal(itemId, group.variant))
       actions.appendChild(button)
       card.appendChild(actions)
+    }
+    const slot = COSMETIC_CATEGORY[group.recipeId]
+    const equippedId = this.equippedSlots()[slot]
+    const groupEquipped = equippedId != null && group.ids.includes(equippedId)
+    if (groupEquipped) card.classList.add('inventory-equipped')
+    if (itemId && (this.onEquipItem || this.onUnequipSlot)) {
+      let actions = card.querySelector('.inventory-actions') as HTMLElement | null
+      if (!actions) { actions = document.createElement('div'); actions.className = 'inventory-actions'; card.appendChild(actions) }
+      const equipBtn = document.createElement('button')
+      equipBtn.className = 'inventory-equip'
+      equipBtn.textContent = groupEquipped ? 'Unequip' : 'Equip'
+      equipBtn.addEventListener('click', () => {
+        if (groupEquipped) this.onUnequipSlot?.(slot)
+        else this.onEquipItem?.(itemId)
+      })
+      actions.appendChild(equipBtn)
     }
     return card
   }

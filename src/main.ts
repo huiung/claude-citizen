@@ -2140,7 +2140,7 @@ function listCraftedItemForSale(itemId: string, price: number, currency: 'credit
   if (!net.createMarketListing(itemId, price, currency)) addChatLine('MARKET', 'Server unavailable. Listing not created.', selfTier)
 }
 
-export function equipCraftedItem(itemId: string): void {
+function equipCraftedItem(itemId: string): void {
   equipCosmetic(crafting, itemId)
   saveCraftingState(crafting, localStorage)
   net.saveProgress(currentProgress())
@@ -2148,7 +2148,7 @@ export function equipCraftedItem(itemId: string): void {
   inventoryPanel.render()
 }
 
-export function unequipCraftedSlot(slot: 'trail' | 'hull' | 'aura'): void {
+function unequipCraftedSlot(slot: 'trail' | 'hull' | 'aura'): void {
   unequipCosmetic(crafting, slot)
   saveCraftingState(crafting, localStorage)
   net.saveProgress(currentProgress())
@@ -2481,6 +2481,9 @@ const inventoryPanel = new InventoryPanel({
   onListItem: listCraftedItemForSale,
   canListItem: () => Boolean(walletSession),
   walletConnected: () => Boolean(walletSession),
+  onEquipItem: (itemId) => equipCraftedItem(itemId),
+  onUnequipSlot: (slot) => unequipCraftedSlot(slot),
+  equippedSlots: () => crafting.equipped,
 })
 
 function openInventoryPanel(): void {

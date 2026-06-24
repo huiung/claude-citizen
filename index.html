@@ -493,6 +493,17 @@
       border: 1px solid rgba(159, 255, 176, .34); background: rgba(16, 48, 25, .72); color: #9fffb0;
     }
     .inventory-list:hover { border-color: rgba(159, 255, 176, .72); color: #fff; }
+    .inventory-equip {
+      font: 700 10px "Share Tech Mono", ui-monospace, monospace; letter-spacing: 1px;
+      border-radius: 4px; cursor: pointer; padding: 4px 8px; margin-left: 6px;
+      border: 1px solid rgba(110,200,255,.4); background: rgba(10,30,48,.7); color: #8fd6ff;
+    }
+    .inventory-equip:hover { border-color: rgba(110,200,255,.8); color: #fff; }
+    .inventory-card.inventory-equipped { box-shadow: 0 0 0 1px #8fd6ff, 0 0 18px rgba(110,200,255,.25); }
+    .inventory-card.inventory-equipped::after {
+      content: 'EQUIPPED'; position: absolute; top: 8px; right: 10px;
+      font: 700 9px "Share Tech Mono", monospace; letter-spacing: 1px; color: #8fd6ff;
+    }
     .inventory-empty { grid-column: 1 / -1; padding: 28px 10px; text-align: center; color: #7fc99a; opacity: .68; font-size: 12px; line-height: 1.5; }
     .rarity-common { color: #cfe3d0; }
     .rarity-rare { color: #6fe8ff; border-color: rgba(111, 232, 255, .38); }
