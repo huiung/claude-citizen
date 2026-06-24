@@ -8,6 +8,8 @@ import {
   createCraftingState,
   normalizeCraftingState,
   rollCraftingRarity,
+  equipCosmetic,
+  unequipCosmetic,
 } from './crafting'
 
 describe('crafting economy', () => {
@@ -167,6 +169,38 @@ describe('crafting economy', () => {
           tradable: true,
         },
       ],
+      equipped: { trail: null, hull: null, aura: null },
     })
+  })
+})
+
+describe('equipped loadout', () => {
+  const item = { id: 'i1', recipeId: 'aurum-trail-kit', rarity: 'legendary', variant: 'Radiant Aurum Trail', createdAt: 1, tradable: true } as const
+
+  it('new state has empty slots', () => {
+    expect(createCraftingState().equipped).toEqual({ trail: null, hull: null, aura: null })
+  })
+
+  it('normalizes old state without equipped to empty slots', () => {
+    expect(normalizeCraftingState({ cores: 0, items: [] }).equipped).toEqual({ trail: null, hull: null, aura: null })
+  })
+
+  it('equips an item into its recipe category and unequips', () => {
+    const state = { cores: 0, items: [{ ...item }], equipped: { trail: null, hull: null, aura: null } }
+    equipCosmetic(state, 'i1')
+    expect(state.equipped.trail).toBe('i1')
+    unequipCosmetic(state, 'trail')
+    expect(state.equipped.trail).toBe(null)
+  })
+
+  it('ignores equipping an unknown item id', () => {
+    const state = createCraftingState()
+    equipCosmetic(state, 'nope')
+    expect(state.equipped).toEqual({ trail: null, hull: null, aura: null })
+  })
+
+  it('drops an equipped id that is not in items when normalizing', () => {
+    const out = normalizeCraftingState({ cores: 0, items: [], equipped: { trail: 'ghost', hull: null, aura: null } })
+    expect(out.equipped.trail).toBe(null)
   })
 })

@@ -1,4 +1,5 @@
 import type { PlayerEconomy } from './economy'
+import { COSMETIC_CATEGORY, COSMETIC_SLOTS, type CosmeticCategory } from './cosmetics'
 
 export type CraftingCosmeticId = 'aurum-trail-kit' | 'nebula-hull-kit' | 'void-runner-kit'
 export type CraftingRarity = 'common' | 'rare' | 'epic' | 'legendary'
@@ -23,6 +24,7 @@ export interface CraftingRecipe {
 export interface CraftingState {
   cores: number
   items: CraftedCosmeticItem[]
+  equipped: Record<CosmeticCategory, string | null>
 }
 
 export interface CraftingRollOptions {
@@ -88,8 +90,12 @@ const RARITIES = new Set<CraftingRarity>(['common', 'rare', 'epic', 'legendary']
 const STORAGE_KEY = 'scc.crafting.v1'
 const MAX_ITEMS = 200
 
+export function emptyEquipped(): Record<CosmeticCategory, string | null> {
+  return { trail: null, hull: null, aura: null }
+}
+
 export function createCraftingState(): CraftingState {
-  return { cores: 0, items: [] }
+  return { cores: 0, items: [], equipped: emptyEquipped() }
 }
 
 export function rollCraftingRarity(value = Math.random()): CraftingRarity {
@@ -163,7 +169,13 @@ export function normalizeCraftingState(value: unknown): CraftingState {
       if (items.length >= MAX_ITEMS) break
     }
   }
-  return { cores, items }
+  const rawEquipped = (value as { equipped?: Record<string, unknown> }).equipped ?? {}
+  const equipped = emptyEquipped()
+  for (const slot of COSMETIC_SLOTS) {
+    const id = rawEquipped[slot]
+    if (typeof id === 'string' && items.some((it) => it.id === id)) equipped[slot] = id
+  }
+  return { cores, items, equipped }
 }
 
 export function hasCraftedCosmetic(state: CraftingState, id: CraftingCosmeticId): boolean {
@@ -228,4 +240,17 @@ export function saveCraftingState(state: CraftingState, storage: Storage = local
   } catch {
     /* storage unavailable - crafting inventory remains session-only until relay sync */
   }
+}
+
+/** Equip an owned item into its recipe's category slot (replacing any prior). No-op if unknown. */
+export function equipCosmetic(state: CraftingState, itemId: string): void {
+  const item = state.items.find((it) => it.id === itemId)
+  if (!item) return
+  if (!state.equipped) state.equipped = emptyEquipped()
+  state.equipped[COSMETIC_CATEGORY[item.recipeId]] = item.id
+}
+
+export function unequipCosmetic(state: CraftingState, slot: CosmeticCategory): void {
+  if (!state.equipped) state.equipped = emptyEquipped()
+  state.equipped[slot] = null
 }
