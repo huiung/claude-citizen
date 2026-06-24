@@ -6,6 +6,8 @@ import {
   createMarketplace,
   marketplaceList,
   marketplaceRowsFor,
+  reserveListing,
+  settleTokenListing,
 } from './marketplace.mjs'
 
 const item = {
@@ -113,5 +115,76 @@ describe('marketplace core', () => {
     expect(cancelListing(market, store, 'buyer', listing.id, () => 2000)).toEqual({ ok: false, reason: 'not-seller' })
     expect(store.buyer.crafting.items).toEqual([])
     expect(marketplaceList(market).rows).toHaveLength(1)
+  })
+})
+
+describe('marketplace currency', () => {
+  it('creates a token listing with currency token', () => {
+    const store = { seller: { credits: 0, crafting: { cores: 0, items: [cloneItem()] } } }
+    const market = createMarketplace()
+    const r = createListing(market, store, 'seller', 'ACE', 'item-1', 1250, () => 1000, 'token')
+    expect(r.ok).toBe(true)
+    expect(r.listing.currency).toBe('token')
+  })
+
+  it('defaults to credits when currency omitted', () => {
+    const store = { seller: { credits: 0, crafting: { cores: 0, items: [cloneItem()] } } }
+    const market = createMarketplace()
+    const r = createListing(market, store, 'seller', 'ACE', 'item-1', 25000, () => 1000)
+    expect(r.listing.currency).toBe('credits')
+  })
+
+  it('reserves a token listing for one buyer and rejects a second buyer', () => {
+    const store = { seller: { credits: 0, crafting: { cores: 0, items: [cloneItem()] } } }
+    const market = createMarketplace()
+    const { listing } = createListing(market, store, 'seller', 'ACE', 'item-1', 1250, () => 1000, 'token')
+    const a = reserveListing(market, 'buyerA', listing.id, 'nonce-a', () => 2000)
+    expect(a.ok).toBe(true)
+    expect(a.nonce).toBe('nonce-a')
+    const b = reserveListing(market, 'buyerB', listing.id, 'nonce-b', () => 2001)
+    expect(b).toEqual({ ok: false, reason: 'reserved' })
+  })
+
+  it('lets the reservation expire and a new buyer reserve', () => {
+    const store = { seller: { credits: 0, crafting: { cores: 0, items: [cloneItem()] } } }
+    const market = createMarketplace()
+    const { listing } = createListing(market, store, 'seller', 'ACE', 'item-1', 1250, () => 1000, 'token')
+    reserveListing(market, 'buyerA', listing.id, 'nonce-a', () => 2000)
+    const b = reserveListing(market, 'buyerB', listing.id, 'nonce-b', () => 2000 + 120_001)
+    expect(b.ok).toBe(true)
+  })
+
+  it('rejects reserving a credits listing', () => {
+    const store = { seller: { credits: 0, crafting: { cores: 0, items: [cloneItem()] } } }
+    const market = createMarketplace()
+    const { listing } = createListing(market, store, 'seller', 'ACE', 'item-1', 25000, () => 1000)
+    expect(reserveListing(market, 'buyerA', listing.id, 'n', () => 2000)).toEqual({ ok: false, reason: 'not-token' })
+  })
+
+  it('settles a reserved token listing: item to buyer, no server credits move', () => {
+    const store = {
+      seller: { credits: 0, crafting: { cores: 0, items: [cloneItem()] } },
+      buyerA: { credits: 0, crafting: { cores: 0, items: [] } },
+    }
+    const market = createMarketplace()
+    const { listing } = createListing(market, store, 'seller', 'ACE', 'item-1', 1250, () => 1000, 'token')
+    reserveListing(market, 'buyerA', listing.id, 'nonce-a', () => 2000)
+    const r = settleTokenListing(market, store, 'buyerA', listing.id, () => 3000)
+    expect(r.ok).toBe(true)
+    expect(store.buyerA.crafting.items.map((i) => i.id)).toEqual(['item-1'])
+    expect(store.seller.credits).toBe(0)
+    expect(r.listing.status).toBe('sold')
+    expect(market.reservations.has(listing.id)).toBe(false)
+  })
+
+  it('refuses to settle for a buyer who does not hold the reservation', () => {
+    const store = {
+      seller: { credits: 0, crafting: { cores: 0, items: [cloneItem()] } },
+      buyerB: { credits: 0, crafting: { cores: 0, items: [] } },
+    }
+    const market = createMarketplace()
+    const { listing } = createListing(market, store, 'seller', 'ACE', 'item-1', 1250, () => 1000, 'token')
+    reserveListing(market, 'buyerA', listing.id, 'nonce-a', () => 2000)
+    expect(settleTokenListing(market, store, 'buyerB', listing.id, () => 3000)).toEqual({ ok: false, reason: 'not-reserved' })
   })
 })

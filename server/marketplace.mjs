@@ -1,6 +1,8 @@
 const MAX_ACTIVE_LISTINGS = 200
 const MAX_PRICE = 999_999_999
 const LISTING_STATUSES = new Set(['active', 'sold', 'cancelled'])
+const CURRENCIES = new Set(['credits', 'token'])
+const RESERVATION_TTL_MS = 120_000
 
 function nowValue(now) {
   return Math.max(0, Math.floor(Number((now ?? Date.now)()) || 0))
@@ -37,7 +39,7 @@ function sanitizeListing(value) {
     sellerName,
     item,
     price,
-    currency: 'credits',
+    currency: CURRENCIES.has(value.currency) ? value.currency : 'credits',
     status,
     createdAt: Math.max(0, Math.floor(Number(value.createdAt) || 0)),
     updatedAt: Math.max(0, Math.floor(Number(value.updatedAt) || 0)),
@@ -79,7 +81,7 @@ export function createMarketplace(seed = {}) {
     seen.add(listing.id)
     if (listings.length >= 1000) break
   }
-  return { listings }
+  return { listings, reservations: new Map() }
 }
 
 export function marketplaceSnapshot(marketplace) {
@@ -101,7 +103,7 @@ export function marketplaceRowsFor(marketplace, viewerKey) {
   return activeListings(marketplace).map((row) => publicMarketplaceRow(row, viewerKey))
 }
 
-export function createListing(marketplace, store, sellerKey, sellerName, itemId, price, now = Date.now) {
+export function createListing(marketplace, store, sellerKey, sellerName, itemId, price, now = Date.now, currency = 'credits') {
   const seller = ensureProgress(store, sellerKey)
   if (!seller) return { ok: false, reason: 'missing-progress' }
   const safeItemId = safeText(itemId, '', 96)
@@ -119,7 +121,7 @@ export function createListing(marketplace, store, sellerKey, sellerName, itemId,
     sellerName: safeText(sellerName, 'PILOT', 16),
     item,
     price: safePrice,
-    currency: 'credits',
+    currency: CURRENCIES.has(currency) ? currency : 'credits',
     status: 'active',
     createdAt: t,
     updatedAt: t,
@@ -158,5 +160,41 @@ export function cancelListing(marketplace, store, sellerKey, listingId, now = Da
   seller.crafting.items.push(cloneItem(listing.item))
   listing.status = 'cancelled'
   listing.updatedAt = nowValue(now)
+  marketplace.reservations.delete(listing.id)
   return { ok: true }
+}
+
+/** Reserve a TOKEN listing for one buyer for RESERVATION_TTL_MS, binding a one-time memo nonce.
+ *  Rejects credits listings, inactive listings, or a listing already reserved (unexpired) by another buyer. */
+export function reserveListing(marketplace, buyerKey, listingId, nonce, now = Date.now) {
+  const active = findActive(marketplace, safeText(listingId, '', 96))
+  if (!active.ok) return active
+  const listing = active.listing
+  if (listing.currency !== 'token') return { ok: false, reason: 'not-token' }
+  if (listing.sellerKey === buyerKey) return { ok: false, reason: 'own-listing' }
+  const t = nowValue(now)
+  const existing = marketplace.reservations.get(listingId)
+  if (existing && existing.expiresAt > t && existing.buyerKey !== buyerKey) return { ok: false, reason: 'reserved' }
+  const reservation = { buyerKey: safeText(buyerKey, '', 96), nonce: safeText(nonce, '', 96), expiresAt: t + RESERVATION_TTL_MS }
+  marketplace.reservations.set(listingId, reservation)
+  return { ok: true, nonce: reservation.nonce, listing: { ...listing, item: cloneItem(listing.item) } }
+}
+
+/** Finalize a TOKEN purchase after on-chain payment was verified by the caller. Moves the item to
+ *  the buyer and marks the listing sold. No server credits move — value settled on-chain. */
+export function settleTokenListing(marketplace, store, buyerKey, listingId, now = Date.now) {
+  const active = findActive(marketplace, safeText(listingId, '', 96))
+  if (!active.ok) return active
+  const listing = active.listing
+  if (listing.currency !== 'token') return { ok: false, reason: 'not-token' }
+  const t = nowValue(now)
+  const reservation = marketplace.reservations.get(listingId)
+  if (!reservation || reservation.buyerKey !== buyerKey || reservation.expiresAt <= t) return { ok: false, reason: 'not-reserved' }
+  const buyer = ensureProgress(store, buyerKey)
+  if (!buyer) return { ok: false, reason: 'missing-progress' }
+  buyer.crafting.items.push(cloneItem(listing.item))
+  listing.status = 'sold'
+  listing.updatedAt = t
+  marketplace.reservations.delete(listing.id)
+  return { ok: true, listing: { ...listing, item: cloneItem(listing.item) } }
 }
