@@ -144,7 +144,7 @@ describe('NetClient holder ship visual sync', () => {
 
     expect(ws.sent.slice(1)).toEqual([
       { t: 'market-list' },
-      { t: 'market-create', itemId: 'item-1', price: 25000 },
+      { t: 'market-create', itemId: 'item-1', price: 25000, currency: 'credits' },
       { t: 'market-buy', listingId: 'listing-1' },
       { t: 'market-cancel', listingId: 'listing-1' },
     ])
@@ -154,5 +154,66 @@ describe('NetClient holder ship visual sync', () => {
 
     expect(onMarketList).toHaveBeenCalledWith([{ id: 'listing-1', price: 25000 }])
     expect(onMarketAction).toHaveBeenCalledWith({ ok: true, action: 'buy', progress: { credits: 25000 } })
+  })
+
+  it('createMarketListing with token currency sends currency field', () => {
+    const net = new NetClient('ACE', 'tok', events())
+    net.connect()
+    const ws = FakeWebSocket.instances[0]
+    ws.open()
+
+    expect(net.createMarketListing('item-1', 1250, 'token')).toBe(true)
+
+    const frame = ws.sent[ws.sent.length - 1]
+    expect(frame).toEqual({ t: 'market-create', itemId: 'item-1', price: 1250, currency: 'token' })
+  })
+
+  it('requestMarketIntent sends market-intent frame', () => {
+    const net = new NetClient('ACE', 'tok', events())
+    net.connect()
+    const ws = FakeWebSocket.instances[0]
+    ws.open()
+
+    expect(net.requestMarketIntent('mkt-1')).toBe(true)
+
+    const frame = ws.sent[ws.sent.length - 1]
+    expect(frame).toEqual({ t: 'market-intent', listingId: 'mkt-1' })
+  })
+
+  it('buyMarketListing with txSig sends txSig field', () => {
+    const net = new NetClient('ACE', 'tok', events())
+    net.connect()
+    const ws = FakeWebSocket.instances[0]
+    ws.open()
+
+    expect(net.buyMarketListing('mkt-1', 'sig-abc')).toBe(true)
+
+    const frame = ws.sent[ws.sent.length - 1]
+    expect(frame).toEqual({ t: 'market-buy', listingId: 'mkt-1', txSig: 'sig-abc' })
+  })
+
+  it('buyMarketListing without txSig omits txSig key', () => {
+    const net = new NetClient('ACE', 'tok', events())
+    net.connect()
+    const ws = FakeWebSocket.instances[0]
+    ws.open()
+
+    expect(net.buyMarketListing('mkt-1')).toBe(true)
+
+    const frame = ws.sent[ws.sent.length - 1]
+    expect(frame).toEqual({ t: 'market-buy', listingId: 'mkt-1' })
+    expect(frame).not.toHaveProperty('txSig')
+  })
+
+  it('inbound market-intent-result calls onMarketIntent with t stripped', () => {
+    const onMarketIntent = vi.fn()
+    const net = new NetClient('ACE', 'tok', events({ onMarketIntent }))
+    net.connect()
+    const ws = FakeWebSocket.instances[0]
+    ws.open()
+
+    ws.emit({ t: 'market-intent-result', ok: true, listingId: 'mkt-1', txBase64: 'AAA=' })
+
+    expect(onMarketIntent).toHaveBeenCalledWith({ ok: true, listingId: 'mkt-1', txBase64: 'AAA=' })
   })
 })

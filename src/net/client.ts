@@ -51,7 +51,7 @@ export interface MarketListing {
   sellerName: string
   item: MarketListingItem
   price: number
-  currency: 'credits'
+  currency: 'credits' | 'token'
   status: 'active' | 'sold' | 'cancelled'
   createdAt: number
   updatedAt: number
@@ -64,6 +64,13 @@ export interface MarketActionResult {
   reason?: string
   listing?: MarketListing
   progress?: PlayerProgress
+}
+
+export interface MarketIntentResult {
+  ok: boolean
+  reason?: string
+  listingId: string
+  txBase64?: string
 }
 
 export interface NetEvents {
@@ -95,6 +102,7 @@ export interface NetEvents {
   onRaceRecorded?(timeMs: number): void
   onMarketList?(rows: MarketListing[]): void
   onMarketAction?(result: MarketActionResult): void
+  onMarketIntent?(result: MarketIntentResult): void
 }
 
 const SEND_HZ = 10
@@ -260,6 +268,11 @@ export class NetClient {
         this.events.onMarketAction?.(result as MarketActionResult)
         break
       }
+      case 'market-intent-result': {
+        const { t: _t, ...result } = msg
+        this.events.onMarketIntent?.(result as MarketIntentResult)
+        break
+      }
       case 'challenge':
         if (typeof msg.message === 'string') this.events.onChallenge?.(msg.message)
         break
@@ -367,15 +380,21 @@ export class NetClient {
     return true
   }
 
-  createMarketListing(itemId: string, price: number): boolean {
+  createMarketListing(itemId: string, price: number, currency: 'credits' | 'token' = 'credits'): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
-    this.ws.send(JSON.stringify({ t: 'market-create', itemId, price }))
+    this.ws.send(JSON.stringify({ t: 'market-create', itemId, price, currency }))
     return true
   }
 
-  buyMarketListing(listingId: string): boolean {
+  requestMarketIntent(listingId: string): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
-    this.ws.send(JSON.stringify({ t: 'market-buy', listingId }))
+    this.ws.send(JSON.stringify({ t: 'market-intent', listingId }))
+    return true
+  }
+
+  buyMarketListing(listingId: string, txSig?: string): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    this.ws.send(JSON.stringify({ t: 'market-buy', listingId, ...(txSig ? { txSig } : {}) }))
     return true
   }
 
