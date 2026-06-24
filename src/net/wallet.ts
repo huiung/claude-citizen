@@ -37,6 +37,17 @@ export async function connectWallet(): Promise<string> {
   return res.publicKey.toBase58()
 }
 
+/** Mobile browsers have no Phantom extension, so there's no injected provider. The fix is to open
+ *  the site inside Phantom's in-app browser (which injects a provider), not to "install" anything. */
+export function isMobileBrowser(): boolean {
+  return typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+}
+
+/** Phantom universal link that reopens the current page inside the Phantom app's in-app browser. */
+export function phantomBrowseUrl(target: string = location.href): string {
+  return `https://phantom.app/ul/browse/${encodeURIComponent(target)}?ref=${encodeURIComponent(location.origin)}`
+}
+
 /** Ask the wallet to sign `message`; resolves to a base58 signature. */
 export async function signMessage(message: string): Promise<string> {
   const p = getProvider()

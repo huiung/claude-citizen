@@ -3,7 +3,7 @@ import '@fontsource/orbitron/700.css'
 import { rankForCredits } from './sim/ranks'
 import { NetClient } from './net/client'
 import { activeIdentity, loadWalletSession, saveWalletSession, type WalletSession } from './net/identity'
-import { connectWallet, signMessage, hasWallet, WalletError, NO_WALLET } from './net/wallet'
+import { connectWallet, signMessage, hasWallet, isMobileBrowser, phantomBrowseUrl, WalletError, NO_WALLET } from './net/wallet'
 import { LandingMusic } from './audio/landingMusic'
 import { holderCaptureLaunchConfig } from './ui/landingCapture'
 import {
@@ -264,7 +264,10 @@ disconnectWalletBtn.addEventListener('click', () => {
 })
 
 connectWalletBtn.addEventListener('click', () => {
-  if (!hasWallet()) { setWalletStatus('No Solana wallet found - install Phantom.'); return }
+  if (!hasWallet()) {
+    if (isMobileBrowser()) { setWalletStatus('Opening in Phantom — tap Connect there…'); location.href = phantomBrowseUrl(); return }
+    setWalletStatus('No Solana wallet found - install the Phantom extension.'); return
+  }
   if (!netConnected) { setWalletStatus('Not connected to server - try again in a moment.'); return }
   setWalletStatus('Connecting...')
   connectWallet().then((pubkey) => {

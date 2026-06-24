@@ -145,7 +145,7 @@ import {
   registerKillBanner,
 } from './ui/combatFeedback'
 import { activeIdentity, loadWalletSession, saveWalletSession } from './net/identity'
-import { connectWallet, signMessage, signAndSendTransaction, hasWallet, WalletError, NO_WALLET } from './net/wallet'
+import { connectWallet, signMessage, signAndSendTransaction, hasWallet, isMobileBrowser, phantomBrowseUrl, WalletError, NO_WALLET } from './net/wallet'
 import { inject as injectAnalytics } from '@vercel/analytics'
 
 injectAnalytics() // Vercel Web Analytics (no-op off Vercel / in dev)
@@ -336,7 +336,10 @@ disconnectWalletBtn.addEventListener('click', () => {
 })
 
 connectWalletBtn.addEventListener('click', () => {
-  if (!hasWallet()) { setWalletStatus('No Solana wallet found — install Phantom.'); return }
+  if (!hasWallet()) {
+    if (isMobileBrowser()) { setWalletStatus('Opening in Phantom — tap Connect there…'); location.href = phantomBrowseUrl(); return }
+    setWalletStatus('No Solana wallet found — install the Phantom extension.'); return
+  }
   if (!netConnected) { setWalletStatus('Not connected to server — try again in a moment.'); return }
   setWalletStatus('Connecting…')
   connectWallet().then((pubkey) => {
