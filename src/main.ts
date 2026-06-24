@@ -2944,7 +2944,7 @@ function addChatLine(name: string, text: string, tier = 0): void {
   chatLogEl.scrollTop = chatLogEl.scrollHeight // newest at the bottom
   // Fade visually after a while so the idle HUD stays clean — but keep it in the log,
   // so opening chat ([Enter]) reveals the full scrollable history.
-  setTimeout(() => { line.style.opacity = '0' }, 9000)
+  setTimeout(() => { line.style.opacity = '0' }, 30000)
 }
 
 function openChat(): void {
