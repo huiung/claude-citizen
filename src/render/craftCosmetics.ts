@@ -1,8 +1,8 @@
 // src/render/craftCosmetics.ts
 // Procedural, multiplayer-visible cosmetic effects for one ship. Visual only.
 // trail: an additive Points stream trailing the ship in world space.
-// hull:  an additive emissive shell hugging the ship.
-// aura:  a soft additive glow sphere around the ship, pulsing (legendary cycles hue).
+// hull:  a faint additive wireframe shell hugging the ship.
+// aura:  a soft camera-facing glow sprite around the ship, gently pulsing (legendary cycles hue).
 import * as THREE from 'three'
 import type { CosmeticStyle } from '../sim/cosmetics'
 
@@ -21,10 +21,31 @@ export interface ShipCosmetics {
   dispose(): void
 }
 
+// One shared soft radial-gradient texture for all aura sprites. Created lazily; null in
+// non-DOM (test) environments — the sprite still attaches, it just renders without a map there.
+let glowTexture: THREE.Texture | null | undefined
+function softGlowTexture(): THREE.Texture | null {
+  if (glowTexture !== undefined) return glowTexture
+  if (typeof document === 'undefined') return (glowTexture = null)
+  const size = 128
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return (glowTexture = null)
+  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2)
+  grad.addColorStop(0, 'rgba(255,255,255,0.9)')
+  grad.addColorStop(0.35, 'rgba(255,255,255,0.28)')
+  grad.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = grad
+  ctx.fillRect(0, 0, size, size)
+  glowTexture = new THREE.CanvasTexture(canvas)
+  return glowTexture
+}
+
 function buildHull(style: CosmeticStyle): THREE.Mesh {
   const geo = new THREE.IcosahedronGeometry(1.7 + style.intensity * 0.5, 1)
   const mat = new THREE.MeshBasicMaterial({
-    color: style.color, transparent: true, opacity: 0.1 + style.intensity * 0.22,
+    color: style.color, transparent: true, opacity: 0.04 + style.intensity * 0.1,
     blending: THREE.AdditiveBlending, wireframe: true, depthWrite: false,
   })
   const mesh = new THREE.Mesh(geo, mat)
@@ -32,15 +53,17 @@ function buildHull(style: CosmeticStyle): THREE.Mesh {
   return mesh
 }
 
-function buildAura(style: CosmeticStyle): THREE.Mesh {
-  const geo = new THREE.SphereGeometry(2.4 + style.intensity * 1.1, 16, 12)
-  const mat = new THREE.MeshBasicMaterial({
-    color: style.color, transparent: true, opacity: 0.06 + style.intensity * 0.16,
-    blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false,
+function buildAura(style: CosmeticStyle): THREE.Sprite {
+  const mat = new THREE.SpriteMaterial({
+    map: softGlowTexture() ?? undefined,
+    color: style.color, transparent: true,
+    opacity: 0.1 + style.intensity * 0.16,
+    blending: THREE.AdditiveBlending, depthWrite: false,
   })
-  const mesh = new THREE.Mesh(geo, mat)
-  mesh.userData.cosmeticAura = true
-  return mesh
+  const sprite = new THREE.Sprite(mat)
+  sprite.scale.setScalar(5 + style.intensity * 4)
+  sprite.userData.cosmeticAura = true
+  return sprite
 }
 
 function buildTrail(style: CosmeticStyle): THREE.Points {
@@ -48,8 +71,8 @@ function buildTrail(style: CosmeticStyle): THREE.Points {
   const geo = new THREE.BufferGeometry()
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   const mat = new THREE.PointsMaterial({
-    color: style.color, size: 0.5 + style.intensity * 1.4, transparent: true,
-    opacity: 0.35 + style.intensity * 0.5, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+    color: style.color, size: 0.35 + style.intensity * 0.9, transparent: true,
+    opacity: 0.2 + style.intensity * 0.4, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
   })
   const points = new THREE.Points(geo, mat)
   points.userData.cosmeticTrail = true
@@ -67,7 +90,7 @@ export function createShipCosmetics(shipGroup: THREE.Group, scene: THREE.Scene):
       const obj = e.object as THREE.Mesh | THREE.Points
       ;(obj.geometry as THREE.BufferGeometry | undefined)?.dispose?.()
       const m = obj.material as THREE.Material | undefined
-      m?.dispose?.()
+      m?.dispose?.() // shared aura glow texture is intentionally NOT disposed here
     }
     effects = []
   }
@@ -78,15 +101,16 @@ export function createShipCosmetics(shipGroup: THREE.Group, scene: THREE.Scene):
       if (style.category === 'hull') {
         const object = buildHull(style); shipGroup.add(object)
         effects.push({ object, parent: shipGroup, style, update(_dt, _w, t) {
-          object.rotation.y = t * 0.4
-          if (style.legendary) (object.material as THREE.MeshBasicMaterial).color.setHSL((t * 0.1) % 1, 0.8, 0.6)
+          object.rotation.y = t * 0.15
+          if (style.legendary) (object.material as THREE.MeshBasicMaterial).color.setHSL((t * 0.08) % 1, 0.7, 0.6)
         } })
       } else if (style.category === 'aura') {
         const object = buildAura(style); shipGroup.add(object)
+        const base = object.scale.x
         effects.push({ object, parent: shipGroup, style, update(_dt, _w, t) {
-          const pulse = 1 + Math.sin(t * 2) * 0.06 * (0.5 + style.intensity)
-          object.scale.setScalar(pulse)
-          if (style.legendary) (object.material as THREE.MeshBasicMaterial).color.setHSL((t * 0.12) % 1, 0.85, 0.6)
+          const pulse = 1 + Math.sin(t * 1.6) * 0.05 * (0.5 + style.intensity)
+          object.scale.setScalar(base * pulse)
+          if (style.legendary) (object.material as THREE.SpriteMaterial).color.setHSL((t * 0.12) % 1, 0.78, 0.62)
         } })
       } else { // trail — lives in the scene, follows the ship in world space
         const points = buildTrail(style); scene.add(points)
