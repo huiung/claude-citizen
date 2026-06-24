@@ -11,7 +11,7 @@ import { abandon, accept, completeContract, type Contract } from '../sim/contrac
 import { SHIP_RANK_REQ, SHIP_STATS, SHIP_TYPES, type ShipType } from '../sim/shipTypes'
 import { rankForCredits, RANKS } from '../sim/ranks'
 import {
-  CRAFT_CORE_RECIPE,
+  CRAFT_CORE_CREDIT_COST,
   CRAFTING_RECIPES,
   CRAFTING_RARITY_LABELS,
   craftCosmetic,
@@ -149,7 +149,7 @@ export class StationMenu {
   private defaultHint(): string {
     switch (this.tab) {
       case 'trade': return 'Buy low here, sell high at the other outpost. Mine ORE from asteroids for free.'
-      case 'crafting': return 'Mine ORE, refine Craft Cores, then craft cosmetic kits with rarity rolls.'
+      case 'crafting': return 'Spend credits, refine Craft Cores, then craft cosmetic kits with rarity rolls.'
       case 'upgrades': return 'Spend credits to fly faster and haul more.'
       case 'shipyard': return 'Buy a hull and switch to it. Each trades cargo, speed, and toughness differently.'
       case 'hangar': return 'Holder ship visuals are cosmetic only: no speed, combat, or economy advantage.'
@@ -274,7 +274,7 @@ export class StationMenu {
       this.ctx.audio.blip('error')
       const msg: Record<typeof r.reason, string> = {
         'unknown-recipe': 'Unknown crafting recipe.',
-        'missing-materials': 'Not enough ORE or ALLOY.',
+        'missing-credits': 'Not enough credits.',
         'missing-cores': 'Not enough Craft Cores.',
       }
       this.hint(msg[r.reason], true)
@@ -290,7 +290,7 @@ export class StationMenu {
     const r = refineCraftCore(this.ctx.econ, this.ctx.crafting)
     if (!r.ok) {
       this.ctx.audio.blip('error')
-      this.hint('Not enough ORE or ALLOY to refine a Craft Core.', true)
+      this.hint('Not enough credits to refine a Craft Core.', true)
       return
     }
     this.ctx.audio.blip('trade')
@@ -299,10 +299,8 @@ export class StationMenu {
     this.render()
   }
 
-  private craftingCostText(cost: Partial<Record<CommodityId, number>>, coreCost = 0): string {
-    const parts = COMMODITY_ORDER
-      .filter((id) => (cost[id] ?? 0) > 0)
-      .map((id) => `${(cost[id] ?? 0).toLocaleString()} ${id}`)
+  private craftingCostText(creditCost: number, coreCost = 0): string {
+    const parts = [`${creditCost.toLocaleString()} cr`]
     if (coreCost > 0) parts.push(`${coreCost} CORE`)
     return parts.join(' + ')
   }
@@ -313,17 +311,17 @@ export class StationMenu {
     note.textContent = 'Cosmetic only for now. Crafted items become the base for future equip and marketplace features.'
     this.bodyEl.appendChild(note)
 
-    const coreCost = this.craftingCostText(CRAFT_CORE_RECIPE)
-    const canRefine = COMMODITY_ORDER.every((id) => this.ctx.econ.cargo[id] >= (CRAFT_CORE_RECIPE[id] ?? 0))
-    const coreRow = this.rowEl('Craft Core', 'Refine high-density ore into a rare crafting catalyst.', `${this.ctx.crafting.cores} CORE`)
+    const coreCost = this.craftingCostText(CRAFT_CORE_CREDIT_COST)
+    const canRefine = this.ctx.econ.credits >= CRAFT_CORE_CREDIT_COST
+    const coreRow = this.rowEl('Craft Core', 'Convert credits into a rare crafting catalyst.', `${this.ctx.crafting.cores} CORE`)
     coreRow.querySelector('.s-price')!.textContent = coreCost
     coreRow.querySelector('.s-actions')!.appendChild(this.btn('Refine', 'buy', !canRefine, () => this.refineCore()))
     this.bodyEl.appendChild(coreRow)
 
     for (const recipe of CRAFTING_RECIPES) {
-      const cost = this.craftingCostText(recipe.cost, recipe.coreCost)
+      const cost = this.craftingCostText(recipe.creditCost, recipe.coreCost)
       const affordable =
-        COMMODITY_ORDER.every((id) => this.ctx.econ.cargo[id] >= (recipe.cost[id] ?? 0)) &&
+        this.ctx.econ.credits >= recipe.creditCost &&
         this.ctx.crafting.cores >= (recipe.coreCost ?? 0)
       const craftedCount = this.ctx.crafting.items.filter((item) => item.recipeId === recipe.id).length
       const row = this.rowEl(recipe.name, recipe.description, craftedCount > 0 ? `${craftedCount} OWNED` : cost)

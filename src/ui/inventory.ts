@@ -102,7 +102,7 @@ export class InventoryPanel {
     if (groups.length === 0) {
       const empty = document.createElement('div')
       empty.className = 'inventory-empty'
-      empty.textContent = 'No crafted items yet. Mine ORE, refine Cores, then craft kits at a station.'
+      empty.textContent = 'No crafted items yet. Earn credits, refine Cores, then craft kits at a station.'
       this.gridEl.appendChild(empty)
       return
     }

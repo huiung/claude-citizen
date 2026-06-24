@@ -1,4 +1,4 @@
-import type { CommodityId, PlayerEconomy } from './economy'
+import type { PlayerEconomy } from './economy'
 
 export type CraftingCosmeticId = 'aurum-trail-kit' | 'nebula-hull-kit' | 'void-runner-kit'
 export type CraftingRarity = 'common' | 'rare' | 'epic' | 'legendary'
@@ -16,7 +16,7 @@ export interface CraftingRecipe {
   id: CraftingCosmeticId
   name: string
   description: string
-  cost: Partial<Record<CommodityId, number>>
+  creditCost: number
   coreCost?: number
 }
 
@@ -30,30 +30,27 @@ export interface CraftingRollOptions {
   now?: () => number
 }
 
-export const CRAFT_CORE_RECIPE: Readonly<Partial<Record<CommodityId, number>>> = {
-  ORE: 100_000,
-  ALLOY: 1_000,
-}
+export const CRAFT_CORE_CREDIT_COST = 50_000
 
 export const CRAFTING_RECIPES: readonly CraftingRecipe[] = [
   {
     id: 'aurum-trail-kit',
     name: 'Aurum Trail Kit',
     description: 'Craft a cosmetic engine trail kit with a random rarity roll.',
-    cost: { ORE: 50_000, ALLOY: 500 },
+    creditCost: 25_000,
   },
   {
     id: 'nebula-hull-kit',
     name: 'Nebula Hull Kit',
     description: 'Craft a hull finish kit. Requires a refined Craft Core.',
-    cost: { ORE: 150_000, ALLOY: 1_500 },
+    creditCost: 75_000,
     coreCost: 1,
   },
   {
     id: 'void-runner-kit',
     name: 'Void Runner Kit',
     description: 'Craft a high-end deep-space cosmetic kit for future trading.',
-    cost: { ORE: 500_000, ALLOY: 5_000 },
+    creditCost: 200_000,
     coreCost: 3,
   },
 ]
@@ -175,19 +172,15 @@ export function hasCraftedCosmetic(state: CraftingState, id: CraftingCosmeticId)
 
 export type CraftResult =
   | { ok: true; item: CraftedCosmeticItem }
-  | { ok: false; reason: 'unknown-recipe' | 'missing-materials' | 'missing-cores' }
+  | { ok: false; reason: 'unknown-recipe' | 'missing-credits' | 'missing-cores' }
 
 export type RefineCoreResult =
   | { ok: true }
-  | { ok: false; reason: 'missing-materials' }
+  | { ok: false; reason: 'missing-credits' }
 
 export function refineCraftCore(econ: PlayerEconomy, state: CraftingState): RefineCoreResult {
-  for (const [commodity, amount] of Object.entries(CRAFT_CORE_RECIPE) as [CommodityId, number][]) {
-    if ((econ.cargo[commodity] ?? 0) < amount) return { ok: false, reason: 'missing-materials' }
-  }
-  for (const [commodity, amount] of Object.entries(CRAFT_CORE_RECIPE) as [CommodityId, number][]) {
-    econ.cargo[commodity] -= amount
-  }
+  if (econ.credits < CRAFT_CORE_CREDIT_COST) return { ok: false, reason: 'missing-credits' }
+  econ.credits -= CRAFT_CORE_CREDIT_COST
   state.cores += 1
   return { ok: true }
 }
@@ -202,12 +195,8 @@ export function craftCosmetic(
   if (!recipe) return { ok: false, reason: 'unknown-recipe' }
   const coreCost = Math.max(0, Math.floor(recipe.coreCost ?? 0))
   if (state.cores < coreCost) return { ok: false, reason: 'missing-cores' }
-  for (const [commodity, amount] of Object.entries(recipe.cost) as [CommodityId, number][]) {
-    if ((econ.cargo[commodity] ?? 0) < amount) return { ok: false, reason: 'missing-materials' }
-  }
-  for (const [commodity, amount] of Object.entries(recipe.cost) as [CommodityId, number][]) {
-    econ.cargo[commodity] -= amount
-  }
+  if (econ.credits < recipe.creditCost) return { ok: false, reason: 'missing-credits' }
+  econ.credits -= recipe.creditCost
   state.cores -= coreCost
 
   const randomValue = Math.max(0, Math.min(0.999_999, Number((opts.random ?? Math.random)()) || 0))
