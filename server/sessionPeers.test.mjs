@@ -29,6 +29,12 @@ describe('resolveCallsign', () => {
     expect(resolveCallsign({ authed: false, storedName: '', requestedName: 'X'.repeat(40) })).toBe('X'.repeat(16))
     expect(resolveCallsign({ authed: false, storedName: '', requestedName: '' })).toBe('PILOT')
   })
+  it('handles null inputs (viewer auth before join): authed + null stored/requested -> PILOT', () => {
+    expect(resolveCallsign({ authed: true, storedName: null, requestedName: null })).toBe('PILOT')
+  })
+  it('treats a whitespace-only stored name as no lock', () => {
+    expect(resolveCallsign({ authed: true, storedName: '   ', requestedName: 'NEW' })).toBe('NEW')
+  })
 })
 
 describe('live session peer identity handling', () => {

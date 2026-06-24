@@ -4,7 +4,7 @@ export function resolveCallsign({ authed, storedName, requestedName }) {
   const requested = String(requestedName ?? 'PILOT').slice(0, 16) || 'PILOT'
   if (!authed) return requested
   const stored = String(storedName ?? '').slice(0, 16)
-  return stored && stored.toLowerCase() !== 'pilot' ? stored : requested
+  return stored.trim() && stored.toLowerCase() !== 'pilot' ? stored : requested
 }
 
 /** The progress/live-session key for a client: verified pubkey if authed, else the raw token. */

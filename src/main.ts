@@ -2669,7 +2669,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     pendingPubkey = null
     lockWalletButton(pubkey)
     setWalletStatus(`Connected ${pubkey.slice(0, 4)}…${pubkey.slice(-4)} — press LAUNCH to play`)
-    if (name) {
+    if (name && name.toLowerCase() !== 'pilot') {
       nicknameEl.value = name
       localStorage.setItem('callsign', name)
       net.setName(name)
