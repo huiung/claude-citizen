@@ -13,8 +13,12 @@
   "dependencies": {
     "@fontsource/orbitron": "^5.2.8",
     "@fontsource/share-tech-mono": "^5.2.7",
+    "@solana/spl-memo": "^0.2.5",
+    "@solana/spl-token": "^0.4.14",
+    "@solana/web3.js": "^1.98.4",
     "@vercel/analytics": "^2.0.1",
     "bs58": "^6.0.0",
+    "buffer": "^6.0.3",
     "three": "^0.165.0",
     "tweetnacl": "^1.0.3",
     "ws": "^8.17.0"
