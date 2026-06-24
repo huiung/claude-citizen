@@ -1,12 +1,14 @@
 // Solana wallet provider access. Phantom-first, falls back to any Wallet-Standard
 // provider injected on window that exposes the same signMessage shape.
 import bs58 from 'bs58'
+import { Transaction } from '@solana/web3.js'
 
 interface SolanaProvider {
   isPhantom?: boolean
   publicKey?: { toBase58(): string } | null
   connect(): Promise<{ publicKey: { toBase58(): string } }>
   signMessage(message: Uint8Array, display?: string): Promise<{ signature: Uint8Array }>
+  signAndSendTransaction(transaction: Transaction): Promise<{ signature: string }>
 }
 
 export class WalletError extends Error {}
@@ -41,4 +43,15 @@ export async function signMessage(message: string): Promise<string> {
   if (!p) throw new WalletError(NO_WALLET)
   const { signature } = await p.signMessage(new TextEncoder().encode(message), 'utf8')
   return bs58.encode(signature)
+}
+
+/** Deserialize a server-built unsigned tx (base64), have the wallet sign + submit it, and
+ *  resolve to the transaction signature. Phantom submits via its own RPC — no client RPC key. */
+export async function signAndSendTransaction(txBase64: string): Promise<string> {
+  const p = getProvider()
+  if (!p) throw new WalletError(NO_WALLET)
+  const bytes = Uint8Array.from(atob(txBase64), (c) => c.charCodeAt(0))
+  const tx = Transaction.from(bytes)
+  const { signature } = await p.signAndSendTransaction(tx)
+  return signature
 }
