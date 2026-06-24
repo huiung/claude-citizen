@@ -598,6 +598,7 @@ wss.on('connection', (ws) => {
             apiKey: HELIUS_API_KEY, mint: HOLDER_MINT, seller: target.sellerKey, treasury: TREASURY_WALLET,
             sellerRaw, feeRaw, nonce: reservation.nonce,
           })
+          if (!paid) console.warn(`[market-buy] payment NOT verified listing=${msg.listingId} buyer=${key} txSig=${msg.txSig} — item NOT released`)
           result = paid ? settleTokenListing(marketplace, store, key, msg.listingId, Date.now) : { ok: false, reason: 'payment-unverified' }
         }
       } else {

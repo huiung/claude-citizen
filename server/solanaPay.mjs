@@ -41,24 +41,40 @@ export function parseSettlement(txJson, { mint, seller, treasury }) {
   }
 }
 
-/** Networked: confirm `txSig` paid >= sellerRaw to seller and >= feeRaw to treasury, with the
- *  expected memo nonce, for `mint`. Resolves false on any RPC/parse failure. */
-export async function verifyTokenPayment(txSig, { apiKey, mint, seller, treasury, sellerRaw, feeRaw, nonce }) {
-  if (!apiKey || !txSig || !mint || !seller || !treasury || !nonce) return false
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** One getTransaction lookup. Returns the result object, null if the tx isn't visible yet,
+ *  or 'error' on an RPC/network failure (so the caller can retry instead of giving up). */
+async function fetchTransaction(txSig, apiKey) {
   try {
     const res = await fetch(`https://mainnet.helius-rpc.com/?api-key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         jsonrpc: '2.0', id: 'verify', method: 'getTransaction',
-        params: [txSig, { encoding: 'jsonParsed', commitment: 'finalized', maxSupportedTransactionVersion: 0 }],
+        params: [txSig, { encoding: 'jsonParsed', commitment: 'confirmed', maxSupportedTransactionVersion: 0 }],
       }),
     })
-    if (!res.ok) return false
-    const json = await res.json()
-    const { sellerRaw: gotSeller, treasuryRaw: gotTreasury, memo } = parseSettlement(json.result, { mint, seller, treasury })
-    return memo === nonce && gotSeller >= BigInt(sellerRaw) && gotTreasury >= BigInt(feeRaw)
+    if (!res.ok) return 'error'
+    return (await res.json())?.result ?? null
   } catch {
-    return false
+    return 'error'
   }
+}
+
+/** Networked: confirm `txSig` paid >= sellerRaw to seller and >= feeRaw to treasury, with the
+ *  expected memo nonce, for `mint`. The wallet returns a signature as soon as the tx is *submitted*,
+ *  so the transaction is usually not queryable yet — we poll getTransaction (confirmed commitment)
+ *  for up to attempts*intervalMs before giving up. Never settles an item without a confirmed,
+ *  matching payment; stops early if the tx confirmed with an on-chain error. */
+export async function verifyTokenPayment(txSig, { apiKey, mint, seller, treasury, sellerRaw, feeRaw, nonce, attempts = 15, intervalMs = 2000 }) {
+  if (!apiKey || !txSig || !mint || !seller || !treasury || !nonce) return false
+  for (let i = 0; i < attempts; i++) {
+    const result = await fetchTransaction(txSig, apiKey)
+    if (result === 'error' || result === null) { await sleep(intervalMs); continue } // not visible yet / transient — retry
+    if (result.meta?.err) return false // tx confirmed but failed on-chain — no payment happened
+    const { sellerRaw: gotSeller, treasuryRaw: gotTreasury, memo } = parseSettlement(result, { mint, seller, treasury })
+    return memo === nonce && gotSeller >= BigInt(sellerRaw) && gotTreasury >= BigInt(feeRaw)
+  }
+  return false // timed out waiting for the payment to confirm
 }
