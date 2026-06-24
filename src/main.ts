@@ -2307,9 +2307,17 @@ function dock(id: string): void {
           addChatLine('MARKET', 'Connect wallet to trade crafted items.', selfTier)
           return
         }
+        if (pendingTokenBuy) {
+          addChatLine('MARKET', 'A token purchase is already in progress.', selfTier)
+          return
+        }
         refreshWallet()
         const listing = marketplaceRows.find((r) => r.id === listingId)
-        if (listing?.currency === 'token') {
+        if (!listing) {
+          addChatLine('MARKET', 'Listing no longer available.', selfTier)
+          return
+        }
+        if (listing.currency === 'token') {
           addChatLine('MARKET', 'Preparing on-chain payment…', selfTier)
           pendingTokenBuy = listingId
           net.requestMarketIntent(listingId)
@@ -2719,6 +2727,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     }
   },
   onStatus(connected, online) {
+    if (!connected) pendingTokenBuy = null
     netConnected = connected
     netEl.textContent = connected ? 'SECTOR LINK: ONLINE' : 'SECTOR LINK: OFFLINE (solo)'
     onlineEl.textContent = String(online)
