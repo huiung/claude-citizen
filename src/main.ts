@@ -29,7 +29,7 @@ import {
   buildMuchLaunchTower, buildRareFrogShrine, buildSun, buildWarpField, COLONY_POS, REFINERY_POS, SPAWN_PLANET, updateDustField, updateWarpField,
 } from './render/world'
 import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS, type SurfaceKind } from './sim/solarSystem'
-import { NetClient, type MarketActionResult, type MarketListing, type PeerState, type PlayerProgress } from './net/client'
+import { NetClient, type MarketActionResult, type MarketIntentResult, type MarketListing, type PeerState, type PlayerProgress } from './net/client'
 import { dockableTarget, type DockTarget } from './sim/docking'
 import { cargoUsed, gainCredits, loadEconomy, OUTPOSTS, saveEconomy } from './sim/economy'
 import { createAsteroidField, mineStep } from './sim/mining'
@@ -143,7 +143,7 @@ import {
   registerKillBanner,
 } from './ui/combatFeedback'
 import { activeIdentity, loadWalletSession, saveWalletSession } from './net/identity'
-import { connectWallet, signMessage, hasWallet, WalletError, NO_WALLET } from './net/wallet'
+import { connectWallet, signMessage, signAndSendTransaction, hasWallet, WalletError, NO_WALLET } from './net/wallet'
 import { inject as injectAnalytics } from '@vercel/analytics'
 
 injectAnalytics() // Vercel Web Analytics (no-op off Vercel / in dev)
@@ -2048,6 +2048,7 @@ const stationMenu = new StationMenu({
 })
 document.body.appendChild(stationMenu.root)
 let marketplaceRows: MarketListing[] = []
+let pendingTokenBuy: string | null = null
 
 function refreshMarketplaceViews(): void {
   stationMenu.refresh()
@@ -2058,13 +2059,13 @@ function requestMarketplaceRefresh(): void {
   net.requestMarketList()
 }
 
-function listCraftedItemForSale(itemId: string, price: number): void {
+function listCraftedItemForSale(itemId: string, price: number, currency: 'credits' | 'token'): void {
   if (!walletSession) {
     addChatLine('MARKET', 'Connect wallet to trade crafted items.', selfTier)
     return
   }
   refreshWallet()
-  if (!net.createMarketListing(itemId, price)) addChatLine('MARKET', 'Server unavailable. Listing not created.', selfTier)
+  if (!net.createMarketListing(itemId, price, currency)) addChatLine('MARKET', 'Server unavailable. Listing not created.', selfTier)
 }
 
 function handleMarketAction(result: MarketActionResult): void {
@@ -2081,6 +2082,9 @@ function handleMarketAction(result: MarketActionResult): void {
     'own-listing': 'You cannot buy your own listing.',
     'missing-identity': 'No active pilot identity.',
     'wallet-required': 'Connect wallet to trade crafted items.',
+    'not-reserved': 'Your reservation expired — start the purchase again.',
+    'payment-unverified': 'Payment not confirmed on-chain. No item was transferred.',
+    'token-disabled': 'Token trading is unavailable right now.',
   }
   if (result.ok) {
     const okText: Record<string, string> = {
@@ -2304,7 +2308,14 @@ function dock(id: string): void {
           return
         }
         refreshWallet()
-        net.buyMarketListing(listingId)
+        const listing = marketplaceRows.find((r) => r.id === listingId)
+        if (listing?.currency === 'token') {
+          addChatLine('MARKET', 'Preparing on-chain payment…', selfTier)
+          pendingTokenBuy = listingId
+          net.requestMarketIntent(listingId)
+        } else {
+          net.buyMarketListing(listingId)
+        }
       },
       onCancelMarketListing: (listingId) => {
         if (!walletSession) {
@@ -2369,6 +2380,7 @@ const inventoryPanel = new InventoryPanel({
   onClose: restoreFlightInputAfterPanel,
   onListItem: listCraftedItemForSale,
   canListItem: () => Boolean(walletSession),
+  walletConnected: () => Boolean(walletSession),
 })
 
 function openInventoryPanel(): void {
@@ -2785,6 +2797,34 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   },
   onMarketAction(result) {
     handleMarketAction(result)
+  },
+  onMarketIntent(result: MarketIntentResult) {
+    if (result.listingId !== pendingTokenBuy) return
+    if (!result.ok || !result.txBase64) {
+      pendingTokenBuy = null
+      const messages: Record<string, string> = {
+        'wallet-required': 'Connect wallet to trade tokens.',
+        'token-disabled': 'Token trading is unavailable right now.',
+        'reserved': 'Listing reserved by another pilot — try again shortly.',
+        'not-token': 'That listing is not a token listing.',
+        'own-listing': 'You cannot buy your own listing.',
+        'build-failed': 'Could not prepare the payment. Try again.',
+        'not-found': 'Listing no longer exists.',
+        'not-active': 'Listing is no longer active.',
+      }
+      addChatLine('MARKET', messages[result.reason ?? ''] ?? 'Could not start token purchase.', selfTier)
+      return
+    }
+    const listingId = result.listingId
+    signAndSendTransaction(result.txBase64)
+      .then((txSig) => {
+        addChatLine('MARKET', 'Payment sent — verifying on-chain…', selfTier)
+        net.buyMarketListing(listingId, txSig)
+      })
+      .catch((err) => {
+        addChatLine('MARKET', err instanceof WalletError && err.message === NO_WALLET ? 'No wallet found.' : 'Wallet transaction rejected.', selfTier)
+      })
+      .finally(() => { pendingTokenBuy = null })
   },
   onKicked() {
     // Same Pilot Code launched elsewhere — this tab is now read-only to avoid save conflicts.
