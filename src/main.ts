@@ -1284,13 +1284,19 @@ function streamCelestials(now: number): void {
       spawnedBodies.delete(id)
     }
   }
+  let added = false
   for (const c of nearby) {
     if (!spawnedBodies.has(c.id)) {
       const mesh = buildCelestial(c)
       scene.add(mesh)
       spawnedBodies.set(c.id, mesh)
+      added = true
     }
   }
+  // Warm up the new bodies' shaders/textures off the main thread, so they don't hitch the first time
+  // the camera rotates them into view (three compiles a material's program lazily on first render).
+  // compileAsync skips already-compiled programs, so repeat calls are cheap.
+  if (added) void renderer.compileAsync(scene, camera).catch(() => { /* warm-up is best-effort */ })
 }
 
 // --- Player & hangar
