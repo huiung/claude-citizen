@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Vector3 } from 'three'
 import {
-  BLACK_HOLE_CENTER, HORIZON_RADIUS, INFLUENCE_RADIUS,
-  gravityAccel, distanceToCenter, isPastHorizon, withinInfluence,
+  BLACK_HOLE_CENTER, HORIZON_RADIUS, INFLUENCE_RADIUS, TIDAL_RADIUS, TIDAL_MAX_DPS,
+  gravityAccel, distanceToCenter, isPastHorizon, withinInfluence, tidalDamageRate,
 } from './blackHole'
 
 describe('black hole model', () => {
@@ -22,5 +22,15 @@ describe('black hole model', () => {
     expect(gNear.x).toBeLessThan(0)
     expect(gNear.length()).toBeGreaterThan(gFar.length())
     expect(gravityAccel(BLACK_HOLE_CENTER.clone().add(new Vector3(INFLUENCE_RADIUS + 1, 0, 0))).length()).toBe(0)
+  })
+
+  it('tidal damage is zero outside the zone, ramps with depth, and peaks at the horizon', () => {
+    const at = (dist: number) => tidalDamageRate(BLACK_HOLE_CENTER.clone().add(new Vector3(dist, 0, 0)))
+    expect(at(TIDAL_RADIUS + 100)).toBe(0)
+    expect(at(HORIZON_RADIUS)).toBe(TIDAL_MAX_DPS)
+    const mid = at((TIDAL_RADIUS + HORIZON_RADIUS) / 2)
+    expect(mid).toBeGreaterThan(0)
+    expect(mid).toBeLessThan(TIDAL_MAX_DPS)
+    expect(at(1500)).toBeGreaterThan(at(3000)) // deeper hurts more
   })
 })

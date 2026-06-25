@@ -55,7 +55,7 @@ import {
   type TimeTrialGate,
 } from './sim/timeTrial'
 import {
-  canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
+  applyDamage, canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
   isDead, type Projectile, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
 } from './sim/combat'
 import {
@@ -90,7 +90,7 @@ import {
   TRAINING_DRONE_COUNT,
   type TrainingDrone,
 } from './sim/trainingDrones'
-import { distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, withinInfluence } from './sim/blackHole'
+import { distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, tidalDamageRate, withinInfluence } from './sim/blackHole'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { InventoryPanel } from './ui/inventory'
@@ -1755,6 +1755,17 @@ function damageFlash(): void {
 function singularityFlash(): void {
   singularityFlashEl.style.opacity = '1'
   setTimeout(() => { singularityFlashEl.style.opacity = '0' }, 240)
+}
+
+/** Black-hole destruction: wipe cargo + full death drama + respawn. Triggered by crossing the
+ *  horizon OR by the hull bleeding to zero in the tidal zone. */
+function singularityDeath(now: number): void {
+  econ.cargo.ORE = 0
+  econ.cargo.ALLOY = 0
+  bhShake = 1
+  singularityFlash()
+  addChatLine('BLACK HOLE', 'Consumed by the singularity — cargo lost to the void.', 3)
+  respawnPlayer(now) // resets hull, plays the explosion, repositions, −100 cr
 }
 
 /** Jitter the camera by the current black-hole trauma, then decay it. Call once per frame. */
@@ -3742,13 +3753,15 @@ function frame(now: number): void {
     if (quantum.phase === 'idle') {
       ship.velocity.addScaledVector(gravityAccel(ship.position, _bhGrav), dt)
       if (isPastHorizon(ship.position)) {
-        econ.cargo.ORE = 0
-        econ.cargo.ALLOY = 0
-        audio.blip('explosion')
-        singularityFlash()
-        bhShake = 1
-        addChatLine('BLACK HOLE', 'Consumed by the singularity — cargo lost to the void.', 3)
-        respawnPlayer(now)
+        singularityDeath(now) // hard backstop — crossing the horizon is always fatal
+      } else {
+        const dps = tidalDamageRate(ship.position)
+        if (dps > 0) {
+          applyDamage(playerHealth, dps * dt) // hull bleeds the deeper you dive
+          lastPlayerDamageAt = now // suppresses auto-repair while in the zone
+          damageFlash() // sustained red vignette: you're being torn apart
+          if (isDead(playerHealth)) singularityDeath(now)
+        }
       }
     }
     blackHoleVisual.update(dt)

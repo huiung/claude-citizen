@@ -7,12 +7,17 @@ import { Vector3 } from 'three'
 export const BLACK_HOLE_CENTER = new Vector3(-118000, 9000, -118000)
 export const HORIZON_RADIUS = 1100 // absolute point of no return — crossing it is fatal for any hull
 export const INFLUENCE_RADIUS = 10000 // gravity begins here, gentle, and steepens toward the center
-// Peak inward pull (m/s²) at the horizon. Tuned so each hull has a distinct "point of no return"
-// well outside the horizon: a ship escapes while its engine can out-pull gravity, i.e. until
-// g(d) = accelResponse(1.6) × (topSpeed × boost). Capture radius d ≈ HORIZON × √(MAX/(1.6·Vmax)).
-// At 6000 that lands roughly: miner ~5800, hauler ~3700, fighter ~2600, interceptor ~2200 —
-// so faster hulls dive far deeper before they can no longer pull out. Tuned in-game.
-export const MAX_GRAVITY_ACCEL = 6000
+// Peak inward pull (m/s²) at the horizon. Kept moderate so a boosting ship can climb out of the
+// danger zone — the real depth limit is the tidal damage below, not gravity capture. Gravity is
+// for the "you're being dragged in, fight it" tension + drama. (Capture radius ≈ HORIZON·√(MAX/(1.6·Vmax)),
+// which at 800 sits at/inside the horizon for fast hulls — i.e. they can always pull out.)
+export const MAX_GRAVITY_ACCEL = 800
+
+// Tidal-shear damage zone: inside TIDAL_RADIUS the hull takes damage per second that ramps from 0 at
+// the zone edge to TIDAL_MAX_DPS at the horizon (steep, ∝ depth²). This is the true challenge — dive
+// deep, bleed hull, and pull out before it kills you. The hard horizon below is the instant-death backstop.
+export const TIDAL_RADIUS = 3500
+export const TIDAL_MAX_DPS = 50
 
 const _tmp = new Vector3()
 
@@ -35,6 +40,16 @@ export function gravityAccel(pos: Vector3, out: Vector3 = new Vector3()): Vector
   if (d >= INFLUENCE_RADIUS || d === 0) return out.set(0, 0, 0)
   const mag = Math.min(MAX_GRAVITY_ACCEL, MAX_GRAVITY_ACCEL * (HORIZON_RADIUS / d) ** 2)
   return out.copy(BLACK_HOLE_CENTER).sub(pos).normalize().multiplyScalar(mag)
+}
+
+/** Hull damage per second from tidal shear at `pos`: 0 at/beyond TIDAL_RADIUS, ramping ∝ depth²
+ *  to TIDAL_MAX_DPS at the horizon. Pure. The flight loop multiplies this by dt and subtracts it. */
+export function tidalDamageRate(pos: Vector3): number {
+  const d = distanceToCenter(pos)
+  if (d >= TIDAL_RADIUS) return 0
+  if (d <= HORIZON_RADIUS) return TIDAL_MAX_DPS
+  const q = (TIDAL_RADIUS - d) / (TIDAL_RADIUS - HORIZON_RADIUS) // 0 at the edge → 1 at the horizon
+  return TIDAL_MAX_DPS * q * q
 }
 
 /** Quantum-jump target: a safe staging point just outside the influence radius. Rides the same
