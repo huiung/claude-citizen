@@ -12,6 +12,7 @@ import { fetchHolderStatus, createHolderCache } from './holders.mjs'
 import { leaderboardPage, parseLeaderboardParams } from './leaderboard.mjs'
 import { createPvpKillAuditLog, pvpLeaderboardPage, mergePvpStats, recordRankedPvpKill } from './pvpLeaderboard.mjs'
 import { raceLeaderboardPage, mergeRaceStats, recordRankedRaceFinish } from './raceLeaderboard.mjs'
+import { blackHoleLeaderboardPage, mergeBlackHoleStats, recordBlackHoleRun } from './blackHoleLeaderboard.mjs'
 import { applyPvpHit, applyPvpRespawn, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
 import { resolveCallsign, identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
 import { sanitizeProgress } from './progress.mjs'
@@ -184,6 +185,12 @@ const httpServer = createServer((req, res) => {
   }
   if (req.url?.startsWith('/race-leaderboard')) {
     const top = raceLeaderboardPage(store, parseLeaderboardParams(req.url))
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+    res.end(JSON.stringify(req.url.includes('?') ? top : top.rows))
+    return
+  }
+  if (req.url?.startsWith('/black-hole-leaderboard')) {
+    const top = blackHoleLeaderboardPage(store, parseLeaderboardParams(req.url))
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
     res.end(JSON.stringify(req.url.includes('?') ? top : top.rows))
     return
@@ -509,7 +516,7 @@ wss.on('connection', (ws) => {
       const clean = sanitizeProgress(msg.progress)
       if (clean) {
         clean.name = client.name
-        store[key] = mergeRaceStats(mergePvpStats(clean, store[key]), store[key])
+        store[key] = mergeBlackHoleStats(mergeRaceStats(mergePvpStats(clean, store[key]), store[key]), store[key])
         flush()
       } // stamp callsign for the leaderboard
       return
@@ -525,6 +532,21 @@ wss.on('connection', (ws) => {
       if (recorded) {
         flush()
         send(ws, { t: 'race-recorded', timeMs: Math.max(0, Math.floor(Number(msg.timeMs) || 0)) })
+      }
+      return
+    }
+
+    if (msg.t === 'black-hole-run' && client.active) {
+      const distance = Math.max(0, Math.floor(Number(msg.distance) || 0))
+      const recorded = recordBlackHoleRun(store, {
+        key: identityKey(client),
+        name: client.name,
+        distance,
+        now: Date.now(),
+      })
+      if (recorded) {
+        flush()
+        send(ws, { t: 'black-hole-recorded', distance })
       }
       return
     }
