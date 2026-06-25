@@ -5,6 +5,8 @@ export const PVP_ZONES = {
 }
 export const PVP_ZONE = PVP_ZONES.practice
 export const PVP_HIT_RANGE = 900
+/** A pilot stays hittable out-of-zone for this long after the last hit dealt or taken (pursuit window). */
+export const PVP_COMBAT_TAG_MS = 10000
 export const PVP_KILL_REWARD = 180
 export const PVP_REPEAT_REWARD_COOLDOWN_MS = 5 * 60 * 1000
 
@@ -31,6 +33,7 @@ export function applyPvpRespawn(client, { p, q, ship } = {}) {
   if (Array.isArray(p) && p.length >= 3) client.p = p.slice(0, 3).map(Number)
   if (Array.isArray(q) && q.length >= 4) client.q = q.slice(0, 4).map(Number)
   resetPvpHull(client, ship ?? client.ship)
+  client.lastPvpCombatAt = null // a respawned pilot is no longer combat-tagged (fresh start)
   return { ok: true, hull: client.hull, maxHull: client.maxHull }
 }
 
@@ -74,9 +77,14 @@ export function applyPvpHit({ attacker, target, now, rewardMemory }) {
   if (!attacker.active || !target.active) return { ok: false, reason: 'inactive' }
   const attackerZone = pvpZoneAt(attacker.p)
   const targetZone = pvpZoneAt(target.p)
-  if (!attackerZone || !targetZone) return { ok: false, reason: 'outside-zone' }
-  if (attackerZone.id !== targetZone.id) return { ok: false, reason: 'outside-zone' }
-  if (attackerZone.id === 'ranked' && (!rankedPvpAccess(attacker.holderBalance) || !rankedPvpAccess(target.holderBalance))) {
+  const sameZone = attackerZone && targetZone && attackerZone.id === targetZone.id
+  const bothTagged = (attacker.lastPvpCombatAt != null && now - attacker.lastPvpCombatAt < PVP_COMBAT_TAG_MS)
+    && (target.lastPvpCombatAt != null && now - target.lastPvpCombatAt < PVP_COMBAT_TAG_MS)
+  // A fight can only START in-zone (seeds the tag); once both are tagged, a close pursuit may leave the zone.
+  if (!sameZone && !bothTagged) return { ok: false, reason: 'outside-zone' }
+  // Ranked access stays enforced whenever either party is in the ranked zone.
+  if ((attackerZone?.id === 'ranked' || targetZone?.id === 'ranked')
+    && (!rankedPvpAccess(attacker.holderBalance) || !rankedPvpAccess(target.holderBalance))) {
     return { ok: false, reason: 'ranked-locked' }
   }
   if (distanceSq(attacker.p, target.p) > PVP_HIT_RANGE * PVP_HIT_RANGE) return { ok: false, reason: 'too-far' }
@@ -87,6 +95,8 @@ export function applyPvpHit({ attacker, target, now, rewardMemory }) {
   const lastHitAt = attacker.lastPvpHitAt ?? 0
   if (now - lastHitAt < weapon.interval * 1000 * 0.75) return { ok: false, reason: 'cooldown' }
   attacker.lastPvpHitAt = now
+  attacker.lastPvpCombatAt = now
+  target.lastPvpCombatAt = now
 
   const targetMaxHull = target.maxHull ?? PVP_SHIPS[normalizeShip(target.ship)].hull
   target.hull = Math.max(0, (target.hull ?? targetMaxHull) - weapon.damage)

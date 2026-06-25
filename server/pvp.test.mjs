@@ -4,6 +4,8 @@ import {
   applyPvpHit,
   isInPvpZone,
   normalizeShip,
+  PVP_COMBAT_TAG_MS,
+  PVP_HIT_RANGE,
   PVP_KILL_REWARD,
   PVP_RANKED_MIN_TOKEN_BALANCE,
   PVP_ZONES,
@@ -99,5 +101,51 @@ describe('server PvP rules', () => {
     target.hull = target.maxHull - 10
     expect(applyPvpRespawn(target, { p: [1, 2, 3], q: [0, 0, 0, 1], ship: 'fighter' })).toEqual({ ok: false, reason: 'alive' })
     expect(target.hull).toBe(target.maxHull - 10)
+  })
+
+  it('lets a tagged pair keep hitting just outside the zone, within range', () => {
+    const attacker = client('a', 'fighter')
+    const target = client('b', 'hauler')
+    const first = applyPvpHit({ attacker, target, now: 1000, rewardMemory: new Map() })
+    expect(first.ok).toBe(true)
+    // both are now tagged; move them together well outside the zone but within hit range of each other
+    target.p = [attacker.p[0] + 300, attacker.p[1], attacker.p[2] + 50000]
+    attacker.p = [target.p[0] + 200, target.p[1], target.p[2]]
+    const pursue = applyPvpHit({ attacker, target, now: 1500, rewardMemory: new Map() })
+    expect(pursue.ok).toBe(true)
+  })
+
+  it('rejects an out-of-zone hit once the combat tag has expired', () => {
+    const attacker = client('a', 'fighter')
+    const target = client('b', 'hauler')
+    applyPvpHit({ attacker, target, now: 1000, rewardMemory: new Map() }) // seed tags in-zone
+    attacker.p = [0, 0, 0]
+    target.p = [200, 0, 0] // both far outside any zone, within PVP_HIT_RANGE of each other
+    // at the expiry boundary — strict < means the tag has lapsed
+    expect(applyPvpHit({ attacker, target, now: 1000 + PVP_COMBAT_TAG_MS, rewardMemory: new Map() }).reason).toBe('outside-zone')
+    // one ms before expiry — still allowed
+    expect(applyPvpHit({ attacker, target, now: 1000 + PVP_COMBAT_TAG_MS - 1, rewardMemory: new Map() }).ok).toBe(true)
+  })
+
+  it('rejects out-of-zone hits when the parties are NOT both tagged', () => {
+    const attacker = client('a', 'fighter', [PVP_ZONES.practice.x + 60000, PVP_ZONES.practice.y, PVP_ZONES.practice.z])
+    const target = client('b', 'hauler', [PVP_ZONES.practice.x + 60200, PVP_ZONES.practice.y, PVP_ZONES.practice.z])
+    expect(applyPvpHit({ attacker, target, now: 1000, rewardMemory: new Map() }).reason).toBe('outside-zone')
+  })
+
+  it('still rejects a tagged pursuit once beyond hit range', () => {
+    const attacker = client('a', 'fighter')
+    const target = client('b', 'hauler')
+    applyPvpHit({ attacker, target, now: 1000, rewardMemory: new Map() })
+    target.p = [attacker.p[0] + PVP_HIT_RANGE + 500, attacker.p[1], attacker.p[2] + 50000]
+    expect(applyPvpHit({ attacker, target, now: 1500, rewardMemory: new Map() }).reason).toBe('too-far')
+  })
+
+  it('stamps lastPvpCombatAt on both parties after a successful hit', () => {
+    const attacker = client('a', 'fighter')
+    const target = client('b', 'hauler')
+    applyPvpHit({ attacker, target, now: 4242, rewardMemory: new Map() })
+    expect(attacker.lastPvpCombatAt).toBe(4242)
+    expect(target.lastPvpCombatAt).toBe(4242)
   })
 })

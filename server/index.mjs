@@ -317,7 +317,7 @@ wss.on('connection', (ws) => {
       const client = {
         id: Math.random().toString(36).slice(2, 10),
         name: null, color: -1, p: [0, 0, 0], q: [0, 0, 0, 1], token,
-        active: false, authed: false, pubkey: null, tier: 0, holderBalance: 0, visual: 'standard', cosmetics: '',
+        active: false, authed: false, pubkey: null, tier: 0, holderBalance: 0, lastPvpCombatAt: null, visual: 'standard', cosmetics: '',
       }
       resetPvpHull(client, 'hauler')
       applySession(client, msg.sessionId)
@@ -350,7 +350,7 @@ wss.on('connection', (ws) => {
           id: Math.random().toString(36).slice(2, 10),
           name: String(msg.name ?? 'PILOT').slice(0, 16),
           color: nextColor++, p: [0, 0, 0], q: [0, 0, 0, 1], token,
-          active: true, authed: false, pubkey: null, tier: 0, holderBalance: 0, visual: normalizeHolderShipVisual(msg.visual), cosmetics: normalizeCosmetics(msg.cosmetics),
+          active: true, authed: false, pubkey: null, tier: 0, holderBalance: 0, lastPvpCombatAt: null, visual: normalizeHolderShipVisual(msg.visual), cosmetics: normalizeCosmetics(msg.cosmetics),
         }
         resetPvpHull(client, normalizeShip(msg.ship))
         clients.set(ws, client)
