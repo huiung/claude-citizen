@@ -3538,6 +3538,10 @@ function spawnAtFlightPlan(spawnMode: FlightPlanSpawnMode): void {
     lastOreStream = performance.now()
     return
   }
+  if (spawnMode === 'black-hole-approach') {
+    placePlayerAt(BLACK_HOLE_APPROACH_DESTINATION.position.clone(), BLACK_HOLE_CENTER.clone())
+    return
+  }
   faceRefinery()
   ship.velocity.set(0, 0, 0)
 }

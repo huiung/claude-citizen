@@ -16,8 +16,16 @@ describe('flight plan options', () => {
     expect(plan?.objective).toContain('Practice Arena')
   })
 
-  it('keeps the launch choices focused on the four main activities', () => {
-    expect(FLIGHT_PLAN_OPTIONS.map((plan) => plan.id)).toEqual(['race', 'mine', 'pvp', 'explore'])
+  it('routes black hole pilots to the singularity approach point', () => {
+    const plan = flightPlanById('blackhole')
+
+    expect(plan?.destinationId).toBe('black-hole-approach')
+    expect(plan?.spawnMode).toBe('black-hole-approach')
+    expect(plan?.objective).toContain('singularity')
+  })
+
+  it('keeps the launch choices focused on the main activities', () => {
+    expect(FLIGHT_PLAN_OPTIONS.map((plan) => plan.id)).toEqual(['race', 'mine', 'pvp', 'blackhole', 'explore'])
   })
 
   it('defines immediate spawn behavior for each activity', () => {
@@ -27,8 +35,8 @@ describe('flight plan options', () => {
     expect(flightPlanById('explore')?.spawnMode).toBe('default')
   })
 
-  it('hides PvP from mobile civilian pilots', () => {
+  it('hides PvP and the black hole from mobile civilian pilots', () => {
     expect(flightPlansForDevice(true).map((plan) => plan.id)).toEqual(['race', 'mine', 'explore'])
-    expect(flightPlansForDevice(false).map((plan) => plan.id)).toEqual(['race', 'mine', 'pvp', 'explore'])
+    expect(flightPlansForDevice(false).map((plan) => plan.id)).toEqual(['race', 'mine', 'pvp', 'blackhole', 'explore'])
   })
 })

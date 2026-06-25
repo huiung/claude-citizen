@@ -1,5 +1,5 @@
-export type FlightPlanId = 'race' | 'mine' | 'pvp' | 'explore'
-export type FlightPlanSpawnMode = 'race-start' | 'mine-field' | 'pvp-practice' | 'default'
+export type FlightPlanId = 'race' | 'mine' | 'pvp' | 'blackhole' | 'explore'
+export type FlightPlanSpawnMode = 'race-start' | 'mine-field' | 'pvp-practice' | 'black-hole-approach' | 'default'
 
 export interface FlightPlanOption {
   id: FlightPlanId
@@ -36,6 +36,14 @@ export const FLIGHT_PLAN_OPTIONS: readonly FlightPlanOption[] = [
     objective: 'Practice Arena selected — PvP is live inside the ring.',
   },
   {
+    id: 'blackhole',
+    title: 'Black Hole',
+    kicker: 'Closest-approach run',
+    destinationId: 'black-hole-approach',
+    spawnMode: 'black-hole-approach',
+    objective: 'Singularity ahead — dive as close as you dare and pull out alive. Watch the ESCAPE readout.',
+  },
+  {
     id: 'explore',
     title: 'Explore',
     kicker: 'Free flight',
@@ -51,5 +59,6 @@ export function flightPlanById(id: FlightPlanId): FlightPlanOption | undefined {
 
 export function flightPlansForDevice(isMobileCivilian: boolean): readonly FlightPlanOption[] {
   if (!isMobileCivilian) return FLIGHT_PLAN_OPTIONS
-  return FLIGHT_PLAN_OPTIONS.filter((plan) => plan.id !== 'pvp')
+  // Mobile companion can't set the PvP arena or black-hole quantum destinations, so hide both.
+  return FLIGHT_PLAN_OPTIONS.filter((plan) => plan.id !== 'pvp' && plan.id !== 'blackhole')
 }
