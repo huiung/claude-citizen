@@ -1,5 +1,6 @@
 import { Vector3 } from 'three'
 import type { ShipType } from './shipTypes'
+import { BLACK_HOLE_APPROACH_DESTINATION } from './blackHole'
 
 export const PVP_PRACTICE_ZONE_RADIUS = 1800
 export const PVP_RANKED_ZONE_RADIUS = 2200
@@ -82,6 +83,7 @@ export const PVP_ARENA_DESTINATIONS = [
     radius,
   })),
   CITIZEN_SEASON_HUB_DESTINATION,
+  BLACK_HOLE_APPROACH_DESTINATION,
 ] as readonly {
   id: string
   name: string

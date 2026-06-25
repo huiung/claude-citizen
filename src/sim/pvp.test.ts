@@ -47,9 +47,9 @@ describe('pvp zone rules', () => {
   })
 
   it('defines a quantum beacon that drops pilots outside the arena edge', () => {
-    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.id)).toEqual(['training.range', 'pvp.practice', 'pvp.ranked', 'landmark.citizen-season-1'])
-    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.name)).toEqual(['Training Arena', 'Practice Arena', 'Ranked Arena', 'Citizen Season 1 Hub'])
-    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.kind)).toEqual(['Drone training arena', 'Open combat beacon', 'Holder-ranked beacon', 'Orbital city hub'])
+    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.id)).toEqual(['training.range', 'pvp.practice', 'pvp.ranked', 'landmark.citizen-season-1', 'black-hole-approach'])
+    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.name)).toEqual(['Training Arena', 'Practice Arena', 'Ranked Arena', 'Citizen Season 1 Hub', 'Black Hole'])
+    expect(PVP_ARENA_DESTINATIONS.map((dest) => dest.kind)).toEqual(['Drone training arena', 'Open combat beacon', 'Holder-ranked beacon', 'Orbital city hub', 'Singularity'])
 
     const approach = pvpArenaApproachPoint(new Vector3(0, 0, 0), PVP_RANKED_ZONE_CENTER)
     const distFromCenter = approach.distanceTo(PVP_RANKED_ZONE_CENTER)
@@ -154,6 +154,14 @@ describe('pvp zone rules', () => {
     expect(shouldClearPveHostiles({ safe: false, pvpActive: false, trainingActive: true, pirates: 1, pirateProjectiles: 0 })).toBe(true)
     expect(shouldClearPveHostiles({ safe: true, pvpActive: false, pirates: 0, pirateProjectiles: 1 })).toBe(true)
     expect(shouldClearPveHostiles({ safe: false, pvpActive: false, pirates: 0, pirateProjectiles: 1 })).toBe(false)
+  })
+})
+
+describe('black hole jump destination', () => {
+  it('is present as a special destination', () => {
+    const bh = PVP_ARENA_DESTINATIONS.find((d) => d.id === 'black-hole-approach')
+    expect(bh).toBeTruthy()
+    expect(bh!.name).toBe('Black Hole')
   })
 })
 
