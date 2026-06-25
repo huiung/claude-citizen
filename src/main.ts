@@ -3197,7 +3197,6 @@ function updateOreFloats(now: number): void {
 const _lootDir = new THREE.Vector3()
 const _lootTmp = new THREE.Vector3()
 const _bhGrav = new THREE.Vector3()
-const _bhFwd = new THREE.Vector3()
 const _bhToCam = new THREE.Vector3()
 function updateLootCrates(now: number, dt: number): void {
   if (now - lastTreasure > 22000 && lootCrates.length < 8) {
@@ -3800,15 +3799,10 @@ function frame(now: number): void {
         }
       }
     }
-    // Lens flare: brightest when looking head-on at the hole, and only near it (distance-gated).
-    _bhFwd.set(0, 0, -1).applyQuaternion(camera.quaternion)
-    _bhToCam.copy(BLACK_HOLE_CENTER).sub(camera.position)
-    const bhDist = _bhToCam.length()
-    _bhToCam.normalize()
+    // Distance fade so the glow/disk show only once you're near, never looming from across the system.
+    const bhDist = _bhToCam.copy(BLACK_HOLE_CENTER).sub(camera.position).length()
     const bhDistFactor = Math.max(0, Math.min(1, 1 - (bhDist - INFLUENCE_RADIUS) / INFLUENCE_RADIUS))
-    // visible = distance-only fade (glow/disk show from any angle once near, vanish from across the
-    // system); facing folds in look direction for the lens flare.
-    blackHoleVisual.update(dt, Math.max(0, _bhFwd.dot(_bhToCam)) * bhDistFactor, bhDistFactor)
+    blackHoleVisual.update(dt, bhDistFactor)
     const inInfluence = withinInfluence(ship.position)
     const diving = inInfluence && quantum.phase === 'idle'
     if (diving) {
