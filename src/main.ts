@@ -56,7 +56,7 @@ import {
 } from './sim/timeTrial'
 import {
   applyDamage, canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
-  isDead, type Projectile, PROJECTILE_SPEED, PVP_PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
+  isDead, type Projectile, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
 } from './sim/combat'
 import {
   allowsPveHostiles,
@@ -4012,7 +4012,7 @@ function frame(now: number): void {
         ship.position,
         _fwd,
         'player',
-        combatWeaponActive ? PVP_PROJECTILE_SPEED : PROJECTILE_SPEED,
+        PROJECTILE_SPEED,
         combatWeaponActive ? pvpWeapon.damage : undefined,
         ship.velocity,
       ))

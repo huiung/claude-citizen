@@ -37,9 +37,10 @@ export function hullFraction(h: Health): number {
 }
 
 // --- Projectiles
-export const PROJECTILE_SPEED = 380
-/** Faster projectile used in PvP/drone combat so fast (boosting) hulls can actually be hit. */
-export const PVP_PROJECTILE_SPEED = 1400
+// Player shots are fast across the board so fast (boosting) hulls can actually be hit — in PvP and
+// against pirates alike. (Pirates use their own slower PIRATE_PROJECTILE_SPEED, so this doesn't make
+// enemy fire harder to dodge.)
+export const PROJECTILE_SPEED = 1400
 export const PROJECTILE_LIFE = 2.2
 export const PROJECTILE_DAMAGE = 12
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Vector3 } from 'three'
 import {
   applyDamage, canFire, createHealth, createWeapon, fire, type HitTarget, hullFraction,
-  isDead, type Projectile, PROJECTILE_SPEED, PVP_PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile, stepProjectiles,
+  isDead, type Projectile, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile, stepProjectiles,
   stepWeapon,
 } from './combat'
 
@@ -160,9 +160,8 @@ describe('weapon cooldown', () => {
   })
 })
 
-describe('PvP projectile speed', () => {
-  it('is faster than the baseline so fast ships can be hit', () => {
-    expect(PVP_PROJECTILE_SPEED).toBeGreaterThan(PROJECTILE_SPEED)
-    expect(PVP_PROJECTILE_SPEED).toBe(1400)
+describe('player projectile speed', () => {
+  it('is fast so fast (boosting) ships can be hit, in PvP and against pirates alike', () => {
+    expect(PROJECTILE_SPEED).toBe(1400)
   })
 })
