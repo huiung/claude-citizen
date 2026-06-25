@@ -3391,7 +3391,9 @@ function updateCamera(dt: number): void {
     camera.quaternion.slerp(ship.quaternion, 1 - Math.exp(-10 * dt))
   }
   // FOV gives a gentle sense of speed: a touch wider under boost / quantum travel. No hard punches.
-  const targetFov = SHOWCASE_HOLDER ? 48 : (quantum.phase === 'traveling' ? 78 : camBoost ? 82 : 72) + boostKick * 6
+  // Near the black hole it stretches hard (up to +20°) — a cheap "space is warping / lensing" feel.
+  const targetFov = (SHOWCASE_HOLDER ? 48 : (quantum.phase === 'traveling' ? 78 : camBoost ? 82 : 72) + boostKick * 6)
+    + bhPressure * 20
   camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-6 * dt))
   camera.updateProjectionMatrix()
 }
