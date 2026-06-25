@@ -8,7 +8,7 @@ import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
-import { createShipState, stepShip, type ControlInput } from './sim/physics'
+import { createShipState, stepShip, TUNING, type ControlInput } from './sim/physics'
 import {
   addCraftEngineGlowRig,
   buildCraft,
@@ -3774,9 +3774,12 @@ function frame(now: number): void {
       bhPressure = p
       if (p > 0.55) bhShake = Math.max(bhShake, ((p - 0.55) / 0.45) * 0.6) // shudder builds toward the horizon
       blackHoleEl.hidden = false
-      blackHoleEl.textContent = p > 0.55
-        ? `⚠ GRAVITY WELL — PULLING IN  ${Math.round(d).toLocaleString()}`
-        : `⚠ BLACK HOLE  ${Math.round(d).toLocaleString()}`
+      // Escape readout: current pull vs the engine authority a full boost-out can muster
+      // (accelResponse ×1.8 while boosting × this hull's max boost speed). r≥1 ⇒ past the point of no return.
+      const escapeAuthority = TUNING.accelResponse * 1.8 * effSpeed() * effBoost()
+      const r = escapeAuthority > 0 ? _bhGrav.length() / escapeAuthority : 99
+      const esc = quantum.phase !== 'idle' ? '' : r >= 1 ? '  ·  ⚠ NO ESCAPE' : r >= 0.7 ? '  ·  ESCAPE: MARGINAL' : '  ·  ESCAPE: OK'
+      blackHoleEl.textContent = `${p > 0.55 ? '⚠ GRAVITY WELL' : 'BLACK HOLE'}  ${Math.round(d).toLocaleString()}${esc}`
     } else {
       bhPressure = 0
       if (!blackHoleEl.hidden) blackHoleEl.hidden = true
