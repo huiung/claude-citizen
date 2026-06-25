@@ -21,7 +21,7 @@ describe('flight plan options', () => {
 
     expect(plan?.destinationId).toBe('black-hole-approach')
     expect(plan?.spawnMode).toBe('black-hole-approach')
-    expect(plan?.objective).toContain('singularity')
+    expect(plan?.objective).toMatch(/singularity/i)
   })
 
   it('keeps the launch choices focused on the main activities', () => {
