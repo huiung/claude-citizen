@@ -149,7 +149,7 @@ describe('station crafting forge sequence', () => {
     try {
       const { root } = mountCraftingMenu(100_000)
       craftBtn(root).click()
-      expect(root.textContent).toContain('제련 중')
+      expect(root.textContent).toContain('Forging')
       expect(craftBtn(root)!.disabled).toBe(true)
       vi.advanceTimersByTime(FORGE_STAGE_MS * (FORGE_STAGES.length + 1))
       expect(root.textContent).toContain('Forged')
@@ -177,11 +177,11 @@ describe('station crafting forge sequence', () => {
     const { menu, ctx, root } = mountCraftingMenu(0)
     ctx.crafting.pityCount = 3
     ;(menu as any).render()
-    expect(root.textContent).toContain(`다음 에픽+ 보장까지 ${PITY_GUARANTEE - 3}회`)
-    expect(root.textContent).not.toContain('확률 상승 중')
+    expect(root.textContent).toContain(`Epic+ guaranteed in ${PITY_GUARANTEE - 3}`)
+    expect(root.textContent).not.toContain('Odds rising')
     ctx.crafting.pityCount = PITY_RAMP_START + 1
     ;(menu as any).render()
-    expect(root.textContent).toContain('확률 상승 중')
+    expect(root.textContent).toContain('Odds rising')
   })
 
   it('cancels the forge when switching station tabs mid-forge', () => {

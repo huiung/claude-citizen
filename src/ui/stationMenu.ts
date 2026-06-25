@@ -32,7 +32,7 @@ const COMMODITY_ORDER: CommodityId[] = ['ORE', 'ALLOY']
 type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard' | 'hangar' | 'crafting' | 'market'
 
 /** Forge animation stage labels (smelt → shape → engrave), shown in order. */
-export const FORGE_STAGES = ['용광', '성형', '각인'] as const
+export const FORGE_STAGES = ['Smelt', 'Shape', 'Engrave'] as const
 /** Duration of each forge stage in ms; total = FORGE_STAGES.length × FORGE_STAGE_MS (≈ 3.3 s). */
 export const FORGE_STAGE_MS = 1100
 
@@ -383,7 +383,7 @@ export class StationMenu {
       const f = this.forging
       const panel = document.createElement('div')
       panel.className = 'station-empty forge-progress'
-      panel.textContent = `제련 중… ${FORGE_STAGES[f.stage]} (${f.stage + 1}/${FORGE_STAGES.length})`
+      panel.textContent = `Forging… ${FORGE_STAGES[f.stage]} (${f.stage + 1}/${FORGE_STAGES.length})`
       this.bodyEl.appendChild(panel)
     }
 
@@ -410,9 +410,9 @@ export class StationMenu {
     const remain = PITY_GUARANTEE - this.ctx.crafting.pityCount
     const pityEl = document.createElement('div')
     pityEl.className = 'station-empty pity-indicator'
-    pityEl.textContent = `다음 에픽+ 보장까지 ${remain}회`
+    pityEl.textContent = `Epic+ guaranteed in ${remain}`
     if (this.ctx.crafting.pityCount > PITY_RAMP_START) {
-      pityEl.textContent += ' · 확률 상승 중 ↑'
+      pityEl.textContent += ' · Odds rising ↑'
       pityEl.classList.add('pity-ramp')
     }
     this.bodyEl.appendChild(pityEl)
