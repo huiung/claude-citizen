@@ -1807,6 +1807,7 @@ function spawnPirateWave(now: number): void {
   const depth = deepFactor()
   if (pirates.length >= MAX_PIRATES + Math.round(depth * 2)) return // up to +2 more in deep space
   if (inSafeZone(ship.position)) return
+  if (withinInfluence(ship.position)) return // no pirates near the black hole — it's a solo skill run
   if (!allowsPveHostiles(ship.position, MOBILE_COMPANION)) return
   const pos = spawnPositionAround(ship.position, 600, pirateSpawnCount++)
   // Deeper space: tankier pirates worth a bigger bounty (risk scales with reward).

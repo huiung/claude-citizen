@@ -86,8 +86,8 @@ export function buildBlackHole(): BlackHoleVisual {
   disk.rotation.x = DISK_TILT
   group.add(disk)
 
-  // Glow halo — soft additive bloom so the hole reads as a hot light source. Distance-faded in
-  // update() so it doesn't loom over half the screen from across the system (e.g. at spawn).
+  // Big glow halo — soft additive bloom so the hole reads as a hot light source up close. Distance-
+  // faded in update() so it doesn't loom over half the screen from across the system (e.g. at spawn).
   const tex = glowTexture()
   let glow: THREE.Sprite | null = null
   if (tex) {
@@ -97,6 +97,17 @@ export function buildBlackHole(): BlackHoleVisual {
     }))
     glow.scale.setScalar(outer * 2.4)
     group.add(glow)
+  }
+
+  // Small core glow — always on (not distance-faded), small enough to read as a bright point from
+  // across the system. This is the far-away landmark; up close it's swallowed by the disk.
+  if (tex) {
+    const core = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, color: 0xffe9c8, transparent: true, opacity: 0.6,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }))
+    core.scale.setScalar(HORIZON_RADIUS * 2.6)
+    group.add(core)
   }
 
   // Infall particles — a dense swarm spiralling inward.
