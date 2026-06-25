@@ -6,7 +6,8 @@ import { BLACK_HOLE_CENTER, HORIZON_RADIUS } from '../sim/blackHole'
 
 export interface BlackHoleVisual {
   group: THREE.Group
-  update(dt: number): void
+  /** `facing` (0..1) = how head-on the camera is looking at the hole; drives the lens flare. */
+  update(dt: number, facing?: number): void
 }
 
 const DISK_TILT = Math.PI / 2.35
@@ -26,6 +27,33 @@ function glowTexture(): THREE.CanvasTexture | null {
   g.addColorStop(1, 'rgba(0,0,0,0)')
   ctx.fillStyle = g
   ctx.fillRect(0, 0, size, size)
+  return new THREE.CanvasTexture(canvas)
+}
+
+/** Anamorphic lens-flare texture: a bright core with a wide horizontal streak. Null in tests. */
+function flareTexture(): THREE.CanvasTexture | null {
+  if (typeof document === 'undefined') return null
+  const w = 512
+  const h = 128
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  // horizontal streak
+  const streak = ctx.createLinearGradient(0, 0, w, 0)
+  streak.addColorStop(0, 'rgba(120,170,255,0)')
+  streak.addColorStop(0.5, 'rgba(200,225,255,0.9)')
+  streak.addColorStop(1, 'rgba(120,170,255,0)')
+  ctx.fillStyle = streak
+  ctx.fillRect(0, h / 2 - 2, w, 4)
+  // bright round core
+  const core = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, h / 2)
+  core.addColorStop(0, 'rgba(255,255,255,0.95)')
+  core.addColorStop(0.4, 'rgba(190,210,255,0.5)')
+  core.addColorStop(1, 'rgba(120,170,255,0)')
+  ctx.fillStyle = core
+  ctx.fillRect(0, 0, w, h)
   return new THREE.CanvasTexture(canvas)
 }
 
@@ -62,10 +90,17 @@ export function buildBlackHole(): BlackHoleVisual {
   const cOuter = new THREE.Color(0x7a1e2e)
   const tmp = new THREE.Color()
   for (let i = 0; i < pos.count; i++) {
-    const r = Math.hypot(pos.getX(i), pos.getY(i))
+    const x = pos.getX(i)
+    const y = pos.getY(i)
+    const r = Math.hypot(x, y)
     const t = THREE.MathUtils.clamp((r - inner) / (outer - inner), 0, 1)
     if (t < 0.5) tmp.copy(cInner).lerp(cMid, t / 0.5)
     else tmp.copy(cMid).lerp(cOuter, (t - 0.5) / 0.5)
+    // Relativistic Doppler beaming: the side rotating toward the viewer is brighter + blue-shifted,
+    // the receding side dimmer + red-shifted. `beam` is +1 on the approaching limb, -1 on the receding.
+    const beam = Math.cos(Math.atan2(y, x))
+    tmp.multiplyScalar(1 + 0.55 * beam)
+    if (beam > 0) tmp.b = Math.min(1, tmp.b + 0.35 * beam) // blue-shift the approaching limb
     colors[i * 3] = tmp.r
     colors[i * 3 + 1] = tmp.g
     colors[i * 3 + 2] = tmp.b
@@ -108,12 +143,30 @@ export function buildBlackHole(): BlackHoleVisual {
   infall.rotation.x = DISK_TILT
   group.add(infall)
 
+  // Lens flare — an anamorphic streak that flares up when the camera looks head-on at the hole.
+  const flareTex = flareTexture()
+  const flare = flareTex
+    ? new THREE.Sprite(new THREE.SpriteMaterial({
+        map: flareTex, color: 0xffffff, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+      }))
+    : null
+  if (flare) {
+    flare.scale.set(outer * 6, outer * 1.5, 1)
+    group.add(flare)
+  }
+
   return {
     group,
-    update(dt: number): void {
-      disk.rotation.z += dt * 0.25
+    update(dt: number, facing = 1): void {
+      disk.rotation.z += dt * 0.18
       photon.rotation.z -= dt * 0.15
       infall.rotation.z -= dt * 0.4
+      if (flare) {
+        // ramp hard toward head-on so the flare is a payoff for looking into the hole, not constant
+        const target = Math.max(0, Math.min(1, facing)) ** 3 * 0.9
+        flare.material.opacity += (target - flare.material.opacity) * Math.min(1, dt * 4)
+      }
     },
   }
 }

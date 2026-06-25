@@ -3197,6 +3197,8 @@ function updateOreFloats(now: number): void {
 const _lootDir = new THREE.Vector3()
 const _lootTmp = new THREE.Vector3()
 const _bhGrav = new THREE.Vector3()
+const _bhFwd = new THREE.Vector3()
+const _bhToCam = new THREE.Vector3()
 function updateLootCrates(now: number, dt: number): void {
   if (now - lastTreasure > 22000 && lootCrates.length < 8) {
     _lootDir.set(Math.random() * 2 - 1, (Math.random() * 2 - 1) * 0.3, Math.random() * 2 - 1)
@@ -3798,7 +3800,13 @@ function frame(now: number): void {
         }
       }
     }
-    blackHoleVisual.update(dt)
+    // Lens flare: brightest when looking head-on at the hole, and only near it (distance-gated).
+    _bhFwd.set(0, 0, -1).applyQuaternion(camera.quaternion)
+    _bhToCam.copy(BLACK_HOLE_CENTER).sub(camera.position)
+    const bhDist = _bhToCam.length()
+    _bhToCam.normalize()
+    const bhDistFactor = Math.max(0, Math.min(1, 1 - (bhDist - INFLUENCE_RADIUS) / INFLUENCE_RADIUS))
+    blackHoleVisual.update(dt, Math.max(0, _bhFwd.dot(_bhToCam)) * bhDistFactor)
     const inInfluence = withinInfluence(ship.position)
     const diving = inInfluence && quantum.phase === 'idle'
     if (diving) {
