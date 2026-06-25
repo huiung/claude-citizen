@@ -31,6 +31,8 @@ export interface SolarMapSnapshot {
   remotes: SolarMapRemote[]
   selectedDestinationName: string
   activeDestination?: SolarMapNavigationTarget | null
+  /** Named quantum destinations (arenas, hub, black hole) to draw as selectable markers. */
+  landmarks?: SolarMapNavigationTarget[]
 }
 
 export type SolarMapDestinationResult = { ok: boolean; reason?: string }
@@ -185,6 +187,39 @@ function buildPlanetOrbitPoints(position: THREE.Vector3, origin: THREE.Vector3):
 
 function visualRadius(worldRadius: number, min: number, max: number): number {
   return THREE.MathUtils.clamp(Math.cbrt(Math.max(1, worldRadius)) * 0.15, min, max)
+}
+
+/** A small atlas marker distinguishing each named destination by kind. */
+function buildLandmarkMarker(id: string): THREE.Object3D {
+  const group = new THREE.Group()
+  if (id === 'black-hole-approach') {
+    group.add(new THREE.Mesh(
+      new THREE.SphereGeometry(0.42, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0x000000 }),
+    ))
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.5, 0.82, 32),
+      new THREE.MeshBasicMaterial({ color: 0xffb24a, side: THREE.DoubleSide, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
+    )
+    ring.rotation.x = Math.PI / 2.4
+    group.add(ring)
+    return group
+  }
+  if (id === 'landmark.citizen-season-1') {
+    group.add(new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.6, 0),
+      new THREE.MeshBasicMaterial({ color: 0x4ef0ff }),
+    ))
+    return group
+  }
+  const ringColor = id === 'practice' ? 0x5df4ff : id === 'ranked' ? 0xffd24d : 0x9fffb0 // training.range
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(0.55, 0.85, 32),
+    new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }),
+  )
+  ring.rotation.x = Math.PI / 2.4
+  group.add(ring)
+  return group
 }
 
 function distanceToSegment(point: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): number {
@@ -1093,6 +1128,7 @@ export class SolarSystemMap {
     if (this.layers.routes) this.addRoutes()
     this.addSolarSystem()
     this.addNearbyCelestials()
+    this.addLandmarks()
     if (this.layers.contacts) this.addRemotes()
     this.addPlayerMarker()
     this.addSelectedRegionMarker()
@@ -1408,6 +1444,37 @@ export class SolarSystemMap {
       radius: body.radius,
       targetable: true,
       note,
+    }
+  }
+
+  private addLandmarks(): void {
+    if (!this.snapshot?.landmarks) return
+    const origin = this.snapshot.playerPosition
+    for (const landmark of this.snapshot.landmarks) {
+      const marker = buildLandmarkMarker(landmark.id)
+      marker.position.copy(mapPosition(landmark.worldPosition, origin))
+      this.makeSelectable(marker, this.landmarkEntity(landmark, origin))
+      this.mapRoot.add(marker)
+      const active = this.isActiveDestination(landmark.id)
+      const selected = this.selectedId === landmark.id
+      this.addLabel(
+        landmark.name,
+        marker.position,
+        active ? 'active' : selected ? 'selected' : 'muted',
+        active ? 85 : selected ? 80 : 50,
+      )
+    }
+  }
+
+  private landmarkEntity(landmark: SolarMapNavigationTarget, origin: THREE.Vector3): SolarMapEntity {
+    return {
+      id: landmark.id,
+      name: landmark.name,
+      kind: landmark.kind,
+      worldPosition: landmark.worldPosition.clone(),
+      radius: landmark.radius,
+      distance: origin.distanceTo(landmark.worldPosition),
+      targetable: true,
     }
   }
 
@@ -2025,6 +2092,7 @@ export class SolarSystemMap {
     })
     for (const planet of PLANETS) entities.push(this.planetEntity(planet.name, planet.position, planet.radius, origin))
     for (const body of this.snapshot.nearbyCelestials.slice(0, MAX_PROCEDURAL_BODIES)) entities.push(this.celestialEntity(body, origin))
+    for (const landmark of this.snapshot.landmarks ?? []) entities.push(this.landmarkEntity(landmark, origin))
     for (const remote of this.snapshot.remotes.slice(0, MAX_RENDERED_PEERS)) {
       entities.push({
         id: `peer.${remote.id}`,
