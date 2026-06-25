@@ -99,6 +99,9 @@ export class StationMenu {
   private marketCurrency: CurrencyFilter = 'all'
   private onChange: () => void
   private onUndock: () => void
+  /** Notifies the host when an item enters (id) or leaves (null) the forge, so other
+   *  views (e.g. the inventory panel) can withhold the in-progress item until reveal. */
+  private onForgeChange?: (forgingItemId: string | null) => void
   private bodyEl!: HTMLElement
   private creditsEl!: HTMLElement
   private cargoEl!: HTMLElement
@@ -107,9 +110,10 @@ export class StationMenu {
   private forging: { item: CraftedCosmeticItem; stage: number } | null = null
   private forgeTimers: ReturnType<typeof setTimeout>[] = []
 
-  constructor(opts: { onChange: () => void; onUndock: () => void }) {
+  constructor(opts: { onChange: () => void; onUndock: () => void; onForgeChange?: (forgingItemId: string | null) => void }) {
     this.onChange = opts.onChange
     this.onUndock = opts.onUndock
+    this.onForgeChange = opts.onForgeChange
     this.root = document.createElement('div')
     this.root.id = 'station'
     this.root.hidden = true
@@ -162,7 +166,10 @@ export class StationMenu {
   private cancelForge(): void {
     for (const t of this.forgeTimers) clearTimeout(t)
     this.forgeTimers = []
-    this.forging = null
+    if (this.forging) {
+      this.forging = null
+      this.onForgeChange?.(null) // un-hide the (already committed) item in other views
+    }
   }
 
   get isOpen(): boolean {
@@ -327,6 +334,7 @@ export class StationMenu {
 
   private startForge(item: CraftedCosmeticItem): void {
     this.forging = { item, stage: 0 }
+    this.onForgeChange?.(item.id) // withhold the in-progress item from other views (inventory panel)
     this.ctx.audio.blip('forge')
     this.render()
     // stage 0 already rendered above; schedule stages 1..N-1, then the reveal
@@ -348,6 +356,7 @@ export class StationMenu {
     if (!f) return
     this.forging = null
     this.forgeTimers = []
+    this.onForgeChange?.(null) // reveal: un-hide the item in other views
     this.ctx.audio.blip('forge-done')
     if (f.item.rarity === 'legendary') this.ctx.audio.blip('error') // reuse forceField_003 asset as a legendary sting
     this.render() // render() resets hintEl to defaultHint(); the hint() below writes the reveal over it

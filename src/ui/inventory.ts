@@ -77,6 +77,8 @@ export class InventoryPanel {
   private onEquipItem?: (itemId: string) => void
   private onUnequipSlot?: (slot: 'trail' | 'hull' | 'aura') => void
   private equippedSlots: () => { trail: string | null; hull: string | null; aura: string | null }
+  /** An item id to withhold from the view (e.g. one mid-forge), or null to show everything. */
+  private hiddenItemId: string | null = null
 
   constructor(opts: {
     onClose?: () => void
@@ -127,11 +129,20 @@ export class InventoryPanel {
     return !this.root.hidden
   }
 
+  /** Withhold a single item id from the view (an item mid-forge); pass null to clear. */
+  setHiddenItem(id: string | null): void {
+    this.hiddenItemId = id
+    if (this.isOpen) this.render()
+  }
+
   render(): void {
     const state = this.state
     if (!state) return
-    const groups = groupCraftedItems(state.items)
-    this.titleEl.textContent = `${state.items.length} item${state.items.length === 1 ? '' : 's'}`
+    const items = this.hiddenItemId
+      ? state.items.filter((it) => it.id !== this.hiddenItemId)
+      : state.items
+    const groups = groupCraftedItems(items)
+    this.titleEl.textContent = `${items.length} item${items.length === 1 ? '' : 's'}`
     this.gridEl.innerHTML = ''
     if (groups.length === 0) {
       const empty = document.createElement('div')

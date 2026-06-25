@@ -2063,6 +2063,9 @@ function refreshWallet(): void {
 const stationMenu = new StationMenu({
   onChange: refreshWallet,
   onUndock: undock,
+  // Hide the in-progress item from the inventory panel while the forge animates, so the
+  // reveal isn't spoiled there either; cleared (null) on finish/cancel.
+  onForgeChange: (id) => inventoryPanel.setHiddenItem(id),
 })
 document.body.appendChild(stationMenu.root)
 

@@ -98,6 +98,35 @@ describe('listing modal', () => {
   })
 })
 
+describe('forge reveal hiding', () => {
+  const dom = () => {
+    document.body.innerHTML = '<div id="inventory-panel" hidden><div id="inventory-count"></div><div id="inventory-grid"></div><button id="inventory-close"></button></div>'
+  }
+  const state = {
+    cores: 0,
+    equipped: { trail: null, hull: null, aura: null },
+    items: [
+      { id: 'i1', recipeId: 'aurum-trail-kit', rarity: 'rare', variant: 'Blue Aurum Trail', createdAt: 1, tradable: true },
+      { id: 'i2', recipeId: 'aurum-trail-kit', rarity: 'epic', variant: 'Solar Aurum Trail', createdAt: 2, tradable: true },
+    ],
+  }
+
+  it('withholds a mid-forge item then reveals it when cleared', () => {
+    dom()
+    const panel = new InventoryPanel({})
+    panel.open(state as any)
+    expect(document.getElementById('inventory-count')!.textContent).toBe('2 items')
+
+    panel.setHiddenItem('i2')
+    expect(document.getElementById('inventory-count')!.textContent).toBe('1 item')
+    expect(document.getElementById('inventory-grid')!.textContent).not.toContain('Solar Aurum Trail')
+
+    panel.setHiddenItem(null)
+    expect(document.getElementById('inventory-count')!.textContent).toBe('2 items')
+    expect(document.getElementById('inventory-grid')!.textContent).toContain('Solar Aurum Trail')
+  })
+})
+
 describe('equip controls', () => {
   const state = {
     cores: 0,
