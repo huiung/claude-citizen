@@ -90,7 +90,8 @@ import {
   TRAINING_DRONE_COUNT,
   type TrainingDrone,
 } from './sim/trainingDrones'
-import { distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, tidalDamageRate, withinInfluence } from './sim/blackHole'
+import { distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, tidalDamageRate, TIDAL_RADIUS, withinInfluence } from './sim/blackHole'
+import { createBlackHoleRun, enterRun, sampleRun, exitRunAlive, dieRun } from './sim/blackHoleRun'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { InventoryPanel } from './ui/inventory'
@@ -1338,6 +1339,7 @@ const blackHoleEl = document.getElementById('black-hole') as HTMLElement
 const singularityFlashEl = document.getElementById('singularity-flash') as HTMLElement
 let bhShake = 0 // camera-shake trauma (0..1) from black-hole proximity / capture, decays each frame
 let bhPressure = 0 // audio rumble intensity (0..1) while within the black hole's influence
+const blackHoleRun = createBlackHoleRun()
 
 let playerEngineGlows: CraftEngineGlow[] = collectCraftEngineGlows(shipMesh)
 let playerCosmetics: ShipCosmetics = createShipCosmetics(shipMesh, scene)
@@ -1766,6 +1768,7 @@ function singularityDeath(now: number): void {
   bhShake = 1
   singularityFlash()
   addChatLine('BLACK HOLE', 'Consumed by the singularity — cargo lost to the void.', 3)
+  dieRun(blackHoleRun)
   respawnPlayer(now) // resets hull, plays the explosion, repositions, −100 cr
 }
 
@@ -2977,6 +2980,9 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     addChatLine('RACE', `Ranked time recorded: ${formatTrialTime(timeMs / 1000)}`, selfTier)
     if (!leaderboardPanelEl.hidden && hudLeaderboardMode === 'race') fetchLeaderboard('hud')
   },
+  onBlackHoleRecorded(distance) {
+    addChatLine('BLACK HOLE', `Closest approach ${distance.toLocaleString()} m recorded.`, 3)
+  },
   onMarketList(rows) {
     marketplaceRows = rows
     refreshMarketplaceViews()
@@ -3768,8 +3774,12 @@ function frame(now: number): void {
       }
     }
     blackHoleVisual.update(dt)
-    if (withinInfluence(ship.position)) {
+    const inInfluence = withinInfluence(ship.position)
+    const diving = inInfluence && quantum.phase === 'idle'
+    if (diving) {
       const d = distanceToCenter(ship.position)
+      if (!blackHoleRun.active) enterRun(blackHoleRun, d)
+      else sampleRun(blackHoleRun, d)
       // proximity: 0 at the influence edge, 1 at the horizon
       const p = Math.max(0, Math.min(1, 1 - (d - HORIZON_RADIUS) / (INFLUENCE_RADIUS - HORIZON_RADIUS)))
       bhPressure = p
@@ -3779,9 +3789,17 @@ function frame(now: number): void {
       // (accelResponse ×1.8 while boosting × this hull's max boost speed). r≥1 ⇒ past the point of no return.
       const escapeAuthority = TUNING.accelResponse * 1.8 * effSpeed() * effBoost()
       const r = escapeAuthority > 0 ? _bhGrav.length() / escapeAuthority : 99
-      const esc = quantum.phase !== 'idle' ? '' : r >= 1 ? '  ·  ⚠ NO ESCAPE' : r >= 0.7 ? '  ·  ESCAPE: MARGINAL' : '  ·  ESCAPE: OK'
-      blackHoleEl.textContent = `${p > 0.55 ? '⚠ GRAVITY WELL' : 'BLACK HOLE'}  ${Math.round(d).toLocaleString()}${esc}`
+      const esc = r >= 1 ? '  ·  ⚠ NO ESCAPE' : r >= 0.7 ? '  ·  ESCAPE: MARGINAL' : '  ·  ESCAPE: OK'
+      // CLOSEST gets a '*' until the dive reaches the tidal zone — only then will it qualify for the board.
+      const closest = `${Math.round(blackHoleRun.min).toLocaleString()}${blackHoleRun.min < TIDAL_RADIUS ? '' : '*'}`
+      blackHoleEl.textContent = `${p > 0.55 ? '⚠ GRAVITY WELL' : 'BLACK HOLE'}  ${Math.round(d).toLocaleString()}  ·  CLOSEST ${closest}${esc}`
     } else {
+      // Ship left influence OR started a quantum jump — either way the run ended alive, so submit it
+      // (exitRunAlive gates on the tidal radius and resets the run; null = never qualified).
+      if (blackHoleRun.active) {
+        const best = exitRunAlive(blackHoleRun)
+        if (best != null) net.sendBlackHoleRun(best)
+      }
       bhPressure = 0
       if (!blackHoleEl.hidden) blackHoleEl.hidden = true
     }
