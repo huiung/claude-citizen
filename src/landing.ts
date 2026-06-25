@@ -53,6 +53,7 @@ const LEADERBOARD_URLS: Record<LeaderboardMode, string> = {
   career: leaderboardEndpointUrl(WS_URL, 'career'),
   pvp: leaderboardEndpointUrl(WS_URL, 'pvp'),
   race: leaderboardEndpointUrl(WS_URL, 'race'),
+  blackhole: leaderboardEndpointUrl(WS_URL, 'blackhole'),
 }
 
 nicknameEl.value = localStorage.getItem('callsign') ?? ''

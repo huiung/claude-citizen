@@ -362,6 +362,7 @@ const LEADERBOARD_URLS: Record<LeaderboardMode, string> = {
   career: leaderboardEndpointUrl(WS_URL, 'career'),
   pvp: leaderboardEndpointUrl(WS_URL, 'pvp'),
   race: leaderboardEndpointUrl(WS_URL, 'race'),
+  blackhole: leaderboardEndpointUrl(WS_URL, 'blackhole'),
 }
 const lbListLandingEl = document.getElementById('lb-list-landing')!
 const lbListHudEl = document.getElementById('lb-list-hud')!

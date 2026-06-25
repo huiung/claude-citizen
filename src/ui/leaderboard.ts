@@ -1,6 +1,6 @@
 export const LEADERBOARD_PAGE_SIZE = 10
 export const LEADERBOARD_MAX_RANK = 100
-export type LeaderboardMode = 'career' | 'pvp' | 'race'
+export type LeaderboardMode = 'career' | 'pvp' | 'race' | 'blackhole'
 
 export function defaultLandingLeaderboardMode(isMobile: boolean): LeaderboardMode {
   return isMobile ? 'pvp' : 'career'
@@ -25,6 +25,8 @@ export interface LeaderboardRow {
   bestStreak?: number
   timeMs?: number
   finishes?: number
+  distance?: number
+  dives?: number
 }
 
 export interface LeaderboardPage {
@@ -49,7 +51,9 @@ export function leaderboardEndpointUrl(wsUrl: string, mode: LeaderboardMode): st
     ? '/pvp-leaderboard'
     : mode === 'race'
       ? '/race-leaderboard'
-      : '/leaderboard'
+      : mode === 'blackhole'
+        ? '/black-hole-leaderboard'
+        : '/leaderboard'
   return wsUrl.replace(/^ws/, 'http') + path
 }
 
@@ -66,6 +70,11 @@ export function leaderboardMetricText(row: LeaderboardRow, mode: LeaderboardMode
     const seconds = (timeMs % 60000) / 1000
     const runs = Math.max(0, Math.floor(Number(row.finishes) || 0))
     return `${String(minutes).padStart(2, '0')}:${seconds.toFixed(2).padStart(5, '0')} - ${runs.toLocaleString()} runs`
+  }
+  if (mode === 'blackhole') {
+    const distance = Math.max(0, Math.floor(Number(row.distance) || 0))
+    const dives = Math.max(0, Math.floor(Number(row.dives) || 0))
+    return `${distance.toLocaleString()} m${dives ? ` - ${dives.toLocaleString()} dives` : ''}`
   }
   return `${(Number(row.earned) || 0).toLocaleString()} cr`
 }

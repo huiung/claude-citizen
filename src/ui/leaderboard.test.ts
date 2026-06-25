@@ -73,3 +73,13 @@ describe('leaderboard UI paging', () => {
     expect(defaultLandingLeaderboardMode(false)).toBe('career')
   })
 })
+
+describe('blackhole leaderboard mode', () => {
+  it('maps to the black-hole endpoint path', () => {
+    expect(leaderboardEndpointUrl('ws://host:8080', 'blackhole')).toBe('http://host:8080/black-hole-leaderboard')
+  })
+  it('formats the closest-approach metric in metres', () => {
+    expect(leaderboardMetricText({ rank: 1, name: 'ACE', distance: 6210 } as any, 'blackhole')).toContain('6,210')
+    expect(leaderboardMetricText({ rank: 1, name: 'ACE', distance: 6210 } as any, 'blackhole')).toContain('m')
+  })
+})
