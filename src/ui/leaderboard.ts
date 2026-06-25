@@ -7,8 +7,8 @@ export function defaultLandingLeaderboardMode(isMobile: boolean): LeaderboardMod
 }
 
 export const PVP_SEASON = {
-  title: 'SEASON 0',
-  endUtcMs: Date.UTC(2026, 5, 27, 23, 59, 0),
+  title: 'SEASON 1',
+  endUtcMs: Date.UTC(2026, 5, 30, 23, 59, 0),
   prizeText: 'TOP 3: 1 / 0.5 / 0.25 SOL',
   rulesText: 'RANKED ONLY - 1,000+ TOKENS',
 } as const
@@ -81,7 +81,7 @@ export function pvpSeasonCopy(now = Date.now()): { title: string; ends: string; 
   const status = now <= PVP_SEASON.endUtcMs ? 'LIVE' : 'ENDED'
   return {
     title: `${PVP_SEASON.title} ${status}`,
-    ends: 'ENDS JUN 27 23:59 UTC',
+    ends: 'ENDS JUN 30 23:59 UTC',
     prizes: PVP_SEASON.prizeText,
     rules: PVP_SEASON.rulesText,
   }

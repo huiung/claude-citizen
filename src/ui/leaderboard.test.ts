@@ -60,12 +60,12 @@ describe('leaderboard UI paging', () => {
 
   it('formats PvP season contest copy for the leaderboard panels', () => {
     expect(pvpSeasonCopy(Date.UTC(2026, 5, 22))).toEqual({
-      title: 'SEASON 0 LIVE',
-      ends: 'ENDS JUN 27 23:59 UTC',
+      title: 'SEASON 1 LIVE',
+      ends: 'ENDS JUN 30 23:59 UTC',
       prizes: 'TOP 3: 1 / 0.5 / 0.25 SOL',
       rules: 'RANKED ONLY - 1,000+ TOKENS',
     })
-    expect(pvpSeasonCopy(Date.UTC(2026, 5, 28)).title).toBe('SEASON 0 ENDED')
+    expect(pvpSeasonCopy(Date.UTC(2026, 6, 1)).title).toBe('SEASON 1 ENDED')
   })
 
   it('opens mobile companion visitors on the PvP season board', () => {
