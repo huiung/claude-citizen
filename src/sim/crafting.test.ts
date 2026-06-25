@@ -10,6 +10,9 @@ import {
   rollCraftingRarity,
   equipCosmetic,
   unequipCosmetic,
+  PITY_GUARANTEE,
+  PITY_RAMP_START,
+  nextPityCount,
 } from './crafting'
 
 describe('crafting economy', () => {
@@ -202,5 +205,51 @@ describe('equipped loadout', () => {
   it('drops an equipped id that is not in items when normalizing', () => {
     const out = normalizeCraftingState({ cores: 0, items: [], equipped: { trail: 'ghost', hull: null, aura: null } })
     expect(out.equipped.trail).toBe(null)
+  })
+})
+
+describe('rollCraftingRarity pity', () => {
+  it('uses base bands when pityCount is 0 (unchanged)', () => {
+    expect(rollCraftingRarity(0.5, 0)).toBe('common')
+    expect(rollCraftingRarity(0.8, 0)).toBe('rare')
+    expect(rollCraftingRarity(0.95, 0)).toBe('epic')
+    expect(rollCraftingRarity(0.999, 0)).toBe('legendary')
+  })
+
+  it('defaults pityCount to 0 so existing single-arg callers are unaffected', () => {
+    expect(rollCraftingRarity(0.5)).toBe('common')
+  })
+
+  it('guarantees epic-or-better at the guarantee threshold for ANY roll', () => {
+    for (const v of [0, 0.3, 0.5, 0.84, 0.85, 0.999_999]) {
+      const r = rollCraftingRarity(v, PITY_GUARANTEE)
+      expect(r === 'epic' || r === 'legendary').toBe(true)
+    }
+    // legendary still reachable within the guarantee band
+    expect(rollCraftingRarity(0.5, PITY_GUARANTEE)).toBe('epic')
+    expect(rollCraftingRarity(0.95, PITY_GUARANTEE)).toBe('legendary')
+  })
+
+  it('raises epic+ probability monotonically across the ramp', () => {
+    const epicPlusAt = (count: number): number => {
+      let hits = 0
+      const N = 1000
+      for (let i = 0; i < N; i++) {
+        const r = rollCraftingRarity(i / N, count)
+        if (r === 'epic' || r === 'legendary') hits++
+      }
+      return hits / N
+    }
+    expect(epicPlusAt(PITY_RAMP_START)).toBeCloseTo(0.08, 1) // base ~8%
+    expect(epicPlusAt(17)).toBeGreaterThan(epicPlusAt(PITY_RAMP_START))
+    expect(epicPlusAt(PITY_GUARANTEE)).toBe(1)
+  })
+
+  it('nextPityCount resets on epic/legendary and increments otherwise', () => {
+    expect(nextPityCount('common', 5)).toBe(6)
+    expect(nextPityCount('rare', 0)).toBe(1)
+    expect(nextPityCount('epic', 9)).toBe(0)
+    expect(nextPityCount('legendary', 19)).toBe(0)
+    expect(nextPityCount('common', -3)).toBe(1) // clamps bad input
   })
 })

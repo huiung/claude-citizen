@@ -98,12 +98,36 @@ export function createCraftingState(): CraftingState {
   return { cores: 0, items: [], equipped: emptyEquipped() }
 }
 
-export function rollCraftingRarity(value = Math.random()): CraftingRarity {
+/** Crafts without an epic-or-better result before the soft ramp begins. */
+export const PITY_RAMP_START = 15
+/** Crafts without an epic-or-better result that force an epic+ guarantee. */
+export const PITY_GUARANTEE = 20
+
+/**
+ * Pity-aware rarity roll. `pityCount` is the number of consecutive prior crafts
+ * that did NOT yield epic-or-better. Pure + deterministic for a given (value, pityCount).
+ * At pityCount 0 the bands match the original odds exactly (common .70 / rare .92 /
+ * epic .99 / legendary). From PITY_RAMP_START the common/rare bands shrink linearly,
+ * pushing mass into epic+, until at PITY_GUARANTEE epic-or-better is guaranteed.
+ */
+export function rollCraftingRarity(value = Math.random(), pityCount = 0): CraftingRarity {
   const roll = Math.max(0, Math.min(0.999_999, Number(value) || 0))
-  if (roll < 0.7) return 'common'
-  if (roll < 0.92) return 'rare'
-  if (roll < 0.99) return 'epic'
+  const count = Math.max(0, Math.floor(Number(pityCount) || 0))
+  const span = PITY_GUARANTEE - PITY_RAMP_START
+  const ramp = Math.max(0, Math.min(1, (count - PITY_RAMP_START) / span))
+  const commonTop = 0.7 * (1 - ramp)
+  const rareTop = 0.92 * (1 - ramp)
+  const epicTop = 0.99 - (0.99 - 0.85) * ramp
+  if (roll < commonTop) return 'common'
+  if (roll < rareTop) return 'rare'
+  if (roll < epicTop) return 'epic'
   return 'legendary'
+}
+
+/** Next pity counter after a craft resolved to `rarity`: epic/legendary reset to 0. */
+export function nextPityCount(rarity: CraftingRarity, pityCount: number): number {
+  const count = Math.max(0, Math.floor(Number(pityCount) || 0))
+  return rarity === 'epic' || rarity === 'legendary' ? 0 : count + 1
 }
 
 export function variantForCraft(recipeId: CraftingCosmeticId, rarity: CraftingRarity): string {
