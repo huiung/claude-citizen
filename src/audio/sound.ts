@@ -117,7 +117,7 @@ export function boostPunchToParams(speedFrac: number): BoostPunchParams {
 }
 
 /** One-shot UI / combat cue kinds. */
-export type BlipKind = 'dock' | 'trade' | 'error' | 'fire' | 'hit' | 'explosion' | 'boost' | 'nav'
+export type BlipKind = 'dock' | 'trade' | 'error' | 'fire' | 'hit' | 'explosion' | 'boost' | 'nav' | 'forge' | 'forge-done'
 
 interface AssetBlipSpec {
   /** Public URLs for short one-shot variants. */
@@ -155,6 +155,10 @@ export const BLIP_SPECS: Record<BlipKind, BlipSpec> = {
   boost: { from: 180, to: 560, peak: 0.14, dur: 0.28, type: 'sawtooth' },
   // soft, quiet UI tick — cycling the quantum destination / spooling a jump
   nav: { from: 540, to: 600, peak: 0.06, dur: 0.07, type: 'sine' },
+  // metallic clank fallback for each forging stage
+  forge: { from: 240, to: 170, peak: 0.12, dur: 0.12, type: 'square' },
+  // bright rising chime when forging completes
+  'forge-done': { from: 520, to: 880, peak: 0.16, dur: 0.22, type: 'triangle' },
 }
 
 /** CC0 Kenney sci-fi sounds for short event cues. Continuous audio stays procedural. */
@@ -182,12 +186,17 @@ export const ASSET_BLIP_SPECS: Partial<Record<BlipKind, AssetBlipSpec>> = {
     ],
     gain: 0.58,
   },
-  dock: {
+  forge: {
     variants: [
-      '/audio/kenney-sci-fi/doorClose_001.ogg',
-      '/audio/kenney-sci-fi/doorOpen_001.ogg',
+      '/audio/kenney-sci-fi/impactMetal_000.ogg',
+      '/audio/kenney-sci-fi/impactMetal_001.ogg',
+      '/audio/kenney-sci-fi/impactMetal_002.ogg',
     ],
-    gain: 0.34,
+    gain: 0.3,
+  },
+  dock: {
+    variants: ['/audio/kenney-sci-fi/doorClose_001.ogg'],
+    gain: 0.16,
   },
   error: {
     variants: ['/audio/kenney-sci-fi/forceField_003.ogg'],

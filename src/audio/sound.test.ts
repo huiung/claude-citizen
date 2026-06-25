@@ -95,7 +95,7 @@ describe('BLIP_SPECS', () => {
 
 describe('ASSET_BLIP_SPECS', () => {
   it('uses CC0 asset cues for short events while leaving trade synthetic', () => {
-    expect(Object.keys(ASSET_BLIP_SPECS).sort()).toEqual(['dock', 'error', 'explosion', 'fire', 'hit'])
+    expect(Object.keys(ASSET_BLIP_SPECS).sort()).toEqual(['dock', 'error', 'explosion', 'fire', 'forge', 'hit'])
     expect(ASSET_BLIP_SPECS).not.toHaveProperty('trade')
   })
 
@@ -191,5 +191,21 @@ describe('boost punch shaping', () => {
     const stopped = boostPunchToParams(0)
 
     expect(invalid).toEqual(stopped)
+  })
+})
+
+describe('forge + dock cue tuning', () => {
+  it('defines forge and forge-done procedural fallbacks', () => {
+    for (const kind of ['forge', 'forge-done'] as const) {
+      expect(BLIP_SPECS[kind].dur).toBeGreaterThan(0)
+      expect(BLIP_SPECS[kind].peak).toBeGreaterThan(0)
+    }
+  })
+  it('forge has a metallic Kenney asset', () => {
+    expect(ASSET_BLIP_SPECS.forge!.variants.every((p) => p.includes('impactMetal'))).toBe(true)
+  })
+  it('softens the dock cue to a single quiet variant', () => {
+    expect(ASSET_BLIP_SPECS.dock!.gain).toBe(0.16)
+    expect(ASSET_BLIP_SPECS.dock!.variants).toEqual(['/audio/kenney-sci-fi/doorClose_001.ogg'])
   })
 })
