@@ -416,6 +416,7 @@ export class StationMenu {
       const unit = listing.currency === 'token' ? '$CITIZEN' : 'cr'
       const seller = listing.sellerShort ? `Seller ${listing.sellerName} (${listing.sellerShort})` : `Seller ${listing.sellerName}`
       const row = this.rowEl(`${rarity} ${listing.item.variant}`, seller, `${listing.price.toLocaleString()} ${unit}`)
+      row.classList.add('mkt-rarity-' + listing.item.rarity)
       const actions = row.querySelector('.s-actions')!
       if (listing.owned) {
         actions.appendChild(this.btn('Cancel', 'sell', !canTrade, () => this.ctx.onCancelMarketListing(listing.id)))

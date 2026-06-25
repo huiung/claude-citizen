@@ -91,4 +91,16 @@ describe('stationMenu market tab currency display', () => {
     findBtn('Show:').click() // -> Credits only (token V1 filtered out)
     expect(names().filter((n) => /V[123]/.test(n)).some((n) => n.includes('V1'))).toBe(false)
   })
+
+  it('tags market rows with a rarity class', () => {
+    const epic = {
+      id: 'e1', sellerName: 'X', price: 50, currency: 'credits' as const, status: 'active' as const, createdAt: 1, updatedAt: 1, owned: false,
+      item: { id: 'e1i', recipeId: 'nebula-hull-kit', rarity: 'epic', variant: 'Epic Nebula', createdAt: 1, tradable: true },
+    }
+    const menu = new StationMenu({ onChange() {}, onUndock() {} })
+    document.body.appendChild(menu.root)
+    menu.open(makeMarketCtx([epic]))
+    ;(menu.root.querySelector('[data-tab="market"]') as HTMLButtonElement).click()
+    expect(menu.root.querySelector('.station-row.mkt-rarity-epic')).toBeTruthy()
+  })
 })
