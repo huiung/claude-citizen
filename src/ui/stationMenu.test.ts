@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import { HOLDER_IDENTITY_KITS, STATION_TABS, StationMenu } from './stationMenu'
 import { createEconomy } from '../sim/economy'
 import { createMarket } from '../sim/market'
@@ -23,21 +23,12 @@ describe('station hangar holder identity kits', () => {
 })
 
 describe('stationMenu market tab currency display', () => {
-  it('shows $CITIZEN unit and enabled Buy for a token listing', () => {
-    const tokenRow = {
-      id: 'mkt-1',
-      sellerName: 'ACE',
-      sellerShort: '7xKX...gAsU',
-      price: 1250,
-      currency: 'token' as const,
-      status: 'active' as const,
-      item: { id: 'i1', recipeId: 'aurum-trail-kit', rarity: 'rare', variant: 'Blue Aurum Trail', createdAt: 1, tradable: true },
-      owned: false,
-      createdAt: 1,
-      updatedAt: 1,
-    }
+  // Each test mounts its own StationMenu root; clear leftovers so duplicate ids across roots
+  // don't make jsdom's scoped `#id` querySelector return null in a later test.
+  beforeEach(() => { document.body.innerHTML = '' })
 
-    const ctx = {
+  function makeMarketCtx(rows: readonly any[]) {
+    return {
       outpostId: 'colony',
       econ: createEconomy(),
       market: createMarket(),
@@ -54,27 +45,50 @@ describe('stationMenu market tab currency display', () => {
       holderTier: () => 0,
       selectedHolderShipVisual: () => 'standard' as const,
       onSelectHolderShipVisual: () => {},
-      marketplaceRows: () => [tokenRow],
+      marketplaceRows: () => rows,
       marketplaceCanTrade: () => true,
       onRefreshMarketplace: () => {},
       onBuyMarketListing: () => {},
       onCancelMarketListing: () => {},
     }
+  }
 
+  it('shows $CITIZEN unit and enabled Buy for a token listing', () => {
+    const tokenRow = {
+      id: 'mkt-1', sellerName: 'ACE', sellerShort: '7xKX...gAsU', price: 1250,
+      currency: 'token' as const, status: 'active' as const, owned: false, createdAt: 1, updatedAt: 1,
+      item: { id: 'i1', recipeId: 'aurum-trail-kit', rarity: 'rare', variant: 'Blue Aurum Trail', createdAt: 1, tradable: true },
+    }
     const menu = new StationMenu({ onChange() {}, onUndock() {} })
     document.body.appendChild(menu.root)
-    menu.open(ctx)
-
-    // Switch to the market tab
+    menu.open(makeMarketCtx([tokenRow]))
     ;(menu.root.querySelector('[data-tab="market"]') as HTMLButtonElement).click()
 
     expect(menu.root.textContent).toContain('1,250 $CITIZEN')
     expect(menu.root.textContent).toContain('ACE (7xKX...gAsU)')
-
-    const buyBtn = Array.from(menu.root.querySelectorAll('button')).find(
-      (b) => b.textContent === 'Buy',
-    ) as HTMLButtonElement | undefined
+    const buyBtn = Array.from(menu.root.querySelectorAll('button')).find((b) => b.textContent === 'Buy') as HTMLButtonElement | undefined
     expect(buyBtn).toBeDefined()
     expect(buyBtn!.disabled).toBe(false)
+  })
+
+  it('sorts and filters market listings via the controls', () => {
+    const mk = (id: string, price: number, currency: 'credits' | 'token') => ({
+      id, sellerName: 'X', price, currency, status: 'active' as const, createdAt: Number(id), updatedAt: 1, owned: false,
+      item: { id: id + 'i', recipeId: 'aurum-trail-kit', rarity: 'rare', variant: 'V' + id, createdAt: 1, tradable: true },
+    })
+    const rows = [mk('3', 300, 'credits'), mk('1', 100, 'token'), mk('2', 200, 'credits')]
+    const menu = new StationMenu({ onChange() {}, onUndock() {} })
+    document.body.appendChild(menu.root)
+    menu.open(makeMarketCtx(rows))
+    ;(menu.root.querySelector('[data-tab="market"]') as HTMLButtonElement).click()
+
+    const names = () => [...menu.root.querySelectorAll('.station-row .s-name')].map((e) => e.textContent ?? '')
+    const findBtn = (prefix: string) => [...menu.root.querySelectorAll('button')].find((b) => b.textContent?.startsWith(prefix)) as HTMLButtonElement
+
+    expect(names().filter((n) => /V[123]/.test(n))[0]).toContain('V3') // default Newest = input order
+    findBtn('Sort:').click() // -> Price ↑
+    expect(names().filter((n) => /V[123]/.test(n))[0]).toContain('V1') // cheapest first
+    findBtn('Show:').click() // -> Credits only (token V1 filtered out)
+    expect(names().filter((n) => /V[123]/.test(n)).some((n) => n.includes('V1'))).toBe(false)
   })
 })

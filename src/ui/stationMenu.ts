@@ -23,6 +23,7 @@ import { groupCraftedItems } from './inventory'
 import type { GameAudio } from '../audio/sound'
 import { HOLDER_SHIP_VISUALS, resolveHolderShipVisual, type HolderShipVisualId } from './holderShipVisual'
 import type { MarketListing } from '../net/client'
+import { sortFilterListings, type CurrencyFilter, type MarketSort } from './marketListSort'
 
 const COMMODITY_ORDER: CommodityId[] = ['ORE', 'ALLOY']
 type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard' | 'hangar' | 'crafting' | 'market'
@@ -86,6 +87,8 @@ export class StationMenu {
   readonly root: HTMLElement
   private ctx!: StationContext
   private tab: Tab = 'trade'
+  private marketSort: MarketSort = 'new'
+  private marketCurrency: CurrencyFilter = 'all'
   private onChange: () => void
   private onUndock: () => void
   private bodyEl!: HTMLElement
@@ -387,11 +390,23 @@ export class StationMenu {
     }))
     this.bodyEl.appendChild(refreshRow)
 
-    const rows = this.ctx.marketplaceRows()
+    const SORT_LABEL: Record<MarketSort, string> = { new: 'Newest', 'price-asc': 'Price ↑', 'price-desc': 'Price ↓' }
+    const SORT_NEXT: Record<MarketSort, MarketSort> = { new: 'price-asc', 'price-asc': 'price-desc', 'price-desc': 'new' }
+    const CUR_LABEL: Record<CurrencyFilter, string> = { all: 'All', credits: 'Credits', token: '$CITIZEN' }
+    const CUR_NEXT: Record<CurrencyFilter, CurrencyFilter> = { all: 'credits', credits: 'token', token: 'all' }
+    const controls = document.createElement('div')
+    controls.className = 'station-row market-controls'
+    controls.append(
+      this.btn(`Sort: ${SORT_LABEL[this.marketSort]}`, 'buy', false, () => { this.marketSort = SORT_NEXT[this.marketSort]; this.render() }),
+      this.btn(`Show: ${CUR_LABEL[this.marketCurrency]}`, 'buy', false, () => { this.marketCurrency = CUR_NEXT[this.marketCurrency]; this.render() }),
+    )
+    this.bodyEl.appendChild(controls)
+
+    const rows = sortFilterListings(this.ctx.marketplaceRows(), this.marketSort, this.marketCurrency)
     if (rows.length === 0) {
       const empty = document.createElement('div')
       empty.className = 'station-empty'
-      empty.textContent = 'No active listings yet.'
+      empty.textContent = 'No listings match this filter.'
       this.bodyEl.appendChild(empty)
       return
     }
