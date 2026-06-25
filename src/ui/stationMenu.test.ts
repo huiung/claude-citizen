@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest'
-import { HOLDER_IDENTITY_KITS, STATION_TABS, StationMenu } from './stationMenu'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { FORGE_STAGE_MS, FORGE_STAGES, HOLDER_IDENTITY_KITS, STATION_TABS, StationMenu } from './stationMenu'
 import { createEconomy } from '../sim/economy'
 import { createMarket } from '../sim/market'
 import { createUpgrades } from '../sim/upgrades'
-import { createCraftingState } from '../sim/crafting'
+import { createCraftingState, PITY_GUARANTEE, PITY_RAMP_START } from '../sim/crafting'
 
 describe('station hangar holder identity kits', () => {
   it('lists all three holder name color tiers', () => {
@@ -102,5 +102,85 @@ describe('stationMenu market tab currency display', () => {
     menu.open(makeMarketCtx([epic]))
     ;(menu.root.querySelector('[data-tab="market"]') as HTMLButtonElement).click()
     expect(menu.root.querySelector('.station-row.mkt-rarity-epic')).toBeTruthy()
+  })
+})
+
+describe('station crafting forge sequence', () => {
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  function mountCraftingMenu(credits: number) {
+    const econ = createEconomy()
+    econ.credits = credits
+    const ctx = {
+      outpostId: 'colony',
+      econ,
+      market: createMarket(),
+      crafting: createCraftingState(),
+      upgrades: createUpgrades(),
+      contracts: [],
+      audio: { blip: () => {} } as any,
+      capacity: () => 20,
+      selectedShip: () => 'hauler' as const,
+      ownedShips: new Set(['hauler'] as const),
+      shipPrices: { hauler: 0, fighter: 5000, miner: 8000, interceptor: 15000 },
+      onBuyShip: () => {},
+      onSelectShip: () => {},
+      holderTier: () => 0,
+      selectedHolderShipVisual: () => 'standard' as const,
+      onSelectHolderShipVisual: () => {},
+      marketplaceRows: () => [],
+      marketplaceCanTrade: () => true,
+      onRefreshMarketplace: () => {},
+      onBuyMarketListing: () => {},
+      onCancelMarketListing: () => {},
+    }
+    const menu = new StationMenu({ onChange() {}, onUndock() {} })
+    document.body.appendChild(menu.root)
+    menu.open(ctx as any)
+    ;(menu.root.querySelector('[data-tab="crafting"]') as HTMLButtonElement).click()
+    return { menu, ctx, root: menu.root }
+  }
+
+  const craftBtn = (root: HTMLElement) =>
+    [...root.querySelectorAll('button')].find((b) => b.textContent === 'Craft') as HTMLButtonElement
+
+  it('runs staged forging then reveals the crafted rarity', () => {
+    vi.useFakeTimers()
+    try {
+      const { root } = mountCraftingMenu(100_000)
+      craftBtn(root).click()
+      expect(root.textContent).toContain('제련 중')
+      expect(craftBtn(root)!.disabled).toBe(true)
+      vi.advanceTimersByTime(FORGE_STAGE_MS * (FORGE_STAGES.length + 1))
+      expect(root.textContent).toContain('Forged')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('guards against re-entry: a second Craft click while forging does not double-spend', () => {
+    vi.useFakeTimers()
+    try {
+      const { ctx, root } = mountCraftingMenu(100_000)
+      craftBtn(root).click()
+      expect(ctx.crafting.items.length).toBe(1)
+      craftBtn(root).click() // disabled + guarded; must not add another item
+      expect(ctx.crafting.items.length).toBe(1)
+      vi.advanceTimersByTime(FORGE_STAGE_MS * (FORGE_STAGES.length + 1))
+      expect(ctx.crafting.items.length).toBe(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows the pity indicator counting down, with a ramp highlight past the ramp start', () => {
+    const { menu, ctx, root } = mountCraftingMenu(0)
+    ctx.crafting.pityCount = 3
+    ;(menu as any).render()
+    expect(root.textContent).toContain(`다음 에픽+ 보장까지 ${PITY_GUARANTEE - 3}회`)
+    expect(root.textContent).not.toContain('확률 상승 중')
+    ctx.crafting.pityCount = PITY_RAMP_START + 1
+    ;(menu as any).render()
+    expect(root.textContent).toContain('확률 상승 중')
   })
 })

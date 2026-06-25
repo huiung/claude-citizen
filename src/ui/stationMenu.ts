@@ -16,8 +16,11 @@ import {
   CRAFTING_RARITY_LABELS,
   craftCosmetic,
   refineCraftCore,
+  PITY_GUARANTEE,
+  PITY_RAMP_START,
   type CraftingState,
   type CraftingCosmeticId,
+  type CraftedCosmeticItem,
 } from '../sim/crafting'
 import { groupCraftedItems } from './inventory'
 import type { GameAudio } from '../audio/sound'
@@ -27,6 +30,11 @@ import { sortFilterListings, type CurrencyFilter, type MarketSort } from './mark
 
 const COMMODITY_ORDER: CommodityId[] = ['ORE', 'ALLOY']
 type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard' | 'hangar' | 'crafting' | 'market'
+
+/** Forge animation stage labels (smelt → shape → engrave), shown in order. */
+export const FORGE_STAGES = ['용광', '성형', '각인'] as const
+/** Duration of each forge stage in ms; total = FORGE_STAGES.length × FORGE_STAGE_MS (≈ 3.3 s). */
+export const FORGE_STAGE_MS = 1100
 
 export const STATION_TABS: readonly { id: Tab; label: string }[] = [
   { id: 'trade', label: 'TRADE' },
@@ -96,6 +104,8 @@ export class StationMenu {
   private cargoEl!: HTMLElement
   private hintEl!: HTMLElement
   private flash: ReturnType<typeof setTimeout> | null = null
+  private forging: { item: CraftedCosmeticItem; stage: number } | null = null
+  private forgeTimers: ReturnType<typeof setTimeout>[] = []
 
   constructor(opts: { onChange: () => void; onUndock: () => void }) {
     this.onChange = opts.onChange
@@ -135,6 +145,7 @@ export class StationMenu {
   }
 
   open(ctx: StationContext): void {
+    this.cancelForge() // defensive: drop any leftover forge from a previous dock
     this.ctx = ctx
     this.root.querySelector('#station-name')!.textContent = OUTPOSTS[ctx.outpostId]?.name ?? 'OUTPOST'
     this.root.hidden = false
@@ -143,7 +154,14 @@ export class StationMenu {
   }
 
   close(): void {
+    this.cancelForge() // stop pending forge timers so the chime/hint don't fire on a hidden menu
     this.root.hidden = true
+  }
+
+  private cancelForge(): void {
+    for (const t of this.forgeTimers) clearTimeout(t)
+    this.forgeTimers = []
+    this.forging = null
   }
 
   get isOpen(): boolean {
@@ -290,6 +308,7 @@ export class StationMenu {
   }
 
   private craft(id: CraftingCosmeticId): void {
+    if (this.forging) return // ignore re-entry while a forge is running
     const r = craftCosmetic(this.ctx.econ, this.ctx.crafting, id)
     if (!r.ok) {
       this.ctx.audio.blip('error')
@@ -301,10 +320,37 @@ export class StationMenu {
       this.hint(msg[r.reason], true)
       return
     }
-    this.ctx.audio.blip('trade')
-    this.hint(`Crafted ${CRAFTING_RARITY_LABELS[r.item.rarity]} ${r.item.variant}.`)
-    this.onChange()
+    this.onChange() // commit spend + pity immediately (persists even if the reveal is interrupted)
+    this.startForge(r.item)
+  }
+
+  private startForge(item: CraftedCosmeticItem): void {
+    this.forging = { item, stage: 0 }
+    this.ctx.audio.blip('forge')
     this.render()
+    // stage 0 already rendered above; schedule stages 1..N-1, then the reveal
+    for (let i = 1; i < FORGE_STAGES.length; i++) {
+      this.forgeTimers.push(
+        setTimeout(() => {
+          if (!this.forging) return
+          this.forging.stage = i
+          this.ctx.audio.blip('forge')
+          this.render()
+        }, FORGE_STAGE_MS * i),
+      )
+    }
+    this.forgeTimers.push(setTimeout(() => this.finishForge(), FORGE_STAGE_MS * FORGE_STAGES.length))
+  }
+
+  private finishForge(): void {
+    const f = this.forging
+    if (!f) return
+    this.forging = null
+    this.forgeTimers = []
+    this.ctx.audio.blip('forge-done')
+    if (f.item.rarity === 'legendary') this.ctx.audio.blip('error') // reuse forceField_003 asset as a legendary sting
+    this.render() // render() resets hintEl to defaultHint(); the hint() below writes the reveal over it
+    this.hint(`Forged ${CRAFTING_RARITY_LABELS[f.item.rarity]} ${f.item.variant}.`)
   }
 
   private refineCore(): void {
@@ -332,6 +378,14 @@ export class StationMenu {
     note.textContent = 'Cosmetic only for now. Crafted items become the base for future equip and marketplace features.'
     this.bodyEl.appendChild(note)
 
+    if (this.forging) {
+      const f = this.forging
+      const panel = document.createElement('div')
+      panel.className = 'station-empty forge-progress'
+      panel.textContent = `제련 중… ${FORGE_STAGES[f.stage]} (${f.stage + 1}/${FORGE_STAGES.length})`
+      this.bodyEl.appendChild(panel)
+    }
+
     const coreCost = this.craftingCostText(CRAFT_CORE_CREDIT_COST)
     const canRefine = this.ctx.econ.credits >= CRAFT_CORE_CREDIT_COST
     const coreRow = this.rowEl('Craft Core', 'Convert credits into a rare crafting catalyst.', `${this.ctx.crafting.cores} CORE`)
@@ -342,6 +396,7 @@ export class StationMenu {
     for (const recipe of CRAFTING_RECIPES) {
       const cost = this.craftingCostText(recipe.creditCost, recipe.coreCost)
       const affordable =
+        !this.forging &&
         this.ctx.econ.credits >= recipe.creditCost &&
         this.ctx.crafting.cores >= (recipe.coreCost ?? 0)
       const craftedCount = this.ctx.crafting.items.filter((item) => item.recipeId === recipe.id).length
@@ -350,6 +405,16 @@ export class StationMenu {
       actions.appendChild(this.btn('Craft', 'buy', !affordable, () => this.craft(recipe.id)))
       this.bodyEl.appendChild(row)
     }
+
+    const remain = PITY_GUARANTEE - this.ctx.crafting.pityCount
+    const pityEl = document.createElement('div')
+    pityEl.className = 'station-empty pity-indicator'
+    pityEl.textContent = `다음 에픽+ 보장까지 ${remain}회`
+    if (this.ctx.crafting.pityCount > PITY_RAMP_START) {
+      pityEl.textContent += ' · 확률 상승 중 ↑'
+      pityEl.classList.add('pity-ramp')
+    }
+    this.bodyEl.appendChild(pityEl)
 
     this.renderCraftingInventory()
   }
