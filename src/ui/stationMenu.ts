@@ -136,6 +136,7 @@ export class StationMenu {
     this.root.querySelector('#station-undock')!.addEventListener('click', () => this.onUndock())
     this.root.querySelectorAll('.station-tabs button').forEach((btn) =>
       btn.addEventListener('click', () => {
+        this.cancelForge()
         this.tab = (btn as HTMLElement).dataset.tab as Tab
         this.render()
       }))

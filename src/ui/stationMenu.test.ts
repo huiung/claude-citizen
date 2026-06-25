@@ -183,4 +183,20 @@ describe('station crafting forge sequence', () => {
     ;(menu as any).render()
     expect(root.textContent).toContain('확률 상승 중')
   })
+
+  it('cancels the forge when switching station tabs mid-forge', () => {
+    vi.useFakeTimers()
+    try {
+      const calls: string[] = []
+      const { ctx, root } = mountCraftingMenu(100_000)
+      ctx.audio.blip = (k: string) => calls.push(k)
+      craftBtn(root).click()                 // forge starts (fires one 'forge')
+      const afterStart = calls.length
+      ;(root.querySelector('[data-tab="trade"]') as HTMLButtonElement).click()  // switch away
+      vi.advanceTimersByTime(FORGE_STAGE_MS * (FORGE_STAGES.length + 1))
+      expect(calls.length).toBe(afterStart)  // no further forge blips after switching
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
