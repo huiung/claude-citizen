@@ -2065,6 +2065,33 @@ const stationMenu = new StationMenu({
   onUndock: undock,
 })
 document.body.appendChild(stationMenu.root)
+
+// DEV-only crafting test helpers. Gated on import.meta.env.DEV, so this whole block is
+// dead-code-eliminated from production builds (`npm run build`). In `npm run dev`, open the
+// browser console: `dev.grant()` seeds credits + cores so you can spam-craft and watch the
+// forge animation / pity ramp / legendary sting; `dev.setPity(20)` forces the next craft to
+// hit the epic+ guarantee. Dock at a station first so the panel re-renders.
+if (import.meta.env.DEV) {
+  ;(window as unknown as { dev: Record<string, (...args: number[]) => void> }).dev = {
+    grant(credits = 2_000_000, cores = 12) {
+      econ.credits += credits
+      econ.earned += credits
+      crafting.cores += cores
+      saveEconomy(econ)
+      saveCraftingState(crafting, localStorage)
+      updateWalletHUD()
+      stationMenu.refresh()
+      console.log(`[dev] +${credits} cr, +${cores} cores → ${econ.credits} cr, ${crafting.cores} cores (rank earned ${econ.earned})`)
+    },
+    setPity(n = 19) {
+      crafting.pityCount = Math.max(0, Math.min(20, Math.floor(n)))
+      saveCraftingState(crafting, localStorage)
+      stationMenu.refresh()
+      console.log(`[dev] pityCount = ${crafting.pityCount} (set 20 → next craft is guaranteed epic+)`)
+    },
+  }
+  console.log('[dev] crafting test helpers: dev.grant(credits?=2e6, cores?=12), dev.setPity(n?=19)')
+}
 let marketplaceRows: MarketListing[] = []
 let pendingTokenBuy: string | null = null
 
