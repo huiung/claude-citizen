@@ -89,7 +89,8 @@ export function sanitizeCrafting(value) {
     const id = rawEquipped[slot]
     if (typeof id === 'string' && ids.has(id)) equipped[slot] = id
   }
-  return { cores, items, equipped }
+  const pityCount = Math.max(0, Math.min(20, Math.floor(Number(value?.pityCount) || 0)))
+  return { cores, items, equipped, pityCount }
 }
 
 /** Accept only the small, known progress shape - never trust the client blindly. */

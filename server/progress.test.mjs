@@ -39,6 +39,7 @@ describe('progress sanitization', () => {
         },
       ],
       equipped: { trail: null, hull: null, aura: null },
+      pityCount: 0,
     })
   })
 
@@ -50,7 +51,7 @@ describe('progress sanitization', () => {
       hangar: {},
     })
 
-    expect(clean?.crafting).toEqual({ cores: 0, items: [], equipped: { trail: null, hull: null, aura: null } })
+    expect(clean?.crafting).toEqual({ cores: 0, items: [], equipped: { trail: null, hull: null, aura: null }, pityCount: 0 })
   })
 
   it('migrates legacy crafted cosmetic ids into common inventory items', () => {
@@ -81,5 +82,13 @@ describe('sanitizeCrafting equipped', () => {
   it('keeps an equipped slot only when the item id is present', () => {
     const out = sanitizeCrafting({ cores: 0, items: [item], equipped: { trail: 'i1', hull: 'ghost', aura: null } })
     expect(out.equipped).toEqual({ trail: 'i1', hull: null, aura: null })
+  })
+
+  it('passes through and clamps pityCount', () => {
+    expect(sanitizeCrafting({ cores: 0, items: [] }).pityCount).toBe(0)        // missing → 0
+    expect(sanitizeCrafting({ cores: 0, items: [], pityCount: 12 }).pityCount).toBe(12)
+    expect(sanitizeCrafting({ cores: 0, items: [], pityCount: -4 }).pityCount).toBe(0)   // clamp low
+    expect(sanitizeCrafting({ cores: 0, items: [], pityCount: 999 }).pityCount).toBe(20) // clamp to guarantee
+    expect(sanitizeCrafting({ cores: 0, items: [], pityCount: 7.9 }).pityCount).toBe(7)  // floored
   })
 })
