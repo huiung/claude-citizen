@@ -376,6 +376,8 @@ const lbModeRaceLandingEl = document.getElementById('lb-mode-race-landing') as H
 const lbModeCareerHudEl = document.getElementById('lb-mode-career-hud') as HTMLButtonElement
 const lbModePvpHudEl = document.getElementById('lb-mode-pvp-hud') as HTMLButtonElement
 const lbModeRaceHudEl = document.getElementById('lb-mode-race-hud') as HTMLButtonElement
+const lbModeBlackholeLandingEl = document.getElementById('lb-mode-blackhole-landing') as HTMLButtonElement
+const lbModeBlackholeHudEl = document.getElementById('lb-mode-blackhole-hud') as HTMLButtonElement
 const lbSeasonLandingEl = document.getElementById('lb-season-landing')!
 const lbSeasonHudEl = document.getElementById('lb-season-hud')!
 const lbPrevLandingEl = document.getElementById('lb-prev-landing') as HTMLButtonElement
@@ -439,19 +441,24 @@ function syncLeaderboardModeButtons(slot: 'landing' | 'hud'): void {
   const careerBtn = slot === 'landing' ? lbModeCareerLandingEl : lbModeCareerHudEl
   const pvpBtn = slot === 'landing' ? lbModePvpLandingEl : lbModePvpHudEl
   const raceBtn = slot === 'landing' ? lbModeRaceLandingEl : lbModeRaceHudEl
+  const blackholeBtn = slot === 'landing' ? lbModeBlackholeLandingEl : lbModeBlackholeHudEl
   const seasonEl = slot === 'landing' ? lbSeasonLandingEl : lbSeasonHudEl
   title.textContent = mode === 'pvp'
     ? (slot === 'landing' ? 'RANKED PVP' : 'RANKED PVP - kills')
     : mode === 'race'
       ? (slot === 'landing' ? 'RANKED RACE' : 'RANKED RACE - best time')
-      : (slot === 'landing' ? 'TOP PILOTS' : 'TOP PILOTS - credits')
+      : mode === 'blackhole'
+        ? (slot === 'landing' ? 'CLOSEST APPROACH' : 'CLOSEST APPROACH - to the singularity')
+        : (slot === 'landing' ? 'TOP PILOTS' : 'TOP PILOTS - credits')
   renderPvpSeasonPanel(seasonEl, mode)
   careerBtn.classList.toggle('active', mode === 'career')
   pvpBtn.classList.toggle('active', mode === 'pvp')
   raceBtn.classList.toggle('active', mode === 'race')
+  blackholeBtn.classList.toggle('active', mode === 'blackhole')
   careerBtn.setAttribute('aria-pressed', String(mode === 'career'))
   pvpBtn.setAttribute('aria-pressed', String(mode === 'pvp'))
   raceBtn.setAttribute('aria-pressed', String(mode === 'race'))
+  blackholeBtn.setAttribute('aria-pressed', String(mode === 'blackhole'))
 }
 function renderLeaderboardPage(
   listEl: HTMLElement,
@@ -507,6 +514,8 @@ lbModeRaceLandingEl.addEventListener('click', () => setLeaderboardMode('landing'
 lbModeCareerHudEl.addEventListener('click', () => setLeaderboardMode('hud', 'career'))
 lbModePvpHudEl.addEventListener('click', () => setLeaderboardMode('hud', 'pvp'))
 lbModeRaceHudEl.addEventListener('click', () => setLeaderboardMode('hud', 'race'))
+lbModeBlackholeLandingEl.addEventListener('click', () => setLeaderboardMode('landing', 'blackhole'))
+lbModeBlackholeHudEl.addEventListener('click', () => setLeaderboardMode('hud', 'blackhole'))
 syncLeaderboardModeButtons('landing')
 syncLeaderboardModeButtons('hud')
 function refreshLandingStats(): void {
