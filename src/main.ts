@@ -90,7 +90,7 @@ import {
   TRAINING_DRONE_COUNT,
   type TrainingDrone,
 } from './sim/trainingDrones'
-import { distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, tidalDamageRate, TIDAL_RADIUS, withinInfluence } from './sim/blackHole'
+import { BLACK_HOLE_APPROACH_DESTINATION, BLACK_HOLE_CENTER, distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, tidalDamageRate, TIDAL_RADIUS, withinInfluence } from './sim/blackHole'
 import { createBlackHoleRun, enterRun, sampleRun, exitRunAlive, dieRun } from './sim/blackHoleRun'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
@@ -1781,7 +1781,16 @@ function singularityDeath(now: number): void {
   singularityFlash()
   addChatLine('BLACK HOLE', 'Consumed by the singularity — cargo lost to the void.', 3)
   dieRun(blackHoleRun)
-  respawnPlayer(now) // resets hull, plays the explosion, repositions, −100 cr
+  // Death drama (explosion at the point of destruction) ...
+  spawnExplosion(ship.position, now)
+  audio.blip('explosion')
+  damageFlash()
+  // ... then respawn just OUTSIDE the influence radius, facing the hole, so a re-dive is immediate
+  // (no flight back across the system + re-jump). Mirrors respawnPlayer's hull/credit penalty.
+  playerHealth.hull = playerHealth.max
+  econ.credits = Math.max(0, econ.credits - 100)
+  placePlayerAt(BLACK_HOLE_APPROACH_DESTINATION.position.clone(), BLACK_HOLE_CENTER.clone())
+  refreshWallet()
 }
 
 /** Jitter the camera by the current black-hole trauma, then decay it. Call once per frame. */
