@@ -268,8 +268,13 @@
     .station-row.mkt-rarity-rare .s-name { color: #6fe8ff; }
     .station-row.mkt-rarity-epic .s-name { color: #c08aff; }
     .station-row.mkt-rarity-legendary .s-name { color: #ffe08a; }
-    /* The sort/currency controls row lays its two buttons inline, overriding the station-row grid. */
-    .station-row.market-controls { display: flex; gap: 6px; }
+    /* Sort/currency controls — compact chips matching the station tab buttons, not action buttons. */
+    .market-controls { display: flex; gap: 6px; margin: 4px 0 8px; }
+    .market-ctl {
+      font-family: inherit; font-size: 11px; letter-spacing: 1.2px; padding: 5px 12px;
+      border: 1px solid #2f7a45; background: transparent; color: #7fc99a; cursor: pointer; border-radius: 4px;
+    }
+    .market-ctl:hover { background: rgba(18, 60, 32, .4); color: #9fffb0; }
     .s-name { font-size: 14px; }
     .s-price { color: #ffe08a; font-size: 13px; }
     .s-held { opacity: .7; font-size: 12px; }

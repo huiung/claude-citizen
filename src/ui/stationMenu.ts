@@ -395,10 +395,17 @@ export class StationMenu {
     const CUR_LABEL: Record<CurrencyFilter, string> = { all: 'All', credits: 'Credits', token: '$CITIZEN' }
     const CUR_NEXT: Record<CurrencyFilter, CurrencyFilter> = { all: 'credits', credits: 'token', token: 'all' }
     const controls = document.createElement('div')
-    controls.className = 'station-row market-controls'
+    controls.className = 'market-controls'
+    const ctl = (label: string, onClick: () => void): HTMLButtonElement => {
+      const b = document.createElement('button')
+      b.className = 'market-ctl'
+      b.textContent = label
+      b.addEventListener('click', onClick)
+      return b
+    }
     controls.append(
-      this.btn(`Sort: ${SORT_LABEL[this.marketSort]}`, 'buy', false, () => { this.marketSort = SORT_NEXT[this.marketSort]; this.render() }),
-      this.btn(`Show: ${CUR_LABEL[this.marketCurrency]}`, 'buy', false, () => { this.marketCurrency = CUR_NEXT[this.marketCurrency]; this.render() }),
+      ctl(`Sort: ${SORT_LABEL[this.marketSort]}`, () => { this.marketSort = SORT_NEXT[this.marketSort]; this.render() }),
+      ctl(`Show: ${CUR_LABEL[this.marketCurrency]}`, () => { this.marketCurrency = CUR_NEXT[this.marketCurrency]; this.render() }),
     )
     this.bodyEl.appendChild(controls)
 
