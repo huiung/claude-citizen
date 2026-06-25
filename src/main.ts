@@ -96,6 +96,7 @@ import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { InventoryPanel } from './ui/inventory'
 import { SolarSystemMap, type SolarMapDestinationResult, type SolarMapNavigationTarget } from './ui/solarSystemMap'
+import { landmarkTargets } from './ui/solarMapLandmarks'
 import { holderChatNameClass, holderNameplateClass, holderNameplateText } from './ui/nameplate'
 import {
   canPageLeaderboard,
@@ -2435,6 +2436,7 @@ const solarMap = new SolarSystemMap({
     }),
     selectedDestinationName: activeQuantumDestination().name,
     activeDestination: activeDestinationSnapshot(),
+    landmarks: landmarkTargets(MOBILE_COMPANION),
   }),
   onClose: () => {
     if (MOBILE_COMPANION && running && !docked && !chatOpen) mobileControlsEl.hidden = false
