@@ -34,6 +34,7 @@ const lbTitleLandingEl = document.getElementById('lb-title-landing')!
 const lbModeCareerLandingEl = document.getElementById('lb-mode-career-landing') as HTMLButtonElement
 const lbModePvpLandingEl = document.getElementById('lb-mode-pvp-landing') as HTMLButtonElement
 const lbModeRaceLandingEl = document.getElementById('lb-mode-race-landing') as HTMLButtonElement
+const lbModeBlackholeLandingEl = document.getElementById('lb-mode-blackhole-landing') as HTMLButtonElement
 const lbSeasonLandingEl = document.getElementById('lb-season-landing')!
 const lbPrevLandingEl = document.getElementById('lb-prev-landing') as HTMLButtonElement
 const lbNextLandingEl = document.getElementById('lb-next-landing') as HTMLButtonElement
@@ -92,6 +93,7 @@ function escapeHtml(s: string): string {
 function leaderboardMetric(row: LeaderboardRow): string {
   if (leaderboardMode === 'pvp') return leaderboardMetricText(row, 'pvp')
   if (leaderboardMode === 'race') return leaderboardMetricText(row, 'race')
+  if (leaderboardMode === 'blackhole') return leaderboardMetricText(row, 'blackhole')
   const cr = Number(row.earned) || 0
   return `[${rankForCredits(cr).name}] ${leaderboardMetricText(row, 'career')}`
 }
@@ -108,14 +110,18 @@ function syncLeaderboardModeButtons(): void {
     ? 'RANKED PVP'
     : leaderboardMode === 'race'
       ? 'RANKED RACE'
-      : 'TOP PILOTS'
+      : leaderboardMode === 'blackhole'
+        ? 'CLOSEST APPROACH'
+        : 'TOP PILOTS'
   renderPvpSeasonPanel()
   lbModeCareerLandingEl.classList.toggle('active', leaderboardMode === 'career')
   lbModePvpLandingEl.classList.toggle('active', leaderboardMode === 'pvp')
   lbModeRaceLandingEl.classList.toggle('active', leaderboardMode === 'race')
+  lbModeBlackholeLandingEl.classList.toggle('active', leaderboardMode === 'blackhole')
   lbModeCareerLandingEl.setAttribute('aria-pressed', String(leaderboardMode === 'career'))
   lbModePvpLandingEl.setAttribute('aria-pressed', String(leaderboardMode === 'pvp'))
   lbModeRaceLandingEl.setAttribute('aria-pressed', String(leaderboardMode === 'race'))
+  lbModeBlackholeLandingEl.setAttribute('aria-pressed', String(leaderboardMode === 'blackhole'))
 }
 
 function setLeaderboardMode(mode: LeaderboardMode): void {
@@ -132,7 +138,9 @@ function renderLeaderboard(rows: LeaderboardRow[], offset: number): void {
       ? '<li class="lb-empty">no ranked kills yet</li>'
       : leaderboardMode === 'race'
         ? '<li class="lb-empty">no race times yet</li>'
-        : '<li class="lb-empty">no pilots yet - be the first</li>'
+        : leaderboardMode === 'blackhole'
+          ? '<li class="lb-empty">no survived approaches yet</li>'
+          : '<li class="lb-empty">no pilots yet - be the first</li>'
     return
   }
   lbListLandingEl.innerHTML = rows.map((r, i) => {
@@ -165,6 +173,7 @@ lbNextLandingEl.addEventListener('click', () => changeLeaderboardPage(1))
 lbModeCareerLandingEl.addEventListener('click', () => setLeaderboardMode('career'))
 lbModePvpLandingEl.addEventListener('click', () => setLeaderboardMode('pvp'))
 lbModeRaceLandingEl.addEventListener('click', () => setLeaderboardMode('race'))
+lbModeBlackholeLandingEl.addEventListener('click', () => setLeaderboardMode('blackhole'))
 syncLeaderboardModeButtons()
 
 function refreshLandingStats(): void {

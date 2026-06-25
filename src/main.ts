@@ -412,6 +412,7 @@ function renderLeaderboardRows(listEl: HTMLElement, rows: LeaderboardRow[], offs
 function leaderboardMetric(row: LeaderboardRow, mode: LeaderboardMode): string {
   if (mode === 'pvp') return leaderboardMetricText(row, 'pvp')
   if (mode === 'race') return leaderboardMetricText(row, 'race')
+  if (mode === 'blackhole') return leaderboardMetricText(row, 'blackhole')
   const cr = Number(row.earned) || 0
   return `[${rankForCredits(cr).name}] ${leaderboardMetricText(row, 'career')}`
 }
@@ -421,7 +422,9 @@ function renderLeaderboardRowsForMode(listEl: HTMLElement, rows: LeaderboardRow[
       ? '<li class="lb-empty">no ranked kills yet</li>'
       : mode === 'race'
         ? '<li class="lb-empty">no race times yet</li>'
-        : '<li class="lb-empty">no pilots yet - be the first</li>'
+        : mode === 'blackhole'
+          ? '<li class="lb-empty">no survived approaches yet</li>'
+          : '<li class="lb-empty">no pilots yet - be the first</li>'
     return
   }
   listEl.innerHTML = rows.map((r, i) => {
