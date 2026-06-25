@@ -173,6 +173,7 @@ describe('crafting economy', () => {
         },
       ],
       equipped: { trail: null, hull: null, aura: null },
+      pityCount: 0,
     })
   })
 })
@@ -189,7 +190,7 @@ describe('equipped loadout', () => {
   })
 
   it('equips an item into its recipe category and unequips', () => {
-    const state = { cores: 0, items: [{ ...item }], equipped: { trail: null, hull: null, aura: null } }
+    const state = { cores: 0, items: [{ ...item }], equipped: { trail: null, hull: null, aura: null }, pityCount: 0 }
     equipCosmetic(state, 'i1')
     expect(state.equipped.trail).toBe('i1')
     unequipCosmetic(state, 'trail')
@@ -251,5 +252,38 @@ describe('rollCraftingRarity pity', () => {
     expect(nextPityCount('epic', 9)).toBe(0)
     expect(nextPityCount('legendary', 19)).toBe(0)
     expect(nextPityCount('common', -3)).toBe(1) // clamps bad input
+  })
+})
+
+describe('crafting state pity persistence', () => {
+  it('starts pityCount at 0', () => {
+    expect(createCraftingState().pityCount).toBe(0)
+  })
+
+  it('craftCosmetic advances pityCount and resets on epic+', () => {
+    const econ = { credits: 10_000_000, earned: 0, cargo: { ORE: 0, ALLOY: 0 } }
+    const state = createCraftingState()
+    // forced common roll → pity increments
+    craftCosmetic(econ, state, 'aurum-trail-kit', { random: () => 0.1, now: () => 1 })
+    expect(state.pityCount).toBe(1)
+    // forced epic roll → pity resets
+    craftCosmetic(econ, state, 'aurum-trail-kit', { random: () => 0.95, now: () => 2 })
+    expect(state.pityCount).toBe(0)
+  })
+
+  it('leaves pityCount untouched when a craft fails', () => {
+    const econ = { credits: 0, earned: 0, cargo: { ORE: 0, ALLOY: 0 } }
+    const state = createCraftingState()
+    state.pityCount = 7
+    const r = craftCosmetic(econ, state, 'aurum-trail-kit', { random: () => 0.1, now: () => 1 })
+    expect(r.ok).toBe(false)
+    expect(state.pityCount).toBe(7)
+  })
+
+  it('normalizeCraftingState clamps pityCount to [0, PITY_GUARANTEE]', () => {
+    expect(normalizeCraftingState({ pityCount: -5 }).pityCount).toBe(0)
+    expect(normalizeCraftingState({ pityCount: 999 }).pityCount).toBe(PITY_GUARANTEE)
+    expect(normalizeCraftingState({ pityCount: 12 }).pityCount).toBe(12)
+    expect(normalizeCraftingState({}).pityCount).toBe(0)
   })
 })

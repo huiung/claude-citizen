@@ -25,6 +25,7 @@ export interface CraftingState {
   cores: number
   items: CraftedCosmeticItem[]
   equipped: Record<CosmeticCategory, string | null>
+  pityCount: number
 }
 
 export interface CraftingRollOptions {
@@ -95,7 +96,7 @@ export function emptyEquipped(): Record<CosmeticCategory, string | null> {
 }
 
 export function createCraftingState(): CraftingState {
-  return { cores: 0, items: [], equipped: emptyEquipped() }
+  return { cores: 0, items: [], equipped: emptyEquipped(), pityCount: 0 }
 }
 
 /** Crafts without an epic-or-better result before the soft ramp begins. */
@@ -199,7 +200,9 @@ export function normalizeCraftingState(value: unknown): CraftingState {
     const id = rawEquipped[slot]
     if (typeof id === 'string' && items.some((it) => it.id === id)) equipped[slot] = id
   }
-  return { cores, items, equipped }
+  const rawPity = Math.floor(Number((value as { pityCount?: unknown }).pityCount) || 0)
+  const pityCount = Math.max(0, Math.min(PITY_GUARANTEE, rawPity))
+  return { cores, items, equipped, pityCount }
 }
 
 export function hasCraftedCosmetic(state: CraftingState, id: CraftingCosmeticId): boolean {
@@ -236,7 +239,8 @@ export function craftCosmetic(
   state.cores -= coreCost
 
   const randomValue = Math.max(0, Math.min(0.999_999, Number((opts.random ?? Math.random)()) || 0))
-  const rarity = rollCraftingRarity(randomValue)
+  const rarity = rollCraftingRarity(randomValue, state.pityCount)
+  state.pityCount = nextPityCount(rarity, state.pityCount)
   const createdAt = Math.max(0, Math.floor((opts.now ?? Date.now)()))
   const item: CraftedCosmeticItem = {
     id: `${id}-${createdAt}-${Math.floor(randomValue * 1_000_000).toString().padStart(6, '0')}`,

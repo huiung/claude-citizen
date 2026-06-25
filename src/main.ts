@@ -2022,7 +2022,7 @@ function currentProgress(): PlayerProgress {
     cargo: { ORE: econ.cargo.ORE, ALLOY: econ.cargo.ALLOY },
     upgrades: { cargo: upgrades.tiers.cargo, speed: upgrades.tiers.speed, boost: upgrades.tiers.boost, mining: upgrades.tiers.mining },
     hangar: { selected: selectedShipType, owned: [...ownedShips] },
-    crafting: { cores: crafting.cores, items: [...crafting.items], equipped: crafting.equipped },
+    crafting: { cores: crafting.cores, items: [...crafting.items], equipped: crafting.equipped, pityCount: crafting.pityCount },
   }
 }
 
@@ -2039,6 +2039,7 @@ function applyServerProgress(p: PlayerProgress): void {
   crafting.cores = nextCrafting.cores
   crafting.items.splice(0, crafting.items.length, ...nextCrafting.items)
   crafting.equipped = nextCrafting.equipped
+  crafting.pityCount = nextCrafting.pityCount
   ownedShips.clear()
   for (const t of p.hangar.owned) if (t in SHIP_STATS) ownedShips.add(t as ShipType)
   ownedShips.add('hauler')

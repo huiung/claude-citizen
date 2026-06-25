@@ -35,6 +35,7 @@ export interface PlayerProgress {
     }[]
     cosmetics?: string[]
     equipped?: { trail: string | null; hull: string | null; aura: string | null }
+    pityCount?: number
   }
 }
 
