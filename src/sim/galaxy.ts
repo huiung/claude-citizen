@@ -115,7 +115,16 @@ function inExclusionZone(p: Vector3): boolean {
  * Compute every celestial body owned by the cell at integer coords (cx,cy,cz).
  * Pure function of the coordinates: identical input → identical output, always.
  */
+// A cell's contents are a pure function of its coordinates, so memoize them — querying the same
+// region every stream tick (e.g. while parked) otherwise re-hashes + re-allocates every cell each
+// time, which shows up as a periodic frame hitch. Bounded so the map can't grow without limit.
+const cellCache = new Map<string, Celestial[]>()
+const CELL_CACHE_LIMIT = 8192
+
 function bodiesInCell(cx: number, cy: number, cz: number): Celestial[] {
+  const key = `${cx},${cy},${cz}`
+  const cached = cellCache.get(key)
+  if (cached) return cached
   const out: Celestial[] = []
   // How many bodies this cell holds. Bias toward 0/1 so the field is sparse.
   const countRoll = unitFloat(hash3(cx, cy, cz, 0x1111))
@@ -152,6 +161,8 @@ function bodiesInCell(cx: number, cy: number, cz: number): Celestial[] {
       seed: hSeed | 0,
     })
   }
+  if (cellCache.size >= CELL_CACHE_LIMIT) cellCache.clear() // simple bound; cells are cheap to rebuild
+  cellCache.set(key, out)
   return out
 }
 

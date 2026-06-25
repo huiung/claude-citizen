@@ -1189,6 +1189,10 @@ function streamOre(): void {
 const STREAM_RADIUS = 55000
 const spawnedBodies = new Map<string, THREE.Object3D>()
 let lastStream = -Infinity
+// Skip the (cell-querying) stream pass when the ship has barely moved — nothing can enter or leave
+// the radius, so re-querying just burns a frame. Kills the periodic hitch when parked/rotating.
+const STREAM_MOVE_THRESHOLD_SQ = 2000 * 2000
+const lastStreamPos = new THREE.Vector3(Infinity, Infinity, Infinity)
 
 function celestialRng(seed: number): () => number {
   let a = (seed >>> 0) || 1
@@ -1269,6 +1273,8 @@ function applyEngineGlowStyle(glows: CraftEngineGlow[], style: EngineGlowStyle):
 function streamCelestials(now: number): void {
   if (now - lastStream < 800) return
   lastStream = now
+  if (ship.position.distanceToSquared(lastStreamPos) < STREAM_MOVE_THRESHOLD_SQ) return // parked/rotating — no change possible
+  lastStreamPos.copy(ship.position)
   const nearby = queryCelestials(ship.position, STREAM_RADIUS)
   const liveIds = new Set(nearby.map((c) => c.id))
   for (const [id, mesh] of spawnedBodies) {
