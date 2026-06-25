@@ -90,7 +90,7 @@ import {
   TRAINING_DRONE_COUNT,
   type TrainingDrone,
 } from './sim/trainingDrones'
-import { distanceToCenter, gravityAccel, isPastHorizon, withinInfluence } from './sim/blackHole'
+import { distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, withinInfluence } from './sim/blackHole'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { InventoryPanel } from './ui/inventory'
@@ -1334,6 +1334,9 @@ scene.add(shipMesh)
 const blackHoleVisual = buildBlackHole()
 scene.add(blackHoleVisual.group)
 const blackHoleEl = document.getElementById('black-hole') as HTMLElement
+const singularityFlashEl = document.getElementById('singularity-flash') as HTMLElement
+let bhShake = 0 // camera-shake trauma (0..1) from black-hole proximity / capture, decays each frame
+let bhPressure = 0 // audio rumble intensity (0..1) while within the black hole's influence
 
 let playerEngineGlows: CraftEngineGlow[] = collectCraftEngineGlows(shipMesh)
 let playerCosmetics: ShipCosmetics = createShipCosmetics(shipMesh, scene)
@@ -1746,6 +1749,22 @@ function spawnHitSpark(pos: THREE.Vector3, now: number, color = 0xfff2a8): void 
 function damageFlash(): void {
   flashEl.style.opacity = '0.55'
   setTimeout(() => { flashEl.style.opacity = '0' }, 130)
+}
+
+/** Bright collapse flash that fades to the void — the singularity death cue. */
+function singularityFlash(): void {
+  singularityFlashEl.style.opacity = '1'
+  setTimeout(() => { singularityFlashEl.style.opacity = '0' }, 240)
+}
+
+/** Jitter the camera by the current black-hole trauma, then decay it. Call once per frame. */
+function applyBlackHoleShake(dt: number): void {
+  if (bhShake <= 0.0001) { bhShake = 0; return }
+  const amp = bhShake * bhShake * 200
+  camera.position.x += (Math.random() - 0.5) * amp
+  camera.position.y += (Math.random() - 0.5) * amp
+  camera.position.z += (Math.random() - 0.5) * amp
+  bhShake = Math.max(0, bhShake - dt * 1.6)
 }
 
 function spawnPirateWave(now: number): void {
@@ -3725,15 +3744,27 @@ function frame(now: number): void {
       if (isPastHorizon(ship.position)) {
         econ.cargo.ORE = 0
         econ.cargo.ALLOY = 0
+        audio.blip('explosion')
+        singularityFlash()
+        bhShake = 1
+        addChatLine('BLACK HOLE', 'Consumed by the singularity — cargo lost to the void.', 3)
         respawnPlayer(now)
       }
     }
     blackHoleVisual.update(dt)
     if (withinInfluence(ship.position)) {
+      const d = distanceToCenter(ship.position)
+      // proximity: 0 at the influence edge, 1 at the horizon
+      const p = Math.max(0, Math.min(1, 1 - (d - HORIZON_RADIUS) / (INFLUENCE_RADIUS - HORIZON_RADIUS)))
+      bhPressure = p
+      if (p > 0.55) bhShake = Math.max(bhShake, ((p - 0.55) / 0.45) * 0.6) // shudder builds toward the horizon
       blackHoleEl.hidden = false
-      blackHoleEl.textContent = `⚠ BLACK HOLE ${Math.round(distanceToCenter(ship.position)).toLocaleString()}`
-    } else if (!blackHoleEl.hidden) {
-      blackHoleEl.hidden = true
+      blackHoleEl.textContent = p > 0.55
+        ? `⚠ GRAVITY WELL — PULLING IN  ${Math.round(d).toLocaleString()}`
+        : `⚠ BLACK HOLE  ${Math.round(d).toLocaleString()}`
+    } else {
+      bhPressure = 0
+      if (!blackHoleEl.hidden) blackHoleEl.hidden = true
     }
     resolvePlanetCollisions()
     resolveCapitalCollision()
@@ -4007,12 +4038,14 @@ function frame(now: number): void {
       remote.cosmetics.update(dt, remote.mesh.position)
     }
     updateCamera(dt)
+    applyBlackHoleShake(dt)
     drawMinimap()
     updateDepthHUD()
     updateAltitudeHUD()
     const atmosphere = updateAtmoVeil()
     if (quantum.phase === 'idle') {
-      audio.setAmbience({ atmosphere, quantum: 0, speedFrac: ship.velocity.length() / (hubTimeTrial.active ? baseSpeed : effSpeed()) })
+      // Black-hole proximity adds a low rumble (reusing the quantum-pressure ambience channel).
+      audio.setAmbience({ atmosphere, quantum: bhPressure, speedFrac: ship.velocity.length() / (hubTimeTrial.active ? baseSpeed : effSpeed()) })
     }
   } else {
     sun.visible = true
