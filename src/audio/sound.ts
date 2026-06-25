@@ -196,7 +196,7 @@ export const ASSET_BLIP_SPECS: Partial<Record<BlipKind, AssetBlipSpec>> = {
   },
   dock: {
     variants: ['/audio/kenney-sci-fi/doorClose_001.ogg'],
-    gain: 0.16,
+    gain: 0.1,
   },
   error: {
     variants: ['/audio/kenney-sci-fi/forceField_003.ogg'],

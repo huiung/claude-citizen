@@ -205,7 +205,7 @@ describe('forge + dock cue tuning', () => {
     expect(ASSET_BLIP_SPECS.forge!.variants.every((p) => p.includes('impactMetal'))).toBe(true)
   })
   it('softens the dock cue to a single quiet variant', () => {
-    expect(ASSET_BLIP_SPECS.dock!.gain).toBe(0.16)
+    expect(ASSET_BLIP_SPECS.dock!.gain).toBe(0.1)
     expect(ASSET_BLIP_SPECS.dock!.variants).toEqual(['/audio/kenney-sci-fi/doorClose_001.ogg'])
   })
 })
