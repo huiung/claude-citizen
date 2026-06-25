@@ -31,6 +31,6 @@ describe('black hole model', () => {
     const mid = at((TIDAL_RADIUS + HORIZON_RADIUS) / 2)
     expect(mid).toBeGreaterThan(0)
     expect(mid).toBeLessThan(TIDAL_MAX_DPS)
-    expect(at(1500)).toBeGreaterThan(at(3000)) // deeper hurts more
+    expect(at(7000)).toBeGreaterThan(at(15000)) // deeper hurts more
   })
 })

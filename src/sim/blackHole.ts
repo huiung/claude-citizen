@@ -5,8 +5,11 @@ import { Vector3 } from 'three'
 
 // Remote corner of the system (SYSTEM_RADIUS is 130000) — a long haul from the inner worlds.
 export const BLACK_HOLE_CENTER = new Vector3(-118000, 9000, -118000)
-export const HORIZON_RADIUS = 1100 // absolute point of no return — crossing it is fatal for any hull
-export const INFLUENCE_RADIUS = 10000 // gravity begins here, gentle, and steepens toward the center
+// Radii are sized to the game's speed scale: a fully-upgraded hull boosts at ~4000+ m/s, so a tiny
+// well is crossed in under a second. These give a fully-upgraded fighter a ~10s influence-edge→horizon
+// dive, with a few seconds inside the tidal zone to commit and pull out. (Visual auto-scales off HORIZON.)
+export const HORIZON_RADIUS = 5500 // absolute point of no return — crossing it is fatal for any hull
+export const INFLUENCE_RADIUS = 50000 // gravity begins here, gentle, and steepens toward the center
 // Peak inward pull (m/s²) at the horizon. Kept moderate so a boosting ship can climb out of the
 // danger zone — the real depth limit is the tidal damage below, not gravity capture. Gravity is
 // for the "you're being dragged in, fight it" tension + drama. (Capture radius ≈ HORIZON·√(MAX/(1.6·Vmax)),
@@ -16,8 +19,9 @@ export const MAX_GRAVITY_ACCEL = 800
 // Tidal-shear damage zone: inside TIDAL_RADIUS the hull takes damage per second that ramps from 0 at
 // the zone edge to TIDAL_MAX_DPS at the horizon (steep, ∝ depth²). This is the true challenge — dive
 // deep, bleed hull, and pull out before it kills you. The hard horizon below is the instant-death backstop.
-export const TIDAL_RADIUS = 3500
-export const TIDAL_MAX_DPS = 50
+// DPS is lower than it looks: the zone is ~12.5k thick, so a hull lingers seconds, and damage compounds.
+export const TIDAL_RADIUS = 18000
+export const TIDAL_MAX_DPS = 30
 
 const _tmp = new Vector3()
 
