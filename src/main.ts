@@ -1435,6 +1435,8 @@ const SAFE_REPAIR_DELAY_MS = 2000
 const SAFE_REPAIR_RATE_PER_SEC = 0.16
 let safeRepairEnteredAt: number | null = null
 let lastPlayerDamageAt = -Infinity
+let lastPvpCombatAt = -Infinity
+const PVP_COMBAT_TAG_MS = 10000 // mirror of the server's pursuit window
 function inSafeZone(pos: THREE.Vector3): boolean {
   if (SAFE_ANCHORS.some((a) => pos.distanceToSquared(a) < SAFE_RADIUS * SAFE_RADIUS)) return true
   // Near a planet's surface, hostiles break off — descend to fly/admire in peace.
@@ -2989,6 +2991,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     playerHealth.max = maxHull
     playerHealth.hull = THREE.MathUtils.clamp(hull, 0, maxHull)
     lastPlayerDamageAt = performance.now()
+    lastPvpCombatAt = performance.now()
     damageFlash()
     addChatLine('PVP', `${attackerName} hit you for ${Math.round(damage)}`, 3)
     if (killed) {
@@ -3974,7 +3977,8 @@ function frame(now: number): void {
     const dronesActive = trainingDronesActive(ship.position, MOBILE_COMPANION, trainingDrones.length > 0)
     const pvpProtected = pvpZone !== null
     const rankedDenied = now < rankedPvpDeniedUntil
-    pvpEl.hidden = !pvpActive && !trainingProtected && !rankedDenied && !pvpProximity
+    const pvpCombatTagged = now - lastPvpCombatAt < PVP_COMBAT_TAG_MS
+    pvpEl.hidden = !pvpActive && !trainingProtected && !rankedDenied && !pvpProximity && !pvpCombatTagged
     if (rankedDenied) {
       pvpEl.textContent = MOBILE_COMPANION ? 'PVP DESKTOP ONLY' : `RANKED LOCKED - HOLD ${PVP_RANKED_MIN_TOKEN_BALANCE.toLocaleString()} TOKENS`
     } else if (trainingProtected) {
@@ -3995,9 +3999,11 @@ function frame(now: number): void {
       } else {
         pvpEl.textContent = `${zoneName} - ENTRY ${entryMeters}m`
       }
+    } else if (pvpCombatTagged) {
+      pvpEl.textContent = `IN COMBAT ${Math.ceil((PVP_COMBAT_TAG_MS - (now - lastPvpCombatAt)) / 1000)}s`
     }
     const pvpWeapon = pvpWeaponForShip(selectedShipType)
-    const combatWeaponActive = pvpActive || dronesActive
+    const combatWeaponActive = pvpActive || dronesActive || pvpCombatTagged
     playerWeapon.interval = combatWeaponActive ? pvpWeapon.interval : 0.16
     stepWeapon(playerWeapon, dt)
     if (weaponActive && canFire(playerWeapon)) {
@@ -4075,7 +4081,10 @@ function frame(now: number): void {
         damageFlash()
         lastPlayerDamageAt = now
       }
-      if (h.target.faction === 'peer' && h.target.id) net.sendPvpHit(h.target.id)
+      if (h.target.faction === 'peer' && h.target.id) {
+        net.sendPvpHit(h.target.id)
+        lastPvpCombatAt = now
+      }
     }
 
     for (let i = pirates.length - 1; i >= 0; i--) {
