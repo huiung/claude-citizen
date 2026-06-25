@@ -17,6 +17,8 @@ export const RANKS: readonly Rank[] = [
   { index: 3, name: 'Ace', min: 20_000, bonus: 0.25 },
   { index: 4, name: 'Commander', min: 80_000, bonus: 0.35 },
   { index: 5, name: 'Admiral', min: 250_000, bonus: 0.5 },
+  { index: 6, name: 'Vanguard', min: 700_000, bonus: 0.5 },
+  { index: 7, name: 'Warlord', min: 2_000_000, bonus: 0.5 },
 ]
 
 /** Highest rank whose threshold the credits meet. Never null — Cadet is the floor. */
@@ -31,7 +33,7 @@ export function rankBonus(credits: number): number {
   return rankForCredits(credits).bonus
 }
 
-/** The rank above this one, or null if already at the top (Admiral). */
+/** The rank above this one, or null if already at the top (Warlord). */
 export function nextRank(rank: Rank): Rank | null {
   return RANKS[rank.index + 1] ?? null
 }

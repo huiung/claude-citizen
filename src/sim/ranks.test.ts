@@ -14,15 +14,18 @@ describe('rankForCredits', () => {
     expect(rankForCredits(80_000).name).toBe('Commander')
     expect(rankForCredits(250_000).name).toBe('Admiral')
   })
-  it('caps at Admiral past the top threshold', () => {
-    expect(rankForCredits(10_000_000).name).toBe('Admiral')
+  it('reaches the new prestige ranks and caps at Warlord', () => {
+    expect(rankForCredits(700_000).name).toBe('Vanguard')
+    expect(rankForCredits(2_000_000).name).toBe('Warlord')
+    expect(rankForCredits(10_000_000).name).toBe('Warlord')
   })
 })
 
 describe('nextRank', () => {
   it('returns the next rank, or null at the top', () => {
     expect(nextRank(RANKS[0])?.name).toBe('Ensign')
-    expect(nextRank(RANKS[5])).toBeNull()
+    expect(nextRank(RANKS[5])?.name).toBe('Vanguard')
+    expect(nextRank(RANKS[7])).toBeNull()
   })
 })
 
@@ -32,7 +35,7 @@ describe('rankProgress', () => {
     expect(rankProgress(3_000)).toBeCloseTo((3_000 - 1_000) / (5_000 - 1_000)) // halfway to Pilot
   })
   it('is 1 when maxed (Admiral)', () => {
-    expect(rankProgress(500_000)).toBe(1)
+    expect(rankProgress(5_000_000)).toBe(1) // maxed at Warlord
   })
 })
 
@@ -44,5 +47,9 @@ describe('rankBonus', () => {
   })
   it('matches the rank held at the given earnings', () => {
     for (const r of RANKS) expect(rankBonus(r.min)).toBe(r.bonus)
+  })
+  it('freezes the bonus at the 0.5 cap for prestige ranks', () => {
+    expect(rankBonus(700_000)).toBe(0.5) // Vanguard
+    expect(rankBonus(2_000_000)).toBe(0.5) // Warlord
   })
 })
