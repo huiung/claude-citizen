@@ -104,6 +104,7 @@ export interface NetEvents {
   onPvpKill?(killerName: string, victimName: string, reward: number, killerIsSelf: boolean, victimIsSelf: boolean): void
   onPvpReward?(credits: number, victimName: string): void
   onRaceRecorded?(timeMs: number): void
+  onBlackHoleRecorded?(distance: number): void
   onMarketList?(rows: MarketListing[]): void
   onMarketAction?(result: MarketActionResult): void
   onMarketIntent?(result: MarketIntentResult): void
@@ -268,6 +269,9 @@ export class NetClient {
       case 'race-recorded':
         this.events.onRaceRecorded?.(Math.max(0, Math.floor(Number(msg.timeMs) || 0)))
         break
+      case 'black-hole-recorded':
+        this.events.onBlackHoleRecorded?.(Math.max(0, Math.floor(Number(msg.distance) || 0)))
+        break
       case 'market-list':
         this.events.onMarketList?.(Array.isArray(msg.rows) ? msg.rows as MarketListing[] : [])
         break
@@ -388,6 +392,12 @@ export class NetClient {
   sendRaceFinish(timeMs: number): boolean {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
     this.ws.send(JSON.stringify({ t: 'race-finish', timeMs }))
+    return true
+  }
+
+  sendBlackHoleRun(distance: number): boolean {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    this.ws.send(JSON.stringify({ t: 'black-hole-run', distance }))
     return true
   }
 
