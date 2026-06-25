@@ -7,7 +7,12 @@ import { Vector3 } from 'three'
 export const BLACK_HOLE_CENTER = new Vector3(-118000, 9000, -118000)
 export const HORIZON_RADIUS = 1100 // absolute point of no return — crossing it is fatal for any hull
 export const INFLUENCE_RADIUS = 10000 // gravity begins here, gentle, and steepens toward the center
-export const MAX_GRAVITY_ACCEL = 260 // m/s² ceiling near the horizon (steep enough to capture slow hulls)
+// Peak inward pull (m/s²) at the horizon. Tuned so each hull has a distinct "point of no return"
+// well outside the horizon: a ship escapes while its engine can out-pull gravity, i.e. until
+// g(d) = accelResponse(1.6) × (topSpeed × boost). Capture radius d ≈ HORIZON × √(MAX/(1.6·Vmax)).
+// At 6000 that lands roughly: miner ~5800, hauler ~3700, fighter ~2600, interceptor ~2200 —
+// so faster hulls dive far deeper before they can no longer pull out. Tuned in-game.
+export const MAX_GRAVITY_ACCEL = 6000
 
 const _tmp = new Vector3()
 
