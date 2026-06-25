@@ -33,8 +33,8 @@ type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard' | 'hangar' | 'craftin
 
 /** Forge animation stage labels (smelt → shape → engrave), shown in order. */
 export const FORGE_STAGES = ['Smelt', 'Shape', 'Engrave'] as const
-/** Duration of each forge stage in ms; total = FORGE_STAGES.length × FORGE_STAGE_MS (≈ 3.3 s). */
-export const FORGE_STAGE_MS = 1100
+/** Duration of each forge stage in ms; total = FORGE_STAGES.length × FORGE_STAGE_MS (≈ 2.25 s). */
+export const FORGE_STAGE_MS = 750
 
 export const STATION_TABS: readonly { id: Tab; label: string }[] = [
   { id: 'trade', label: 'TRADE' },
