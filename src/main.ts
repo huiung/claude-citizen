@@ -1860,6 +1860,7 @@ function respawnPlayer(now: number): void {
   faceRefinery()
   ship.velocity.set(0, 0, 0)
   playerHealth.hull = playerHealth.max
+  lastPvpCombatAt = -Infinity // respawn clears the combat tag (matches the server's applyPvpRespawn)
   econ.credits = Math.max(0, econ.credits - 100)
   refreshWallet()
 }
@@ -4068,7 +4069,12 @@ function frame(now: number): void {
         ? [...remotes.entries()]
             .filter(([, r]) => pvpZoneAt(r.mesh.position)?.id === pvpZone.id)
             .map(([id, r]) => ({ id, position: r.mesh.position, radius: PVP_PEER_HIT_RADIUS, health: r.health, faction: 'peer' as const }))
-        : []),
+        : pvpCombatTagged
+          // Combat-tagged pursuit outside the zone: target all peers; the server authoritatively
+          // gates the hit on both parties being tagged + within range, so loose client targeting is safe.
+          ? [...remotes.entries()]
+              .map(([id, r]) => ({ id, position: r.mesh.position, radius: PVP_PEER_HIT_RADIUS, health: r.health, faction: 'peer' as const }))
+          : []),
     ]
     const hits = resolveHits(projectiles, targets)
     for (const h of hits) {
