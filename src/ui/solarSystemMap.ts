@@ -212,7 +212,7 @@ function buildLandmarkMarker(id: string): THREE.Object3D {
     ))
     return group
   }
-  const ringColor = id === 'practice' ? 0x5df4ff : id === 'ranked' ? 0xffd24d : 0x9fffb0 // training.range
+  const ringColor = id === 'pvp.practice' ? 0x5df4ff : id === 'pvp.ranked' ? 0xffd24d : 0x9fffb0 // training.range
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(0.55, 0.85, 32),
     new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }),

@@ -1565,7 +1565,11 @@ function setQuantumDestinationFromAtlas(target: SolarMapNavigationTarget): Solar
   }
   const arenaIdx = pvpArenaDestinationIndex(target.id)
   if (arenaIdx >= 0) {
-    if (MOBILE_COMPANION) return { ok: false, reason: 'PvP beacons are desktop-only' }
+    // Mobile companion can't enter PvP/black-hole arenas, but the Season Hub is allowed (matches
+    // setQuantumDestinationById). Without this exception, clicking the hub marker on mobile rejects.
+    if (MOBILE_COMPANION && target.id !== CITIZEN_SEASON_HUB_DESTINATION.id) {
+      return { ok: false, reason: 'PvP beacons are desktop-only' }
+    }
     selectedJumpIdx = PLANETS.length + arenaIdx
     customJumpDestination = null
     return { ok: true }
