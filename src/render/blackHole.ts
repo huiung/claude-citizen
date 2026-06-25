@@ -6,8 +6,9 @@ import { BLACK_HOLE_CENTER, HORIZON_RADIUS } from '../sim/blackHole'
 
 export interface BlackHoleVisual {
   group: THREE.Group
-  /** `facing` (0..1) = how head-on the camera is looking at the hole; drives the lens flare. */
-  update(dt: number, facing?: number): void
+  /** `facing` (0..1) = how head-on the camera looks at the hole (drives the lens flare);
+   *  `visible` (0..1) = distance fade for the glow/disk so it doesn't loom from across the system. */
+  update(dt: number, facing?: number, visible?: number): void
 }
 
 const DISK_TILT = Math.PI / 2.35
@@ -113,10 +114,12 @@ export function buildBlackHole(): BlackHoleVisual {
   disk.rotation.x = DISK_TILT
   group.add(disk)
 
-  // Glow halo — soft additive bloom so the hole reads as a hot light source from far away.
+  // Glow halo — soft additive bloom so the hole reads as a hot light source. Distance-faded in
+  // update() so it doesn't loom over half the screen from across the system (e.g. at spawn).
   const tex = glowTexture()
+  let glow: THREE.Sprite | null = null
   if (tex) {
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+    glow = new THREE.Sprite(new THREE.SpriteMaterial({
       map: tex, color: 0xffffff, transparent: true, opacity: 0.7,
       blending: THREE.AdditiveBlending, depthWrite: false,
     }))
@@ -158,10 +161,16 @@ export function buildBlackHole(): BlackHoleVisual {
 
   return {
     group,
-    update(dt: number, facing = 1): void {
+    update(dt: number, facing = 1, visible = 1): void {
       disk.rotation.z += dt * 0.18
       photon.rotation.z -= dt * 0.15
       infall.rotation.z -= dt * 0.4
+      // Distance fade: full grandeur up close, nothing from across the system.
+      const v = Math.max(0, Math.min(1, visible))
+      photon.material.opacity = 0.95 * v
+      ;(disk.material as THREE.MeshBasicMaterial).opacity = 0.85 * v
+      ;(infall.material as THREE.PointsMaterial).opacity = 0.85 * v
+      if (glow) glow.material.opacity = 0.7 * v
       if (flare) {
         // ramp hard toward head-on so the flare is a payoff for looking into the hole, not constant
         const target = Math.max(0, Math.min(1, facing)) ** 3 * 0.9

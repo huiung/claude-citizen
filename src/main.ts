@@ -3806,7 +3806,9 @@ function frame(now: number): void {
     const bhDist = _bhToCam.length()
     _bhToCam.normalize()
     const bhDistFactor = Math.max(0, Math.min(1, 1 - (bhDist - INFLUENCE_RADIUS) / INFLUENCE_RADIUS))
-    blackHoleVisual.update(dt, Math.max(0, _bhFwd.dot(_bhToCam)) * bhDistFactor)
+    // visible = distance-only fade (glow/disk show from any angle once near, vanish from across the
+    // system); facing folds in look direction for the lens flare.
+    blackHoleVisual.update(dt, Math.max(0, _bhFwd.dot(_bhToCam)) * bhDistFactor, bhDistFactor)
     const inInfluence = withinInfluence(ship.position)
     const diving = inInfluence && quantum.phase === 'idle'
     if (diving) {

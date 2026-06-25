@@ -4,7 +4,9 @@
 import { Vector3 } from 'three'
 
 // Remote corner of the system (SYSTEM_RADIUS is 130000) — a long haul from the inner worlds.
-export const BLACK_HOLE_CENTER = new Vector3(-118000, 9000, -118000)
+// Placed in the +z corner (behind spawn, past the Pepe shrine) so it never looms over the inner
+// planets, which sit toward -z (the refinery the player faces on spawn).
+export const BLACK_HOLE_CENTER = new Vector3(118000, 9000, 118000)
 // Radii are sized to the game's speed scale: a fully-upgraded hull boosts at ~4000+ m/s, so a tiny
 // well is crossed in under a second. These give a fully-upgraded fighter a ~10s influence-edge→horizon
 // dive, with a few seconds inside the tidal zone to commit and pull out. (Visual auto-scales off HORIZON.)
