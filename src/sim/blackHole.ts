@@ -10,11 +10,14 @@ export const BLACK_HOLE_CENTER = new Vector3(-118000, 9000, -118000)
 // dive, with a few seconds inside the tidal zone to commit and pull out. (Visual auto-scales off HORIZON.)
 export const HORIZON_RADIUS = 5500 // absolute point of no return — crossing it is fatal for any hull
 export const INFLUENCE_RADIUS = 50000 // gravity begins here, gentle, and steepens toward the center
-// Peak inward pull (m/s²) at the horizon. Kept moderate so a boosting ship can climb out of the
-// danger zone — the real depth limit is the tidal damage below, not gravity capture. Gravity is
-// for the "you're being dragged in, fight it" tension + drama. (Capture radius ≈ HORIZON·√(MAX/(1.6·Vmax)),
-// which at 800 sits at/inside the horizon for fast hulls — i.e. they can always pull out.)
-export const MAX_GRAVITY_ACCEL = 800
+// Peak inward pull (m/s²) at the horizon. Strong on purpose: gravity is the PROTAGONIST — the well
+// itself is the threat. A ship escapes only while its engine out-pulls gravity, i.e. until
+// g(d) = accelResponse(1.6) × (topSpeed × boost). Capture radius ≈ HORIZON·√(MAX/(1.6·Vmax)).
+// At 4500: fully-upgraded hulls (Vmax ~4000+) can always claw out (skill-limited), a typical
+// boosting hull (~2000) is captured ~1k outside the horizon (a real escape fight), slow hulls are
+// captured far out. Death is gradual capture ("couldn't pull out"), not a twitch line — and the
+// slow climb-out near the floor compounds with the tidal HP bleed below.
+export const MAX_GRAVITY_ACCEL = 4500
 
 // Tidal-shear damage zone: inside TIDAL_RADIUS the hull takes damage per second that ramps from 0 at
 // the zone edge to TIDAL_MAX_DPS at the horizon (steep, ∝ depth²). This is the true challenge — dive
