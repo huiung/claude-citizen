@@ -118,6 +118,8 @@
     #enemies { color: #ff8a6b; }
     #safe-zone { color: #6fdc8c; letter-spacing: 2px; text-shadow: 0 0 8px rgba(110, 220, 140, .5); }
     #pvp-zone { color: #ff5dff; letter-spacing: 2px; text-shadow: 0 0 10px rgba(255, 93, 255, .7); }
+    #black-hole { color: #ffb24a; letter-spacing: 1.6px; text-shadow: 0 0 10px rgba(255, 178, 74, .7); }
+    #black-hole[hidden] { display: none; }
     #time-trial { color: #ffd24d; letter-spacing: 1.6px; text-shadow: 0 0 10px rgba(255, 210, 77, .65); }
     #time-trial-banner {
       position: fixed; left: 50%; top: 24%; transform: translateX(-50%);
@@ -715,6 +717,7 @@
     <div><span id="enemies">0</span> HOSTILE(S)</div>
     <div id="safe-zone" hidden>◇ SAFE ZONE</div>
     <div id="pvp-zone" hidden>PVP ENABLED</div>
+    <div id="black-hole" hidden></div>
     <div id="time-trial" hidden>HUB TIME TRIAL</div>
   </div>
   <div id="damage-flash"></div>

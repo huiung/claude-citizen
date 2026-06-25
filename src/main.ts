@@ -44,6 +44,7 @@ import { generatePlanetTextures, samplePlanetSurface, type PlanetTextureKind } f
 import { makeAsteroidMaterial } from './render/asteroidTextures'
 import { engineGlowStyle, type EngineGlowStyle } from './render/engineGlow'
 import { createSeasonHubLifeRig, updateSeasonHubLifeRig } from './render/seasonHub'
+import { buildBlackHole } from './render/blackHole'
 import { cancelTravel, catchUpQuantum, createQuantum, cycleQuantumDestinationIndex, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
   createTimeTrial,
@@ -89,7 +90,7 @@ import {
   TRAINING_DRONE_COUNT,
   type TrainingDrone,
 } from './sim/trainingDrones'
-import { gravityAccel, isPastHorizon } from './sim/blackHole'
+import { distanceToCenter, gravityAccel, isPastHorizon, withinInfluence } from './sim/blackHole'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { InventoryPanel } from './ui/inventory'
@@ -1329,6 +1330,10 @@ function faceRefinery(): void {
 faceRefinery()
 let shipMesh = buildCraft(selectedShipType, PLAYER_TINT)
 scene.add(shipMesh)
+
+const blackHoleVisual = buildBlackHole()
+scene.add(blackHoleVisual.group)
+const blackHoleEl = document.getElementById('black-hole') as HTMLElement
 
 let playerEngineGlows: CraftEngineGlow[] = collectCraftEngineGlows(shipMesh)
 let playerCosmetics: ShipCosmetics = createShipCosmetics(shipMesh, scene)
@@ -3722,6 +3727,13 @@ function frame(now: number): void {
         econ.cargo.ALLOY = 0
         respawnPlayer(now)
       }
+    }
+    blackHoleVisual.update(dt)
+    if (withinInfluence(ship.position)) {
+      blackHoleEl.hidden = false
+      blackHoleEl.textContent = `⚠ BLACK HOLE ${Math.round(distanceToCenter(ship.position)).toLocaleString()}`
+    } else if (!blackHoleEl.hidden) {
+      blackHoleEl.hidden = true
     }
     resolvePlanetCollisions()
     resolveCapitalCollision()
