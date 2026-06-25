@@ -421,14 +421,22 @@ export class StationMenu {
   }
 
   private renderCraftingInventory(): void {
+    // While a forge is animating, withhold the just-crafted item from the preview so the
+    // reveal isn't spoiled. The item is already committed + persisted; it surfaces on finish.
+    const forgingId = this.forging?.item.id
+    const items = forgingId
+      ? this.ctx.crafting.items.filter((it) => it.id !== forgingId)
+      : this.ctx.crafting.items
+    const groups = groupCraftedItems(items)
+
     const header = document.createElement('div')
     header.className = 'station-empty'
-    header.textContent = this.ctx.crafting.items.length === 0
+    header.textContent = items.length === 0
       ? 'Crafted Inventory: empty'
-      : `Inventory stacks: ${groupCraftedItems(this.ctx.crafting.items).length} stack${groupCraftedItems(this.ctx.crafting.items).length === 1 ? '' : 's'} (${this.ctx.crafting.items.length} items). Press I for details.`
+      : `Inventory stacks: ${groups.length} stack${groups.length === 1 ? '' : 's'} (${items.length} items). Press I for details.`
     this.bodyEl.appendChild(header)
 
-    for (const group of groupCraftedItems(this.ctx.crafting.items).slice(0, 4)) {
+    for (const group of groups.slice(0, 4)) {
       const recipe = CRAFTING_RECIPES.find((candidate) => candidate.id === group.recipeId)
       const row = this.rowEl(`${CRAFTING_RARITY_LABELS[group.rarity]} ${group.variant}`, recipe?.name ?? group.recipeId, `x${group.count}`)
       const actions = row.querySelector('.s-actions')!

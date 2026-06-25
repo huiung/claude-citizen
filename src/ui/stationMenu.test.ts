@@ -173,6 +173,21 @@ describe('station crafting forge sequence', () => {
     }
   })
 
+  it('withholds the crafted item from the inventory preview until the forge completes', () => {
+    vi.useFakeTimers()
+    try {
+      const { root } = mountCraftingMenu(100_000)
+      craftBtn(root).click()
+      // mid-forge: the just-crafted item is hidden, so the preview still reads empty
+      expect(root.textContent).toContain('Crafted Inventory: empty')
+      vi.advanceTimersByTime(FORGE_STAGE_MS * (FORGE_STAGES.length + 1))
+      // reveal: the item now appears in the preview
+      expect(root.textContent).toContain('Inventory stacks: 1')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('shows the pity indicator counting down, with a ramp highlight past the ramp start', () => {
     const { menu, ctx, root } = mountCraftingMenu(0)
     ctx.crafting.pityCount = 3
