@@ -89,6 +89,7 @@ import {
   TRAINING_DRONE_COUNT,
   type TrainingDrone,
 } from './sim/trainingDrones'
+import { gravityAccel, isPastHorizon } from './sim/blackHole'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { InventoryPanel } from './ui/inventory'
@@ -3132,6 +3133,7 @@ function updateOreFloats(now: number): void {
 // and occasionally spawn a free treasure crate nearby to reward exploration.
 const _lootDir = new THREE.Vector3()
 const _lootTmp = new THREE.Vector3()
+const _bhGrav = new THREE.Vector3()
 function updateLootCrates(now: number, dt: number): void {
   if (now - lastTreasure > 22000 && lootCrates.length < 8) {
     _lootDir.set(Math.random() * 2 - 1, (Math.random() * 2 - 1) * 0.3, Math.random() * 2 - 1)
@@ -3713,6 +3715,14 @@ function frame(now: number): void {
       ? { maxSpeed: baseSpeed, boostMultiplier: baseBoost }
       : { maxSpeed: effSpeed(), boostMultiplier: effBoost() }
     stepShip(ship, input, dt, flightTuning)
+    if (quantum.phase === 'idle') {
+      ship.velocity.addScaledVector(gravityAccel(ship.position, _bhGrav), dt)
+      if (isPastHorizon(ship.position)) {
+        econ.cargo.ORE = 0
+        econ.cargo.ALLOY = 0
+        respawnPlayer(now)
+      }
+    }
     resolvePlanetCollisions()
     resolveCapitalCollision()
     enforceRankedArenaAccess(now)
