@@ -124,6 +124,51 @@ describe('stationMenu market tab currency display', () => {
   })
 })
 
+describe('stationMenu contracts copy', () => {
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  it('describes contract quantity as a delivery action instead of an x multiplier', () => {
+    const ctx = {
+      outpostId: 'colony',
+      econ: createEconomy(),
+      market: createMarket(),
+      crafting: createCraftingState(),
+      upgrades: createUpgrades(),
+      contracts: [{
+        id: 'contract-copy',
+        commodity: 'ORE' as const,
+        qty: 10,
+        fromId: 'colony',
+        toId: 'refinery',
+        reward: 900,
+        status: 'offered' as const,
+      }],
+      audio: { blip: () => {} } as any,
+      capacity: () => 20,
+      selectedShip: () => 'hauler' as const,
+      ownedShips: new Set(['hauler'] as const),
+      shipPrices: { hauler: 0, fighter: 5000, miner: 8000, interceptor: 15000 },
+      onBuyShip: () => {},
+      onSelectShip: () => {},
+      holderTier: () => 0,
+      selectedHolderShipVisual: () => 'standard' as const,
+      onSelectHolderShipVisual: () => {},
+      marketplaceRows: () => [],
+      marketplaceCanTrade: () => true,
+      onRefreshMarketplace: () => {},
+      onBuyMarketListing: () => {},
+      onCancelMarketListing: () => {},
+    }
+    const menu = new StationMenu({ onChange() {}, onUndock() {} })
+    document.body.appendChild(menu.root)
+    menu.open(ctx as any)
+    ;(menu.root.querySelector('[data-tab="contracts"]') as HTMLButtonElement).click()
+
+    expect(menu.root.textContent).toContain('Deliver 10 Raw Ore → Meridian Refinery')
+    expect(menu.root.textContent).not.toContain('10×')
+  })
+})
+
 describe('station crafting forge sequence', () => {
   beforeEach(() => { document.body.innerHTML = '' })
 

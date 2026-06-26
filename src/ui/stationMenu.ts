@@ -563,7 +563,7 @@ export class StationMenu {
     }
     for (const c of visible) {
       const toName = OUTPOSTS[c.toId]?.name ?? c.toId
-      const label = `${c.qty}× ${COMMODITIES[c.commodity].name} → ${toName}`
+      const label = `Deliver ${c.qty} ${COMMODITIES[c.commodity].name} → ${toName}`
       const row = this.rowEl(label, `${c.reward} cr`, c.status === 'accepted' ? 'ACTIVE' : '')
       const actions = row.querySelector('.s-actions')!
       if (c.status === 'offered') {
