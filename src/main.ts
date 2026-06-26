@@ -93,7 +93,7 @@ import {
 } from './sim/trainingDrones'
 import { BLACK_HOLE_APPROACH_DESTINATION, BLACK_HOLE_CENTER, distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, tidalDamageRate, TIDAL_RADIUS, withinInfluence } from './sim/blackHole'
 import { createBlackHoleRun, enterRun, sampleRun, exitRunAlive, dieRun } from './sim/blackHoleRun'
-import { type DailyState, type Objective, dailyObjectives, dayKey, emptyDaily, rollStreak } from './sim/daily'
+import { type DailyState, type Objective, type ObjectiveKind, OBJECTIVE_REWARD, SET_BONUS, dailyObjectives, dayKey, emptyDaily, rollStreak } from './sim/daily'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { InventoryPanel } from './ui/inventory'
@@ -2155,8 +2155,23 @@ function initDaily(nowMs: number): void {
   }
   dailyObjs = dailyObjectives(today)
   lastEarnedForDaily = econ.earned
-  void dailyObjs
-  void lastEarnedForDaily
+}
+
+function recordDailyEvent(kind: ObjectiveKind, amount: number, nowMs: number): void {
+  const obj = dailyObjs.find((o) => o.kind === kind)
+  if (!obj || dailyState.claimed.includes(obj.id)) return
+  const next = (dailyProgress.get(obj.id) ?? 0) + amount
+  dailyProgress.set(obj.id, next)
+  if (next < obj.target) return
+  dailyState.claimed.push(obj.id)
+  crafting.cores += OBJECTIVE_REWARD
+  registerKillBanner(combatFeedback, 'DAILY COMPLETE', `+${OBJECTIVE_REWARD} cores`, nowMs)
+  if (dailyState.claimed.length >= 3 && !dailyState.setBonusClaimed) {
+    dailyState.setBonusClaimed = true
+    crafting.cores += SET_BONUS
+    registerKillBanner(combatFeedback, 'ALL DAILIES DONE', `+${SET_BONUS} cores`, nowMs)
+  }
+  refreshWallet() // persists cores + the daily block via currentProgress()
 }
 
 function applyServerProgress(p: PlayerProgress): void {
@@ -2201,6 +2216,7 @@ const stationMenu = new StationMenu({
   // Hide the in-progress item from the inventory panel while the forge animates, so the
   // reveal isn't spoiled there either; cleared (null) on finish/cancel.
   onForgeChange: (id) => inventoryPanel.setHiddenItem(id),
+  onContractDelivered: () => recordDailyEvent('deliver_contracts', 1, Date.now()),
 })
 document.body.appendChild(stationMenu.root)
 
@@ -2521,6 +2537,7 @@ document.body.appendChild(solarMap.root)
 let dockOpenRequest = 0
 function dock(id: string): void {
   docked = true
+  recordDailyEvent('dock_outposts', 1, Date.now())
   const openRequest = ++dockOpenRequest
   if (!dockedEver) markOnboard('scc.ob.docked', (v) => { dockedEver = v }) // onboarding step 2 — opening the UI counts
   solarMap.close()
@@ -4038,6 +4055,7 @@ function frame(now: number): void {
     // Mining: transfer ORE from the nearest in-range asteroid while the laser is held.
     const mineResult = mineStep(field, ship.position, econ, dt, miningActive, effCargo(), miningYield(upgrades))
     if (mineResult.mined > 0 && mineResult.asteroid) {
+      recordDailyEvent('mine_ore', mineResult.mined, now)
       if (!minedEver) markOnboard('scc.ob.mined', (v) => { minedEver = v }) // onboarding step 1
       const rm = rockMeshes.get(mineResult.asteroid.id)
       if (rm?.rare) gainCredits(econ, mineResult.mined * ORE_RARE_BONUS) // rare vein jackpot, on top of the ORE
@@ -4205,6 +4223,7 @@ function frame(now: number): void {
         registerKillBanner(combatFeedback, 'PIRATE DESTROYED', `+${p.reward} cr`, now)
         audio.blip('explosion')
         gainCredits(econ, p.reward)
+        recordDailyEvent('kill_pirates', 1, now)
         finishOnboarding() // graduates the onboarding objective
         refreshWallet()
         spawnLoot(p.position) // drop a loot crate where it died
@@ -4216,6 +4235,11 @@ function frame(now: number): void {
         removePirateMesh(pirates[i].id)
         pirates.splice(i, 1)
       }
+    }
+
+    if (econ.earned > lastEarnedForDaily) {
+      recordDailyEvent('earn_credits', econ.earned - lastEarnedForDaily, now)
+      lastEarnedForDaily = econ.earned
     }
 
     for (let i = trainingDrones.length - 1; i >= 0; i--) {

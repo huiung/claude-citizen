@@ -107,6 +107,7 @@ export class StationMenu {
   /** Notifies the host when an item enters (id) or leaves (null) the forge, so other
    *  views (e.g. the inventory panel) can withhold the in-progress item until reveal. */
   private onForgeChange?: (forgingItemId: string | null) => void
+  private onContractDelivered?: () => void
   private bodyEl!: HTMLElement
   private creditsEl!: HTMLElement
   private cargoEl!: HTMLElement
@@ -115,10 +116,11 @@ export class StationMenu {
   private forging: { item: CraftedCosmeticItem; stage: number } | null = null
   private forgeTimers: ReturnType<typeof setTimeout>[] = []
 
-  constructor(opts: { onChange: () => void; onUndock: () => void; onForgeChange?: (forgingItemId: string | null) => void }) {
+  constructor(opts: { onChange: () => void; onUndock: () => void; onForgeChange?: (forgingItemId: string | null) => void; onContractDelivered?: () => void }) {
     this.onChange = opts.onChange
     this.onUndock = opts.onUndock
     this.onForgeChange = opts.onForgeChange
+    this.onContractDelivered = opts.onContractDelivered
     this.root = document.createElement('div')
     this.root.id = 'station'
     this.root.hidden = true
@@ -279,6 +281,7 @@ export class StationMenu {
       }
       this.ctx.audio.blip('dock')
       this.hint(`Delivered. +${r.reward} cr`)
+      this.onContractDelivered?.()
     }
     this.onChange()
     this.render()
