@@ -93,6 +93,7 @@ import {
 } from './sim/trainingDrones'
 import { BLACK_HOLE_APPROACH_DESTINATION, BLACK_HOLE_CENTER, distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, tidalDamageRate, TIDAL_RADIUS, withinInfluence } from './sim/blackHole'
 import { createBlackHoleRun, enterRun, sampleRun, exitRunAlive, dieRun } from './sim/blackHoleRun'
+import { type DailyState, type Objective, dailyObjectives, dayKey, emptyDaily, rollStreak } from './sim/daily'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { InventoryPanel } from './ui/inventory'
@@ -1958,6 +1959,10 @@ function updateTrainingDroneWrecks(now: number, dt: number): void {
 // --- Game systems (main owns all state; modules are pure)
 const econ = loadEconomy()
 const crafting = loadCraftingState(localStorage)
+let dailyState: DailyState = emptyDaily()
+let dailyObjs: Objective[] = []
+const dailyProgress = new Map<string, number>() // ephemeral per-session progress, keyed by objective id
+let lastEarnedForDaily = 0                       // econ.earned watermark for the earn_credits objective
 const upgrades = loadUpgrades()
 // Objective chain (post-onboarding): conditions read live progress — no extra tracking or saving.
 const upgradeTotal = (): number => upgrades.tiers.cargo + upgrades.tiers.speed + upgrades.tiers.boost + upgrades.tiers.mining
@@ -2127,7 +2132,31 @@ function currentProgress(): PlayerProgress {
     upgrades: { cargo: upgrades.tiers.cargo, speed: upgrades.tiers.speed, boost: upgrades.tiers.boost, mining: upgrades.tiers.mining },
     hangar: { selected: selectedShipType, owned: [...ownedShips] },
     crafting: { cores: crafting.cores, items: [...crafting.items], equipped: crafting.equipped, pityCount: crafting.pityCount },
+    daily: dailyState,
   }
+}
+
+function initDaily(nowMs: number): void {
+  const today = dayKey(nowMs)
+  if (dailyState.day !== today) {
+    const roll = rollStreak(dailyState.streak, dailyState.lastStreakDay, today)
+    if (roll.advanced) {
+      dailyState.streak = roll.streak
+      dailyState.lastStreakDay = today
+      if (roll.reward > 0) {
+        crafting.cores += roll.reward
+        registerKillBanner(combatFeedback, `DAY ${roll.streak} STREAK`, `+${roll.reward} cores`, nowMs)
+      }
+    }
+    dailyState.day = today
+    dailyState.claimed = []
+    dailyState.setBonusClaimed = false
+    dailyProgress.clear()
+  }
+  dailyObjs = dailyObjectives(today)
+  lastEarnedForDaily = econ.earned
+  void dailyObjs
+  void lastEarnedForDaily
 }
 
 function applyServerProgress(p: PlayerProgress): void {
@@ -2144,6 +2173,8 @@ function applyServerProgress(p: PlayerProgress): void {
   crafting.items.splice(0, crafting.items.length, ...nextCrafting.items)
   crafting.equipped = nextCrafting.equipped
   crafting.pityCount = nextCrafting.pityCount
+  dailyState = p.daily ? { ...emptyDaily(), ...p.daily } : emptyDaily()
+  initDaily(Date.now())
   ownedShips.clear()
   for (const t of p.hangar.owned) if (t in SHIP_STATS) ownedShips.add(t as ShipType)
   ownedShips.add('hauler')

@@ -1,4 +1,5 @@
 // WebSocket relay client: position relay + token-keyed progress sync.
+import type { DailyState } from '../sim/daily'
 
 export interface PeerState {
   id: string
@@ -37,6 +38,7 @@ export interface PlayerProgress {
     equipped?: { trail: string | null; hull: string | null; aura: string | null }
     pityCount?: number
   }
+  daily?: DailyState
 }
 
 export interface MarketListingItem {
