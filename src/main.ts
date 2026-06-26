@@ -3751,10 +3751,44 @@ document.addEventListener('visibilitychange', () => {
   catchUpHiddenQuantum(now)
 })
 
+// --- DEV frame profiler: when a frame busts the budget, log which sections ate the time.
+// Stripped from production via import.meta.env.DEV. Watch the console while flying; a slow frame
+// prints e.g. "[frame 38.2ms] render 22.1 · stream 9.4 · minimap 3.1" so the culprit is obvious.
+const DEV_PROFILE = import.meta.env.DEV
+const FRAME_LOG_MS = 24
+let _pfStart = 0
+let _pfPrev = 0
+const _pfSections: Array<[string, number]> = []
+function pfBegin(now: number): void {
+  if (!DEV_PROFILE) return
+  _pfSections.length = 0
+  _pfStart = now
+  _pfPrev = now
+}
+function pfMark(label: string): void {
+  if (!DEV_PROFILE) return
+  const t = performance.now()
+  _pfSections.push([label, t - _pfPrev])
+  _pfPrev = t
+}
+function pfEnd(): void {
+  if (!DEV_PROFILE) return
+  const total = performance.now() - _pfStart
+  if (total > FRAME_LOG_MS) {
+    const parts = _pfSections
+      .filter(([, ms]) => ms >= 1)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([l, ms]) => `${l} ${ms.toFixed(1)}`)
+    console.warn(`[frame ${total.toFixed(1)}ms] ${parts.join(' · ')}`)
+  }
+}
+
 function frame(now: number): void {
   requestAnimationFrame(frame)
   const dt = Math.min((now - last) / 1000, 0.05)
   last = now
+  pfBegin(now)
 
   // Full-screen overlays own the screen. Pause the game's sim/render so UI clicks do not
   // compete with WebGL, LOD swaps, or texture work on the same main thread.
@@ -3772,6 +3806,7 @@ function frame(now: number): void {
   ;(sun.userData.sunMat as THREE.ShaderMaterial).uniforms.uTime.value = now * 0.001 // boil the star surface
   if (shouldRunBackgroundWorldWork({ running, docked })) {
     streamCelestials(now)
+    pfMark('stream')
     upgradeNextPlanet(now)
     for (const lod of planetLODs) lod.update(camera) // swap planet detail by distance
   }
@@ -3826,6 +3861,7 @@ function frame(now: number): void {
     const bhDist = _bhToCam.copy(BLACK_HOLE_CENTER).sub(camera.position).length()
     const bhDistFactor = Math.max(0, Math.min(1, 1 - (bhDist - INFLUENCE_RADIUS) / INFLUENCE_RADIUS))
     blackHoleVisual.update(dt, bhDistFactor)
+    pfMark('sim')
     const inInfluence = withinInfluence(ship.position)
     const diving = inInfluence && quantum.phase === 'idle'
     if (diving) {
@@ -4077,6 +4113,7 @@ function frame(now: number): void {
           : []),
     ]
     const hits = resolveHits(projectiles, targets)
+    pfMark('combat')
     for (const h of hits) {
       audio.blip('hit')
       if (h.target.faction === 'pirate') {
@@ -4129,6 +4166,7 @@ function frame(now: number): void {
   if (running) {
     updateDeepSpaceVisibility()
     updateRemotes()
+    pfMark('remotes')
     for (const remote of remotes.values()) {
       const key = remote.peer.cosmetics ?? ''
       if (key !== remote.cosmeticsKey) {
@@ -4140,6 +4178,7 @@ function frame(now: number): void {
     updateCamera(dt)
     applyBlackHoleShake(dt)
     drawMinimap()
+    pfMark('minimap')
     updateDepthHUD()
     updateAltitudeHUD()
     const atmosphere = updateAtmoVeil()
@@ -4205,8 +4244,12 @@ function frame(now: number): void {
     if (obj) objectiveEl.textContent = `▸ ${obj}`
   }
 
+  pfMark('logic')
   composer.render()
+  pfMark('render')
   labelRenderer.render(scene, camera)
   drawHolderShowcaseComposite(now)
+  pfMark('labels')
+  pfEnd()
 }
 requestAnimationFrame(frame)
