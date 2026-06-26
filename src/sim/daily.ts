@@ -57,3 +57,35 @@ export function dailyObjectives(key: string): Objective[] {
   }
   return pool.slice(0, 3).map((e) => ({ id: e.kind, kind: e.kind, target: e.target, label: e.label }))
 }
+
+export const OBJECTIVE_REWARD = 2   // cores per completed objective
+export const SET_BONUS = 3          // cores for completing all 3 in a day
+export const STREAK_REWARD_CAP = 7  // cores cap for the login streak
+
+export interface DailyState {
+  day: string             // UTC day key the stored state applies to
+  claimed: string[]       // objective ids claimed today
+  setBonusClaimed: boolean
+  streak: number
+  lastStreakDay: string
+}
+
+export function emptyDaily(): DailyState {
+  return { day: '', claimed: [], setBonusClaimed: false, streak: 0, lastStreakDay: '' }
+}
+
+/**
+ * Roll the login streak for `todayKey`:
+ *  - same day as last advance: unchanged, no reward (idempotent)
+ *  - last advance was yesterday: +1
+ *  - otherwise (gap or first play): reset to 1
+ * Reward (cores) equals the new streak, capped at STREAK_REWARD_CAP.
+ */
+export function rollStreak(
+  prevStreak: number, lastStreakDay: string, todayKey: string,
+): { streak: number; reward: number; advanced: boolean } {
+  if (lastStreakDay === todayKey) return { streak: prevStreak, reward: 0, advanced: false }
+  const yesterday = dayKey(Date.parse(`${todayKey}T00:00:00Z`) - 86_400_000)
+  const streak = lastStreakDay === yesterday ? prevStreak + 1 : 1
+  return { streak, reward: Math.min(streak, STREAK_REWARD_CAP), advanced: true }
+}
