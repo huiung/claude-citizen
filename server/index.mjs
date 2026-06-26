@@ -82,6 +82,34 @@ async function tokenMintInfo() {
   return cachedMintInfo
 }
 
+// --- Circulating supply (for Jupiter / aggregator verification) -----------------------------------
+// Circulating = on-chain total supply × (1 − locked fraction). Both are env-overridable so the lock
+// can change without a redeploy. TOKEN_TOTAL_SUPPLY is only a fallback if the RPC is unavailable.
+const LOCKED_FRACTION = Number(process.env.LOCKED_FRACTION ?? 0.0397) // 3.97% locked
+const TOKEN_TOTAL_SUPPLY_FALLBACK = Number(process.env.TOKEN_TOTAL_SUPPLY ?? 1_000_000_000)
+const SUPPLY_CACHE_MS = 5 * 60_000
+let supplyCache = null // { totalSupply, circulatingSupply, at }
+
+async function fetchTotalSupply() {
+  if (!heliusRpc) return TOKEN_TOTAL_SUPPLY_FALLBACK
+  try {
+    const res = await heliusRpc.getTokenSupply(new PublicKey(HOLDER_MINT))
+    const ui = res?.value?.uiAmount // human-readable amount (already scaled by decimals)
+    return typeof ui === 'number' && ui > 0 ? ui : TOKEN_TOTAL_SUPPLY_FALLBACK
+  } catch { return TOKEN_TOTAL_SUPPLY_FALLBACK }
+}
+
+const round6 = (n) => Math.round(n * 1e6) / 1e6 // trim float noise to token precision (6 decimals)
+
+async function tokenSupplyInfo() {
+  const now = Date.now()
+  if (supplyCache && now - supplyCache.at < SUPPLY_CACHE_MS) return supplyCache
+  const totalSupply = round6(await fetchTotalSupply())
+  const circulatingSupply = round6(totalSupply * (1 - LOCKED_FRACTION))
+  supplyCache = { totalSupply, circulatingSupply, at: now }
+  return supplyCache
+}
+
 // Pre-simulate an unsigned tx (sigVerify off) so we never hand the wallet a tx that fails on-chain —
 // Phantom shows a "could be malicious" warning whenever it can't cleanly simulate. Returns:
 //   { ok: true }                  → simulated clean, safe to send
@@ -203,6 +231,20 @@ const httpServer = createServer((req, res) => {
     }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
     res.end(JSON.stringify(pvpKillAuditLog.snapshot()))
+    return
+  }
+  if (req.url === '/supply' || req.url?.startsWith('/supply/') || req.url?.startsWith('/supply?')) {
+    tokenSupplyInfo().then(({ totalSupply, circulatingSupply }) => {
+      const headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'public, max-age=300' }
+      // Jupiter expects exactly { "circulatingSupply": number }.
+      if (req.url?.startsWith('/supply/circulating')) { res.writeHead(200, headers); res.end(JSON.stringify({ circulatingSupply })); return }
+      if (req.url?.startsWith('/supply/total')) { res.writeHead(200, headers); res.end(JSON.stringify({ totalSupply })); return }
+      res.writeHead(200, headers) // /supply — full breakdown for debugging
+      res.end(JSON.stringify({ circulatingSupply, totalSupply, lockedFraction: LOCKED_FRACTION, lockedSupply: round6(totalSupply - circulatingSupply) }))
+    }).catch(() => {
+      res.writeHead(503, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+      res.end(JSON.stringify({ error: 'supply-unavailable' }))
+    })
     return
   }
   res.writeHead(200, { 'Content-Type': 'text/plain' })
