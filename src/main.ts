@@ -93,7 +93,7 @@ import {
 } from './sim/trainingDrones'
 import { BLACK_HOLE_APPROACH_DESTINATION, BLACK_HOLE_CENTER, distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, tidalDamageRate, TIDAL_RADIUS, withinInfluence } from './sim/blackHole'
 import { createBlackHoleRun, enterRun, sampleRun, exitRunAlive, dieRun } from './sim/blackHoleRun'
-import { type DailyState, type Objective, type ObjectiveKind, OBJECTIVE_REWARD, SET_BONUS, dailyObjectives, dayKey, emptyDaily, rollStreak } from './sim/daily'
+import { type DailyState, type Objective, type ObjectiveKind, OBJECTIVE_REWARD, SET_BONUS, STREAK_REWARD_CAP, dailyObjectives, dayKey, emptyDaily, rollStreak } from './sim/daily'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { InventoryPanel } from './ui/inventory'
@@ -375,6 +375,13 @@ const dailyPanelEl = document.getElementById('daily-panel')!
 const dailyObjsEl = document.getElementById('daily-objs')!
 const dailyStreakEl = document.getElementById('daily-streak')!
 const dailyResetEl = document.getElementById('daily-reset')!
+const dailyCloseEl = document.getElementById('daily-close')!
+// Close the daily panel and hand flight input back (re-locks the pointer if nothing else is open).
+function closeDailyPanel(): void {
+  dailyPanelEl.hidden = true
+  restoreFlightInputAfterPanel()
+}
+dailyCloseEl.addEventListener('click', closeDailyPanel)
 const lbTitleLandingEl = document.getElementById('lb-title-landing')!
 const lbTitleHudEl = document.getElementById('lb-title-hud')!
 const lbModeCareerLandingEl = document.getElementById('lb-mode-career-landing') as HTMLButtonElement
@@ -2183,10 +2190,13 @@ function renderDailyPanel(nowMs: number): void {
     const done = dailyState.claimed.includes(o.id)
     const prog = Math.min(o.target, done ? o.target : (dailyProgress.get(o.id) ?? 0))
     const pct = Math.round((prog / o.target) * 100)
-    return `<div class="obj${done ? ' done' : ''}">${done ? '✓ ' : ''}${o.label} — ${prog}/${o.target}`
+    return `<div class="obj${done ? ' done' : ''}">${done ? '✓ ' : ''}${o.label} `
+      + `<span class="rw">+${OBJECTIVE_REWARD} cores</span> — ${prog}/${o.target}`
       + `<div class="bar"><i style="width:${pct}%"></i></div></div>`
   }).join('')
-  dailyStreakEl.textContent = `🔥 Streak: ${dailyState.streak} day${dailyState.streak === 1 ? '' : 's'}`
+    + `<div class="bonus">All 3 done → <span class="rw">+${SET_BONUS} cores</span> bonus</div>`
+  const streakReward = Math.min(dailyState.streak, STREAK_REWARD_CAP)
+  dailyStreakEl.textContent = `🔥 Streak: ${dailyState.streak} day${dailyState.streak === 1 ? '' : 's'} · +${streakReward} core${streakReward === 1 ? '' : 's'}/day`
   const msToReset = (Date.parse(`${dayKey(nowMs)}T00:00:00Z`) + 86_400_000) - nowMs
   const h = Math.floor(msToReset / 3_600_000), m = Math.floor((msToReset % 3_600_000) / 60_000)
   dailyResetEl.textContent = `Resets in ${h}h ${m}m`
@@ -2905,9 +2915,13 @@ addEventListener('keydown', (e) => {
     }
   }
   if (e.code === 'KeyG' && running && !docked) {
-    const willShow = dailyPanelEl.hidden
-    if (willShow) renderDailyPanel(Date.now())
-    dailyPanelEl.hidden = !willShow
+    if (dailyPanelEl.hidden) {
+      renderDailyPanel(Date.now())
+      dailyPanelEl.hidden = false
+      if (document.pointerLockElement) document.exitPointerLock() // free the cursor to read / click ✕
+    } else {
+      closeDailyPanel()
+    }
     e.preventDefault()
     return
   }

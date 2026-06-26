@@ -506,9 +506,13 @@
       background: rgba(6, 12, 20, 0.92); border: 1px solid #2a4a5a; border-radius: 10px;
       padding: 18px 20px; color: #cfe9ff; font: 13px ui-monospace, monospace; z-index: 40; min-width: 280px;
     }
-    #daily-panel h3 { margin: 0 0 10px; color: #9fffb0; font-size: 14px; letter-spacing: 1px; }
+    #daily-panel h3 { margin: 0 0 10px; color: #9fffb0; font-size: 14px; letter-spacing: 1px; padding-right: 22px; }
+    #daily-panel #daily-close { position: absolute; top: 10px; right: 12px; background: none; border: none; color: #6c8a9a; font: 16px ui-monospace, monospace; line-height: 1; padding: 2px 6px; cursor: pointer; }
+    #daily-panel #daily-close:hover { color: #cfe9ff; }
     #daily-panel .obj { margin: 6px 0; }
     #daily-panel .obj.done { color: #9fffb0; }
+    #daily-panel .rw { color: #ffd24d; }
+    #daily-panel .bonus { margin-top: 8px; font-size: 12px; opacity: .85; }
     #daily-panel .bar { height: 5px; background: #14323f; border-radius: 3px; margin-top: 3px; }
     #daily-panel .bar > i { display: block; height: 100%; background: #58ddff; border-radius: 3px; }
     #daily-panel .streak { margin-top: 12px; color: #ffd24d; }
@@ -721,6 +725,7 @@
     <div class="lb-hint">[L] close · [←/→] page</div>
   </div>
   <div id="daily-panel" hidden>
+    <button id="daily-close" aria-label="Close">✕</button>
     <h3>DAILY OBJECTIVES</h3>
     <div id="daily-objs"></div>
     <div class="streak" id="daily-streak"></div>
