@@ -26,7 +26,7 @@ import { shouldRenderWorldFrame, shouldRunBackgroundWorldWork } from './sim/rend
 import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
   buildCapitalShip, buildDustField, buildLootCrate, buildNebula, buildSolarPlanet, buildStarfield, buildStation,
-  buildMuchLaunchTower, buildRareFrogShrine, buildSun, buildWarpField, COLONY_POS, REFINERY_POS, SPAWN_PLANET, updateDustField, updateWarpField,
+  buildMuchLaunchTower, buildRareFrogShrine, buildSun, buildWarpField, COLONY_POS, prewarmHighPlanetTextures, REFINERY_POS, SPAWN_PLANET, updateDustField, updateWarpField,
 } from './render/world'
 import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS, type SurfaceKind } from './sim/solarSystem'
 import { NetClient, type MarketActionResult, type MarketIntentResult, type MarketListing, type PeerState, type PlayerProgress } from './net/client'
@@ -1116,7 +1116,10 @@ function upgradeNextPlanet(now: number): void {
   if (!next) return
   planetUpgradeInFlight = true
   nextPlanetUpgradeAt = Infinity
-  setTimeout(() => {
+  void (async () => {
+    // Compute the heavy 2K texture off the main thread first, so the synchronous build below is all
+    // cache hits (a ~20ms geometry pass) instead of a ~2s freeze.
+    await prewarmHighPlanetTextures(next.planet.radius, next.planet.surface, next.planet.seed, next.planet.color)
     const old = planetGroups[next.idx]
     const upgraded = buildSolarPlanet(
       next.planet.radius,
@@ -1139,7 +1142,7 @@ function upgradeNextPlanet(now: number): void {
     planetUpgradeInFlight = false
     planetUpgradeIdleSince = 0
     nextPlanetUpgradeAt = performance.now() + PLANET_UPGRADE_BETWEEN_MS
-  }, 0)
+  })()
 }
 
 // Mineable ore — a dynamic pool that follows the player: depleted or distant rocks are
@@ -3777,11 +3780,16 @@ const FRAME_LOG_MS = 24
 let _pfStart = 0
 let _pfPrev = 0
 const _pfSections: Array<[string, number]> = []
-function pfBegin(now: number): void {
+function pfBegin(_now: number): void {
   if (!DEV_PROFILE) return
   _pfSections.length = 0
-  _pfStart = now
-  _pfPrev = now
+  // Use performance.now() (NOT the rAF timestamp arg): pfMark/pfEnd also use performance.now(),
+  // and the rAF timestamp is the *scheduled* frame time, which can lag wall-clock by the duration
+  // of any prior main-thread stall (a big build, shader compile, GC). Mixing the two dumps that
+  // stall onto the first mark, making an innocent section look like it froze for ~1.7s.
+  const t = performance.now()
+  _pfStart = t
+  _pfPrev = t
 }
 function pfMark(label: string): void {
   if (!DEV_PROFILE) return

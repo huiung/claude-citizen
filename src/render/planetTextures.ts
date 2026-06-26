@@ -278,32 +278,32 @@ function makeTexture(canvas: HTMLCanvasElement, isColor: boolean): THREE.CanvasT
   return tex
 }
 
-export function generatePlanetTextures(
-  kind: PlanetTextureKind,
-  seed: number,
-  baseColor: number,
-  size = 512,
-  radius = 4300,
-): PlanetTextureSet {
-  const width = size
-  const height = Math.max(2, Math.floor(size / 2))
-  const scaleKey = Math.round(radius)
-  const key = `${kind}:${seed}:${baseColor}:${scaleKey}:${width}x${height}`
-  const cached = textureCache.get(key)
-  if (cached) return cached
+/** Wrap a raw RGBA pixel buffer (from the sync loop or the worker) into a CanvasTexture. */
+function textureFromPixels(data: Uint8ClampedArray, width: number, height: number, isColor: boolean): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')!
+  const img = ctx.createImageData(width, height)
+  img.data.set(data)
+  ctx.putImageData(img, 0, 0)
+  return makeTexture(canvas, isColor)
+}
 
-  const colorCanvas = document.createElement('canvas')
-  colorCanvas.width = width
-  colorCanvas.height = height
-  const colorCtx = colorCanvas.getContext('2d')!
-  const colorData = colorCtx.createImageData(width, height)
+function planetTextureKey(kind: PlanetTextureKind, seed: number, baseColor: number, width: number, height: number, radius: number): string {
+  return `${kind}:${seed}:${baseColor}:${Math.round(radius)}:${width}x${height}`
+}
 
-  const bumpCanvas = document.createElement('canvas')
-  bumpCanvas.width = width
-  bumpCanvas.height = height
-  const bumpCtx = bumpCanvas.getContext('2d')!
-  const bumpData = bumpCtx.createImageData(width, height)
+function cloudTextureKey(kind: PlanetTextureKind, seed: number, width: number, height: number, radius: number): string {
+  return `${kind}:clouds:${seed}:${Math.round(radius)}:${width}x${height}`
+}
 
+/** Pure CPU computation of a planet's color + bump pixel buffers. No DOM — safe in a Web Worker. */
+export function computePlanetPixels(
+  kind: PlanetTextureKind, seed: number, baseColor: number, width: number, height: number, radius: number,
+): { color: Uint8ClampedArray; bump: Uint8ClampedArray } {
+  const color = new Uint8ClampedArray(width * height * 4)
+  const bump = new Uint8ClampedArray(width * height * 4)
   for (let py = 0; py < height; py++) {
     const v = py / (height - 1)
     const lat = Math.PI * (0.5 - v)
@@ -316,44 +316,54 @@ export function generatePlanetTextures(
       const z = Math.sin(lon) * r
       const sample = samplePlanetSurface(kind, seed, x, cy, z, baseColor, radius)
       const i = (py * width + px) * 4
-      colorData.data[i] = Math.round(THREE.MathUtils.clamp(sample.color.r, 0, 1) * 255)
-      colorData.data[i + 1] = Math.round(THREE.MathUtils.clamp(sample.color.g, 0, 1) * 255)
-      colorData.data[i + 2] = Math.round(THREE.MathUtils.clamp(sample.color.b, 0, 1) * 255)
-      colorData.data[i + 3] = 255
+      color[i] = Math.round(THREE.MathUtils.clamp(sample.color.r, 0, 1) * 255)
+      color[i + 1] = Math.round(THREE.MathUtils.clamp(sample.color.g, 0, 1) * 255)
+      color[i + 2] = Math.round(THREE.MathUtils.clamp(sample.color.b, 0, 1) * 255)
+      color[i + 3] = 255
       const h = Math.round(THREE.MathUtils.clamp(sample.height * 0.9 + 0.5, 0, 1) * 255)
-      bumpData.data[i] = h
-      bumpData.data[i + 1] = h
-      bumpData.data[i + 2] = h
-      bumpData.data[i + 3] = 255
+      bump[i] = h
+      bump[i + 1] = h
+      bump[i + 2] = h
+      bump[i + 3] = 255
     }
   }
+  return { color, bump }
+}
 
-  colorCtx.putImageData(colorData, 0, 0)
-  bumpCtx.putImageData(bumpData, 0, 0)
-
-  const set: PlanetTextureSet = {
-    colorMap: makeTexture(colorCanvas, true),
-    bumpMap: kind === 'gas' || kind === 'venus' ? undefined : makeTexture(bumpCanvas, false),
+function planetSetFromPixels(
+  kind: PlanetTextureKind, color: Uint8ClampedArray, bump: Uint8ClampedArray, width: number, height: number,
+): PlanetTextureSet {
+  return {
+    colorMap: textureFromPixels(color, width, height, true),
+    bumpMap: kind === 'gas' || kind === 'venus' ? undefined : textureFromPixels(bump, width, height, false),
   }
+}
+
+export function generatePlanetTextures(
+  kind: PlanetTextureKind,
+  seed: number,
+  baseColor: number,
+  size = 512,
+  radius = 4300,
+): PlanetTextureSet {
+  const width = size
+  const height = Math.max(2, Math.floor(size / 2))
+  const key = planetTextureKey(kind, seed, baseColor, width, height, radius)
+  const cached = textureCache.get(key)
+  if (cached) return cached
+  const { color, bump } = computePlanetPixels(kind, seed, baseColor, width, height, radius)
+  const set = planetSetFromPixels(kind, color, bump, width, height)
   textureCache.set(key, set)
   return set
 }
 
-export function generateCloudTexture(kind: PlanetTextureKind, seed: number, size = 512, radius = 4300): THREE.CanvasTexture | null {
+/** Pure CPU computation of an earth-type cloud shell's RGBA buffer. No DOM — safe in a Web Worker. */
+export function computeCloudPixels(
+  kind: PlanetTextureKind, seed: number, width: number, height: number, radius: number,
+): Uint8ClampedArray | null {
   if (kind !== 'earth') return null
-  const width = size
-  const height = Math.max(2, Math.floor(size / 2))
   const scale = featureFrequency(kind, radius)
-  const key = `${kind}:clouds:${seed}:${Math.round(radius)}:${width}x${height}`
-  const cached = cloudCache.get(key)
-  if (cached) return cached
-
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')!
-  const data = ctx.createImageData(width, height)
-
+  const data = new Uint8ClampedArray(width * height * 4)
   for (let py = 0; py < height; py++) {
     const v = py / (height - 1)
     const lat = Math.PI * (0.5 - v)
@@ -370,15 +380,99 @@ export function generateCloudTexture(kind: PlanetTextureKind, seed: number, size
       const cover = THREE.MathUtils.smoothstep(broad + wisps * 0.34 + bands * 0.16, 0.18, 0.58)
       const alpha = Math.round(THREE.MathUtils.clamp(cover * 0.72, 0, 0.72) * 255)
       const i = (py * width + px) * 4
-      data.data[i] = 245
-      data.data[i + 1] = 250
-      data.data[i + 2] = 255
-      data.data[i + 3] = alpha
+      data[i] = 245
+      data[i + 1] = 250
+      data[i + 2] = 255
+      data[i + 3] = alpha
     }
   }
+  return data
+}
 
-  ctx.putImageData(data, 0, 0)
-  const tex = makeTexture(canvas, true)
+export function generateCloudTexture(kind: PlanetTextureKind, seed: number, size = 512, radius = 4300): THREE.CanvasTexture | null {
+  if (kind !== 'earth') return null
+  const width = size
+  const height = Math.max(2, Math.floor(size / 2))
+  const key = cloudTextureKey(kind, seed, width, height, radius)
+  const cached = cloudCache.get(key)
+  if (cached) return cached
+  const data = computeCloudPixels(kind, seed, width, height, radius)
+  if (!data) return null
+  const tex = textureFromPixels(data, width, height, true)
   cloudCache.set(key, tex)
   return tex
+}
+
+// --- Off-main-thread generation ------------------------------------------------------------------
+// The per-pixel FBM loop for a high-res planet (2048×1024 ≈ 2M samples) blocks the main thread for
+// ~2s. We push that compute into a Worker and feed the result into the SAME caches the synchronous
+// builders read, so buildSolarPlanet() stays unchanged and just hits a warm cache (no freeze).
+type WorkerReply = { id: number; color?: ArrayBuffer; bump?: ArrayBuffer; data?: ArrayBuffer | null }
+let textureWorker: Worker | null | undefined
+let workerSeq = 0
+const pendingJobs = new Map<number, (reply: WorkerReply) => void>()
+
+function getTextureWorker(): Worker | null {
+  if (textureWorker !== undefined) return textureWorker
+  if (typeof Worker === 'undefined') { textureWorker = null; return null }
+  try {
+    const w = new Worker(new URL('./planetTextures.worker.ts', import.meta.url), { type: 'module' })
+    w.onmessage = (e: MessageEvent<WorkerReply>) => {
+      const cb = pendingJobs.get(e.data.id)
+      if (cb) { pendingJobs.delete(e.data.id); cb(e.data) }
+    }
+    w.onerror = () => { textureWorker = null } // give up on the worker; callers fall back to sync
+    textureWorker = w
+  } catch { textureWorker = null }
+  return textureWorker
+}
+
+/** Like generatePlanetTextures, but runs the pixel loop in a Worker and warms the shared cache. */
+export function generatePlanetTexturesAsync(
+  kind: PlanetTextureKind, seed: number, baseColor: number, size = 512, radius = 4300,
+): Promise<PlanetTextureSet> {
+  const width = size
+  const height = Math.max(2, Math.floor(size / 2))
+  const key = planetTextureKey(kind, seed, baseColor, width, height, radius)
+  const cached = textureCache.get(key)
+  if (cached) return Promise.resolve(cached)
+  const worker = getTextureWorker()
+  if (!worker) return Promise.resolve(generatePlanetTextures(kind, seed, baseColor, size, radius))
+  return new Promise<PlanetTextureSet>((resolve) => {
+    const id = ++workerSeq
+    pendingJobs.set(id, (reply) => {
+      const again = textureCache.get(key) // a sibling request may have filled it while we waited
+      if (again) { resolve(again); return }
+      const set = planetSetFromPixels(kind, new Uint8ClampedArray(reply.color!), new Uint8ClampedArray(reply.bump!), width, height)
+      textureCache.set(key, set)
+      resolve(set)
+    })
+    worker.postMessage({ id, job: 'planet', kind, seed, baseColor, width, height, radius })
+  })
+}
+
+/** Like generateCloudTexture, but runs the pixel loop in a Worker and warms the shared cache. */
+export function generateCloudTextureAsync(
+  kind: PlanetTextureKind, seed: number, size = 512, radius = 4300,
+): Promise<THREE.CanvasTexture | null> {
+  if (kind !== 'earth') return Promise.resolve(null)
+  const width = size
+  const height = Math.max(2, Math.floor(size / 2))
+  const key = cloudTextureKey(kind, seed, width, height, radius)
+  const cached = cloudCache.get(key)
+  if (cached) return Promise.resolve(cached)
+  const worker = getTextureWorker()
+  if (!worker) return Promise.resolve(generateCloudTexture(kind, seed, size, radius))
+  return new Promise<THREE.CanvasTexture | null>((resolve) => {
+    const id = ++workerSeq
+    pendingJobs.set(id, (reply) => {
+      const again = cloudCache.get(key)
+      if (again) { resolve(again); return }
+      if (!reply.data) { resolve(null); return }
+      const tex = textureFromPixels(new Uint8ClampedArray(reply.data), width, height, true)
+      cloudCache.set(key, tex)
+      resolve(tex)
+    })
+    worker.postMessage({ id, job: 'cloud', kind, seed, width, height, radius })
+  })
 }

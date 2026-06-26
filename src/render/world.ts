@@ -1,7 +1,9 @@
 import * as THREE from 'three'
 import type { SurfaceKind } from '../sim/solarSystem'
 import { SUN_POSITION } from '../sim/solarSystem'
-import { generateCloudTexture, generatePlanetTextures, samplePlanetSurface } from './planetTextures'
+import {
+  generateCloudTexture, generateCloudTextureAsync, generatePlanetTextures, generatePlanetTexturesAsync, samplePlanetSurface,
+} from './planetTextures'
 import { makeAsteroidMaterial, makeOreMaterial } from './asteroidTextures'
 
 /** Deterministic pseudo-random — same world for every visitor, no assets. */
@@ -615,6 +617,17 @@ export function buildSun(radius: number, color: number): THREE.Group {
 
 /** One surface mesh at a given tessellation + displacement scale — used as an LOD level.
  *  Higher `dispScale` raises mountains/valleys (close-up detail); lower flattens (far away). */
+// High-quality surface texture size. Solid, detailed bodies (earth/mars/rocky) get extra resolution
+// for crisp close-ups. Shared by the builder and the worker prewarm so their cache keys agree.
+export function highPlanetMapSize(surface: SurfaceKind, radius: number): number {
+  if (surface === 'earth' || surface === 'mars' || surface === 'rocky') return 2048
+  return radius >= 4000 || surface === 'gas' ? 1024 : 512
+}
+
+export function highCloudMapSize(radius: number): number {
+  return radius >= 4000 ? 1024 : 512
+}
+
 function makePlanetSurface(
   radius: number, color: number, surface: SurfaceKind, seed: number, detail: number, dispScale: number,
   textureSize?: number,
@@ -635,8 +648,7 @@ function makePlanetSurface(
   }
 
   geo.computeVertexNormals()
-  // Solid, detailed bodies (earth/mars/mercury) get extra resolution for crisp close-ups.
-  const mapSize = textureSize ?? (surface === 'earth' || surface === 'mars' || surface === 'rocky' ? 2048 : radius >= 4000 || isGas ? 1024 : 512)
+  const mapSize = textureSize ?? highPlanetMapSize(surface, radius)
   const maps = generatePlanetTextures(surface, seed, color, mapSize, radius)
   const material = new THREE.MeshStandardMaterial({
     map: maps.colorMap,
@@ -683,7 +695,7 @@ export function buildSolarPlanet(
 
   // Earth-type bodies get a translucent cloud shell drifting just above the surface.
   const startupCloudSize = startupTextureSize > 512 ? 512 : 256
-  const clouds = generateCloudTexture(surface, seed, quality === 'high' ? (radius >= 4000 ? 1024 : 512) : startupCloudSize, radius)
+  const clouds = generateCloudTexture(surface, seed, quality === 'high' ? highCloudMapSize(radius) : startupCloudSize, radius)
   if (clouds) {
     group.add(new THREE.Mesh(
       new THREE.SphereGeometry(radius * 1.018, 72, 36),
@@ -700,6 +712,17 @@ export function buildSolarPlanet(
     group.add(ring)
   }
   return group
+}
+
+/** Compute (in a Worker) the exact high-quality textures buildSolarPlanet('high') will request and
+ *  warm the shared cache, so the subsequent synchronous build is all cache hits and never freezes.
+ *  Resolves once the textures are ready; if no Worker is available it resolves immediately and the
+ *  build falls back to synchronous generation. */
+export async function prewarmHighPlanetTextures(radius: number, surface: SurfaceKind, seed: number, color: number): Promise<void> {
+  await Promise.all([
+    generatePlanetTexturesAsync(surface, seed, color, highPlanetMapSize(surface, radius), radius),
+    generateCloudTextureAsync(surface, seed, highCloudMapSize(radius), radius),
+  ])
 }
 
 export function buildLights(scene: THREE.Scene): void {
