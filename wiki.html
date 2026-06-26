@@ -7,17 +7,24 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { background: #02060a; color: #cfeede; font-family: "Share Tech Mono", "SF Mono", Consolas, ui-monospace, monospace; }
-    body { line-height: 1.7; padding: 0 20px 80px; }
-    .wrap { max-width: 760px; margin: 0 auto; }
-    header { padding: 40px 0 24px; border-bottom: 1px solid rgba(63, 174, 95, .25); margin-bottom: 28px; }
-    h1 { font-family: "Orbitron", "Share Tech Mono", sans-serif; font-size: 26px; letter-spacing: 3px; color: #9fffb0; font-weight: 700; }
+    body { line-height: 1.7; }
+    .layout { display: flex; align-items: flex-start; gap: 36px; max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+    /* Sticky left sidebar — title, top links, and an auto-generated table of contents. */
+    .sidebar { position: sticky; top: 0; align-self: flex-start; width: 232px; flex: 0 0 232px; height: 100vh; overflow-y: auto; padding: 34px 0 40px; border-right: 1px solid rgba(63,174,95,.25); }
+    h1 { font-family: "Orbitron", "Share Tech Mono", sans-serif; font-size: 22px; letter-spacing: 3px; color: #9fffb0; font-weight: 700; line-height: 1.25; }
+    h1 small { display: block; font-size: 14px; letter-spacing: 4px; opacity: .55; }
     h1 span { opacity: .5; }
-    .sub { font-size: 13px; opacity: .6; margin-top: 8px; }
-    nav { margin-top: 16px; display: flex; gap: 18px; flex-wrap: wrap; }
-    nav a { color: #7fc99a; font-size: 12px; text-decoration: none; border-bottom: 1px solid rgba(127,201,154,.3); }
-    nav a:hover { color: #9fffb0; }
-    nav a svg { vertical-align: -2px; margin-right: 4px; }
-    h2 { font-size: 17px; color: #9fffb0; letter-spacing: 2px; margin: 34px 0 10px; }
+    .sub { font-size: 12px; opacity: .55; margin: 8px 18px 0 0; }
+    .toplinks { margin-top: 16px; display: flex; gap: 16px; flex-wrap: wrap; }
+    .toplinks a { color: #7fc99a; font-size: 12px; text-decoration: none; border-bottom: 1px solid rgba(127,201,154,.3); }
+    .toplinks a:hover { color: #9fffb0; }
+    .toc { margin-top: 24px; display: flex; flex-direction: column; gap: 1px; padding-right: 14px; }
+    .toc a { color: #7fc99a; font-size: 12px; letter-spacing: 1px; text-decoration: none; padding: 5px 12px; border-left: 2px solid transparent; border-radius: 0 4px 4px 0; }
+    .toc a:hover { color: #9fffb0; background: rgba(63,174,95,.08); }
+    .toc a.active { color: #9fffb0; border-left-color: #9fffb0; background: rgba(63,174,95,.12); }
+    .content { flex: 1 1 auto; min-width: 0; max-width: 760px; padding: 40px 0 80px; }
+    h2 { font-size: 17px; color: #9fffb0; letter-spacing: 2px; margin: 34px 0 10px; scroll-margin-top: 16px; }
+    .content > h2:first-child { margin-top: 0; }
     p, li { font-size: 14px; opacity: .9; }
     ul { margin: 8px 0 8px 22px; }
     li { margin: 4px 0; }
@@ -28,6 +35,15 @@
     .key { color: #ffe08a; }
     .foot { margin-top: 48px; padding-top: 18px; border-top: 1px solid rgba(63,174,95,.25); font-size: 12px; opacity: .55; }
     a { color: #7fc99a; }
+    /* Narrow screens: stack the sidebar on top, TOC wraps horizontally. */
+    @media (max-width: 720px) {
+      .layout { flex-direction: column; gap: 0; }
+      .sidebar { position: static; width: auto; flex: none; height: auto; overflow: visible; padding: 28px 0 18px; border-right: none; border-bottom: 1px solid rgba(63,174,95,.25); }
+      .toc { flex-direction: row; flex-wrap: wrap; gap: 4px 10px; padding-right: 0; }
+      .toc a { border-left: none; padding: 3px 0; }
+      .toc a.active { background: none; border-left: none; text-decoration: underline; }
+      .content { padding: 24px 0 60px; }
+    }
   </style>
   <script type="module">
     // Self-hosted web fonts (same as the game) — Orbitron for the title, Share Tech Mono for body.
@@ -36,15 +52,17 @@
   </script>
 </head>
 <body>
-  <div class="wrap">
-    <header>
-      <h1>CLAUDE <span>CITIZEN</span> — WIKI</h1>
+  <div class="layout">
+    <aside class="sidebar">
+      <h1>CLAUDE <span>CITIZEN</span><small>WIKI</small></h1>
       <div class="sub">An open-source attempt to finish Star Citizen before Star Citizen does. Built with Claude Fable 5.</div>
-      <nav>
+      <nav class="toplinks">
         <a href="/">▶ Play</a>
-        <a href="https://github.com/huiung/claude-citizen" target="_blank" rel="noopener"><svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+        <a href="https://github.com/huiung/claude-citizen" target="_blank" rel="noopener">GitHub</a>
       </nav>
-    </header>
+      <nav id="toc" class="toc" aria-label="Sections"></nav>
+    </aside>
+    <main class="content">
 
     <h2>GETTING STARTED</h2>
     <p>Pick a callsign and hit <kbd>LAUNCH</kbd>. You spawn in your hauler near the Meridian Refinery. No download, no account — your progress saves automatically (anonymously) and follows you back when you return. Grab a <strong>Pilot Code</strong> from the menu to carry your pilot to another device (one live session per code).</p>
@@ -85,7 +103,7 @@
     <h2>MINING</h2>
     <p>Ore veins glow cyan and are scattered around you. Fly within range, hold <kbd>Left-click</kbd>, and the laser pulls ore straight into your hold. A vein holds only a fraction of a cargo hold and depletes as you mine — once it runs dry it vanishes and a fresh vein appears elsewhere nearby, so you're always prospecting and moving rather than parked on one rock. Upgrade your <strong>mining yield</strong> at a station to extract faster.</p>
 
-    <h2>CRAFT &amp; UPGRADES</h2>
+    <h2>SHIPS &amp; UPGRADES</h2>
     <p>At a station, the <strong>UPGRADES</strong> tab spends credits on <strong>cargo / speed / boost / mining-yield</strong> tiers — five tiers each, so there's always a bigger sink as your credits (and rank) grow. The <strong>SHIPYARD</strong> tab sells whole new hulls:</p>
     <table>
       <tr><th>Hull</th><th>Role</th></tr>
@@ -95,9 +113,25 @@
       <tr><td class="key">Interceptor</td><td>Fastest, fragile — hit-and-run</td></tr>
     </table>
 
-    <h2>HOLDER COSMETICS</h2>
-    <p>Verified token holders get cosmetic identity perks in-game. T1, T2, and T3 holders show tiered callsign colors on nameplates and chat. Holder-only visual hulls unlock by tier in the station <strong>HANGAR</strong> tab: T2 can equip <strong>Doge Runner Mk II</strong>, while T3 can equip <strong>Void Interceptor</strong> or <strong>Sovereign Wraith</strong>. You can switch back to the standard hull at any time.</p>
-    <p>These perks are visual only: no speed, combat, mining, cargo, or economy advantage.</p>
+    <h2>CRAFTING &amp; COSMETICS</h2>
+    <p>The station <strong>CRAFTING</strong> tab turns credits into cosmetic flair. First refine <strong>Craft Cores</strong> (50,000 cr each), then spend a core on a kit — an <strong>engine trail</strong>, a <strong>hull finish</strong>, a <strong>comet wake</strong>, or a <strong>void runner</strong> skin. Every craft rolls a random rarity:</p>
+    <ul>
+      <li><strong>Common → Rare → Epic → Legendary</strong> — roughly 70% common, 22% rare, and 8% epic-or-better at base odds. Each rarity has its own named variant (e.g. Standard → Blue → Solar → Radiant Aurum Trail).</li>
+      <li><strong>Pity</strong> — the longer you go without an epic-or-better, the better your odds get; go 20 crafts without one and the next is guaranteed epic-or-better.</li>
+    </ul>
+    <p>Equip what you craft across three cosmetic slots — <strong>trail</strong>, <strong>hull</strong>, and <strong>aura</strong> — and mix and match. Crafted cosmetics are purely visual and never change your stats.</p>
+
+    <h2>MARKETPLACE</h2>
+    <p>Crafted cosmetics are tradable between pilots. From the station <strong>MARKET</strong> tab you can <strong>list</strong> a tradable cosmetic for a credit price, <strong>buy</strong> another pilot's listing, or <strong>cancel</strong> one of your own. Each listing shows a thumbnail and the item's rarity. Trading is tied to your wallet identity, so link a Solana wallet to buy and sell. Pulled a duplicate Legendary? List it and let another pilot chase the look.</p>
+
+    <h2>HOLDER COSMETICS &amp; TIERS</h2>
+    <p>Linking a Solana wallet that holds the token unlocks <strong>holder tiers</strong>, set by your token balance:</p>
+    <ul>
+      <li><strong>T1 · Gold</strong> (1+ tokens) — a gold callsign color on your nameplate and in chat.</li>
+      <li><strong>T2 · Cyan</strong> (100,000+ tokens) — a cyan callsign color, plus the <strong>Doge Runner Mk II</strong> hull visual in the station <strong>HANGAR</strong> tab.</li>
+      <li><strong>T3 · Whale</strong> (1,000,000+ tokens) — a whale-tier callsign color, plus T3-only hull visuals: <strong>Void Interceptor</strong>, <strong>Sovereign Wraith</strong>, <strong>Eclipse Corvette</strong>, and the <strong>Deep Core Mining Ring</strong>.</li>
+    </ul>
+    <p>You can switch back to the standard hull at any time. Every holder perk is visual only — no speed, combat, mining, cargo, or economy advantage.</p>
 
     <h2>RANKS</h2>
     <p>Your <strong>pilot rank</strong> climbs through six tiers (<strong>Cadet → Admiral</strong>) based on <strong>lifetime earnings</strong> — every credit you've ever earned. Because it tracks earnings, not your current balance, spending on upgrades or ships never demotes you.</p>
@@ -114,11 +148,18 @@
     <h2>PVP ARENA</h2>
     <p>Pilot-vs-pilot combat is opt-in. Cycle to the <strong>Practice Arena</strong> or <strong>Ranked Arena</strong> beacon with <kbd>N</kbd>, then press <kbd>J</kbd> to quantum-jump beyond the named solar system to the deep-space arena approach lane; the jump drops you outside the marker, not inside it. Practice is open to everyone. Ranked requires a verified 1,000+ token balance, and under-threshold pilots are pushed back at the boundary. Once <strong>PVP ENABLED</strong> appears, your weapons can damage other pilots inside the same arena ring. Leave the ring and PvP damage shuts off after a short grace window. Pirates are cleared away from PvP zones so dogfights stay pilot-vs-pilot. Peer hull bars appear under callsigns, kills hit the chat feed, and the killer receives a small credit bounty. Only Ranked Arena kills count on the wallet-only Ranked PvP leaderboard. Damage is checked by the relay, so the client can feel responsive without trusting local-only hits.</p>
 
+    <h2>RACE · TIME TRIALS</h2>
+    <p>Set the <strong>Season Hub</strong> as your quantum destination on the Solar Atlas and fly out to its time-trial course. Thread the glowing <strong>gates</strong> in order — the clock starts at the first gate and stops at the last. Beat your own best time, then climb the <strong>Race</strong> leaderboard, which ranks pilots by their single fastest run.</p>
+
     <h2>QUANTUM TRAVEL</h2>
     <p>Space is vast. Press <kbd>N</kbd> to pick a destination — it cycles through the named planets (Mercury → Saturn), then the deep-space Practice Arena and Ranked Arena beacons, shown on the HUD with distance. Or press <kbd>M</kbd> to open the <strong>Solar Atlas</strong>, a top-down map of the whole system — click any planet to set it as your destination at a glance. Then press <kbd>J</kbd> to spool the quantum drive: a couple seconds of charge, then you streak across the sector and drop out just short of the destination you chose. Press <kbd>J</kbd> again to cancel. Distant targets (Jupiter, Saturn) make for a long, cinematic cruise.</p>
 
+    <h2>DEEP SPACE &amp; THE BLACK HOLE</h2>
+    <p>Fly far from the core and a <strong>depth gauge</strong> climbs. The deeper you go, the richer the spoils — rare <strong>gold ore veins</strong> (credit jackpots) appear and pirates grow tankier with bigger bounties. Risk and reward scale together.</p>
+    <p>In a remote corner of the system lurks a <strong>black hole</strong>. Its gravity reaches out roughly 50 km and steepens as you fall in. Cross into the <strong>tidal zone</strong> (~18 km) and your hull bleeds damage that ramps the deeper you dive; cross the <strong>event horizon</strong> (~5.5 km) and no hull survives. The game: dive as close as you dare and pull out alive. The <strong>Black Hole</strong> leaderboard ranks your <strong>closest approach</strong>.</p>
+
     <h2>MULTIPLAYER</h2>
-    <p>Other pilots share your sector in real time — you will see their craft and callsigns. Hit <kbd>Enter</kbd> to chat; open it any time to scroll back through the session history. The <strong>Career</strong> leaderboard ranks the top 100 pilots by lifetime credits, while the <strong>Ranked PvP</strong> leaderboard tracks ranked arena kills. Wallet-connected pilots display as callsign plus a shortened wallet address; anonymous Career pilots keep their callsign only. If you later link a wallet, your anonymous progress can be claimed to that wallet and the old anonymous token is retired to prevent duplicate leaderboard rows.</p>
+    <p>Other pilots share your sector in real time — you will see their craft and callsigns. Hit <kbd>Enter</kbd> to chat; open it any time to scroll back through the session history. The game tracks four leaderboards: <strong>Career</strong> (top 100 by lifetime credits), <strong>Ranked PvP</strong> (ranked arena kills), <strong>Race</strong> (fastest time-trial run), and <strong>Black Hole</strong> (closest approach to the horizon). Wallet-connected pilots display as callsign plus a shortened wallet address; anonymous Career pilots keep their callsign only. If you later link a wallet, your anonymous progress can be claimed to that wallet and the old anonymous token is retired to prevent duplicate leaderboard rows.</p>
 
     <h2>TIPS</h2>
     <ul>
@@ -131,6 +172,35 @@
     <div class="foot">
       Open source · <a href="https://github.com/huiung/claude-citizen" target="_blank" rel="noopener">github.com/huiung/claude-citizen</a> · Built with Claude Fable 5 · Not affiliated with Cloud Imperium Games / Roberts Space Industries.
     </div>
+    </main>
   </div>
+  <script>
+    // Build the sidebar table of contents from the section headings, then highlight
+    // the section nearest the top of the viewport as you scroll.
+    (function () {
+      var headings = Array.prototype.slice.call(document.querySelectorAll('.content h2'))
+      var toc = document.getElementById('toc')
+      var slug = function (t) { return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }
+      var linkById = {}
+      headings.forEach(function (h) {
+        var id = slug(h.textContent)
+        h.id = id
+        var a = document.createElement('a')
+        a.href = '#' + id
+        a.textContent = h.textContent
+        toc.appendChild(a)
+        linkById[id] = a
+      })
+      if (!('IntersectionObserver' in window) || !headings.length) return
+      var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return
+          Object.keys(linkById).forEach(function (id) { linkById[id].classList.remove('active') })
+          linkById[entry.target.id].classList.add('active')
+        })
+      }, { rootMargin: '0px 0px -75% 0px' })
+      headings.forEach(function (h) { observer.observe(h) })
+    })()
+  </script>
 </body>
 </html>
