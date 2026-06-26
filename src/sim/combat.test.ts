@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { Vector3 } from 'three'
 import {
   applyDamage, canFire, createHealth, createWeapon, fire, type HitTarget, hullFraction,
-  isDead, type Projectile, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile, stepProjectiles,
-  stepWeapon,
+  isDead, isEngageable, type Projectile, PROJECTILE_LIFE, PROJECTILE_SPEED, repairHull, resolveHits,
+  spawnProjectile, stepProjectiles, stepWeapon, WEAPON_RANGE,
 } from './combat'
 
 describe('health', () => {
@@ -163,5 +163,19 @@ describe('weapon cooldown', () => {
 describe('player projectile speed', () => {
   it('is fast so fast (boosting) ships can be hit, in PvP and against pirates alike', () => {
     expect(PROJECTILE_SPEED).toBe(1400)
+  })
+})
+
+describe('weapon range', () => {
+  it('WEAPON_RANGE is how far a bolt travels over its lifetime', () => {
+    expect(WEAPON_RANGE).toBe(PROJECTILE_SPEED * PROJECTILE_LIFE)
+  })
+
+  it('isEngageable is true at or within weapon range, false beyond', () => {
+    expect(isEngageable(0)).toBe(true)
+    expect(isEngageable(WEAPON_RANGE - 1)).toBe(true)
+    expect(isEngageable(WEAPON_RANGE)).toBe(true)
+    expect(isEngageable(WEAPON_RANGE + 1)).toBe(false)
+    expect(isEngageable(100_000)).toBe(false)
   })
 })

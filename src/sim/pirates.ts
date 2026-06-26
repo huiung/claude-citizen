@@ -14,6 +14,11 @@ export const PIRATE_FIRE_INTERVAL = 1.1
 export const PIRATE_DAMAGE = 7
 export const PIRATE_PROJECTILE_SPEED = 300
 export const PIRATE_REWARD = 250 // credits for a kill
+// A pirate this far from the player is neither a threat (it only fires within
+// PIRATE_ENGAGE_RANGE) nor hittable (past WEAPON_RANGE ≈ 3080m), and at PIRATE_SPEED 55
+// it would crawl for ~30 min to re-close. Cull it so the MAX_PIRATES slot frees up for a
+// fresh near spawn. Sits well beyond WEAPON_RANGE so an active dogfight never culls a pirate.
+export const PIRATE_LEASH_RANGE = 5000
 
 export interface Pirate {
   id: string
@@ -35,6 +40,11 @@ export function spawnPirate(id: string, position: Vector3, hullMul = 1, reward =
     weapon: createWeapon(PIRATE_FIRE_INTERVAL),
     reward,
   }
+}
+
+/** True when a pirate at `dist` metres should be culled — too far to threaten or be hit. */
+export function shouldDespawnPirate(dist: number): boolean {
+  return dist > PIRATE_LEASH_RANGE
 }
 
 export interface PirateStepResult {

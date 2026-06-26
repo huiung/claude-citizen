@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { Vector3 } from 'three'
-import { isDead } from './combat'
+import { isDead, WEAPON_RANGE } from './combat'
 import {
-  PIRATE_ENGAGE_RANGE, PIRATE_HULL, PIRATE_REWARD, PIRATE_STANDOFF, spawnPirate, spawnPositionAround, stepPirate,
+  PIRATE_ENGAGE_RANGE, PIRATE_HULL, PIRATE_LEASH_RANGE, PIRATE_REWARD, PIRATE_STANDOFF, shouldDespawnPirate,
+  spawnPirate, spawnPositionAround, stepPirate,
 } from './pirates'
 
 describe('spawnPirate', () => {
@@ -62,6 +63,21 @@ describe('stepPirate', () => {
     const r = stepPirate(p, origin, 0.016)
     // target is at -Z from the pirate, so the bolt should travel in -Z
     expect(r.fired!.velocity.z).toBeLessThan(0)
+  })
+})
+
+describe('leash despawn', () => {
+  it('PIRATE_LEASH_RANGE sits beyond weapon range so a dogfight never culls a pirate', () => {
+    expect(PIRATE_LEASH_RANGE).toBeGreaterThan(WEAPON_RANGE)
+  })
+
+  it('despawns only beyond the leash range', () => {
+    expect(shouldDespawnPirate(0)).toBe(false)
+    expect(shouldDespawnPirate(PIRATE_ENGAGE_RANGE)).toBe(false)
+    expect(shouldDespawnPirate(WEAPON_RANGE)).toBe(false)
+    expect(shouldDespawnPirate(PIRATE_LEASH_RANGE)).toBe(false)
+    expect(shouldDespawnPirate(PIRATE_LEASH_RANGE + 1)).toBe(true)
+    expect(shouldDespawnPirate(100_000)).toBe(true)
   })
 })
 

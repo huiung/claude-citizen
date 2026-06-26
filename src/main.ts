@@ -56,7 +56,8 @@ import {
 } from './sim/timeTrial'
 import {
   applyDamage, canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
-  isDead, type Projectile, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile, stepProjectiles, stepWeapon,
+  isDead, isEngageable, type Projectile, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile,
+  stepProjectiles, stepWeapon,
 } from './sim/combat'
 import {
   allowsPveHostiles,
@@ -83,7 +84,7 @@ import {
   shouldClearPveHostiles,
   trainingDronesActive,
 } from './sim/pvp'
-import { type Pirate, PIRATE_REWARD, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
+import { type Pirate, PIRATE_REWARD, shouldDespawnPirate, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
 import {
   createTrainingDrones,
   stepTrainingDrone,
@@ -3294,10 +3295,15 @@ function drawCombatHud(now: number): void {
     const sx = (_proj.x * 0.5 + 0.5) * W
     const sy = (-_proj.y * 0.5 + 0.5) * H
     const dist = ship.position.distanceTo(position)
+    // Out of weapon range: it can't be hit (and pirates only fire up close), so demote the
+    // marker — dim it, drop the lead pip, and say so — instead of inviting futile fire.
+    const engageable = isEngageable(dist)
     const onScreen = infront && sx >= 0 && sx <= W && sy >= 0 && sy <= H
 
     if (onScreen) {
       const s = 16
+      cctx.save()
+      if (!engageable) cctx.globalAlpha = 0.35
       cctx.strokeStyle = color; cctx.lineWidth = 2
       cctx.beginPath()
       for (const [ox, oy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as [number, number][]) {
@@ -3306,7 +3312,9 @@ function drawCombatHud(now: number): void {
       }
       cctx.stroke()
       cctx.fillStyle = color; cctx.font = '11px ui-monospace, monospace'; cctx.textAlign = 'center'
-      cctx.fillText(`${label} ${Math.round(dist)}m`, sx, sy + s + 14)
+      const text = engageable ? `${label} ${Math.round(dist)}m` : `${label} ${Math.round(dist)}m · OUT OF RANGE`
+      cctx.fillText(text, sx, sy + s + 14)
+      cctx.restore()
     } else {
       let dx = sx - cx, dy = sy - cy
       if (!infront) { dx = -dx; dy = -dy } // behind: flip so the arrow points the right way
@@ -3314,11 +3322,12 @@ function drawCombatHud(now: number): void {
       const r = Math.min(W, H) * 0.4
       const ax = cx + Math.cos(ang) * r, ay = cy + Math.sin(ang) * r
       cctx.save(); cctx.translate(ax, ay); cctx.rotate(ang)
+      if (!engageable) cctx.globalAlpha = 0.35
       cctx.fillStyle = color
       cctx.beginPath(); cctx.moveTo(13, 0); cctx.lineTo(-8, -7); cctx.lineTo(-8, 7); cctx.closePath(); cctx.fill()
       cctx.restore()
     }
-    if (lead) markLeadTarget(position, velocity, dist)
+    if (lead && engageable) markLeadTarget(position, velocity, dist)
   }
 
   for (const p of pirates) drawTarget(p.position, p.velocity, '#ff5d5d', 'HOSTILE')
@@ -4169,6 +4178,11 @@ function frame(now: number): void {
         refreshWallet()
         spawnLoot(p.position) // drop a loot crate where it died
         removePirateMesh(p.id)
+        pirates.splice(i, 1)
+      } else if (shouldDespawnPirate(ship.position.distanceTo(pirates[i].position))) {
+        // Outran it (boost/quantum) — cull the orphaned chaser silently so the slot
+        // frees up for a fresh near spawn. No bounty: it wasn't killed.
+        removePirateMesh(pirates[i].id)
         pirates.splice(i, 1)
       }
     }

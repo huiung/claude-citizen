@@ -44,6 +44,14 @@ export const PROJECTILE_SPEED = 1400
 export const PROJECTILE_LIFE = 2.2
 export const PROJECTILE_DAMAGE = 12
 
+/** How far a bolt travels before it fizzles — the honest "can I land a hit" range. */
+export const WEAPON_RANGE = PROJECTILE_SPEED * PROJECTILE_LIFE
+
+/** True when a target at `dist` metres is close enough that a bolt could reach it. */
+export function isEngageable(dist: number): boolean {
+  return dist <= WEAPON_RANGE
+}
+
 export interface Projectile {
   position: Vector3
   previousPosition: Vector3
