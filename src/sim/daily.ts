@@ -58,9 +58,11 @@ export function dailyObjectives(key: string): Objective[] {
   return pool.slice(0, 3).map((e) => ({ id: e.kind, kind: e.kind, target: e.target, label: e.label }))
 }
 
-export const OBJECTIVE_REWARD = 2   // cores per completed objective
-export const SET_BONUS = 3          // cores for completing all 3 in a day
-export const STREAK_REWARD_CAP = 7  // cores cap for the login streak
+export const OBJECTIVE_REWARD = 1   // cores per completed objective
+export const SET_BONUS = 2          // cores for completing all 3 in a day
+export const STREAK_REWARD_CAP = 4  // cores cap for the login streak
+// Daily ceiling: 3×1 + 2 + 4 = 9 cores/day (≈ a pity-guaranteed epic+ every ~2 days), tuned down
+// from 16 so the tradable cosmetic gacha keeps its scarcity.
 
 export interface DailyState {
   day: string             // UTC day key the stored state applies to
