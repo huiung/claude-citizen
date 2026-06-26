@@ -371,6 +371,10 @@ const LEADERBOARD_URLS: Record<LeaderboardMode, string> = {
 const lbListLandingEl = document.getElementById('lb-list-landing')!
 const lbListHudEl = document.getElementById('lb-list-hud')!
 const leaderboardPanelEl = document.getElementById('leaderboard-panel')!
+const dailyPanelEl = document.getElementById('daily-panel')!
+const dailyObjsEl = document.getElementById('daily-objs')!
+const dailyStreakEl = document.getElementById('daily-streak')!
+const dailyResetEl = document.getElementById('daily-reset')!
 const lbTitleLandingEl = document.getElementById('lb-title-landing')!
 const lbTitleHudEl = document.getElementById('lb-title-hud')!
 const lbModeCareerLandingEl = document.getElementById('lb-mode-career-landing') as HTMLButtonElement
@@ -2174,6 +2178,20 @@ function recordDailyEvent(kind: ObjectiveKind, amount: number, nowMs: number): v
   refreshWallet() // persists cores + the daily block via currentProgress()
 }
 
+function renderDailyPanel(nowMs: number): void {
+  dailyObjsEl.innerHTML = dailyObjs.map((o) => {
+    const done = dailyState.claimed.includes(o.id)
+    const prog = Math.min(o.target, done ? o.target : (dailyProgress.get(o.id) ?? 0))
+    const pct = Math.round((prog / o.target) * 100)
+    return `<div class="obj${done ? ' done' : ''}">${done ? '✓ ' : ''}${o.label} — ${prog}/${o.target}`
+      + `<div class="bar"><i style="width:${pct}%"></i></div></div>`
+  }).join('')
+  dailyStreakEl.textContent = `🔥 Streak: ${dailyState.streak} day${dailyState.streak === 1 ? '' : 's'}`
+  const msToReset = (Date.parse(`${dayKey(nowMs)}T00:00:00Z`) + 86_400_000) - nowMs
+  const h = Math.floor(msToReset / 3_600_000), m = Math.floor((msToReset % 3_600_000) / 60_000)
+  dailyResetEl.textContent = `Resets in ${h}h ${m}m`
+}
+
 function applyServerProgress(p: PlayerProgress): void {
   econ.credits = p.credits
   econ.earned = p.earned ?? p.credits
@@ -2543,6 +2561,7 @@ function dock(id: string): void {
   solarMap.close()
   miningActive = false
   leaderboardPanelEl.hidden = true // don't strand the leaderboard open behind the station menu
+  dailyPanelEl.hidden = true
   dockPromptEl.hidden = true
   mineEl.hidden = true
   beam.visible = false
@@ -2646,6 +2665,7 @@ function openSettingsPanel(): void {
   beam.visible = false
   impact.visible = false
   leaderboardPanelEl.hidden = true
+  dailyPanelEl.hidden = true
   settingsPanelEl.hidden = false
   renderSettingsPanel()
   if (MOBILE_COMPANION) mobileControlsEl.hidden = true
@@ -2661,7 +2681,7 @@ function closeSettingsPanel(): void {
 
 function restoreFlightInputAfterPanel(): void {
   if (MOBILE_COMPANION && running && !docked && !chatOpen && settingsPanelEl.hidden) mobileControlsEl.hidden = false
-  if (running && !docked && !chatOpen && !solarMap.isOpen && settingsPanelEl.hidden && leaderboardPanelEl.hidden) requestFlightPointerLock()
+  if (running && !docked && !chatOpen && !solarMap.isOpen && settingsPanelEl.hidden && leaderboardPanelEl.hidden && dailyPanelEl.hidden) requestFlightPointerLock()
 }
 
 const inventoryPanel = new InventoryPanel({
@@ -2683,6 +2703,7 @@ function openInventoryPanel(): void {
   beam.visible = false
   impact.visible = false
   leaderboardPanelEl.hidden = true
+  dailyPanelEl.hidden = true
   settingsPanelEl.hidden = true
   if (MOBILE_COMPANION) mobileControlsEl.hidden = true
   if (document.pointerLockElement) document.exitPointerLock()
@@ -2830,6 +2851,7 @@ addEventListener('keydown', (e) => {
     beam.visible = false
     impact.visible = false
     leaderboardPanelEl.hidden = true
+    dailyPanelEl.hidden = true
     if (MOBILE_COMPANION) mobileControlsEl.hidden = true
     audio.setMining(false, false)
     if (document.pointerLockElement) document.exitPointerLock()
@@ -2881,6 +2903,13 @@ addEventListener('keydown', (e) => {
       if (MOBILE_COMPANION) mobileControlsEl.hidden = false
       requestFlightPointerLock()
     }
+  }
+  if (e.code === 'KeyG' && running && !docked) {
+    const willShow = dailyPanelEl.hidden
+    if (willShow) renderDailyPanel(Date.now())
+    dailyPanelEl.hidden = !willShow
+    e.preventDefault()
+    return
   }
   if (e.code === 'KeyJ' && running && !docked) {
     toggleQuantumTravel()
@@ -3548,6 +3577,7 @@ function launch(): void {
     mobileControlsEl.hidden = false
   }
   leaderboardPanelEl.hidden = true
+  dailyPanelEl.hidden = true
   updateWalletHUD() // HUD only — don't net.saveProgress before onProgress restores, or we'd overwrite saved data
   hullBarEl.style.width = '100%'
   nextSpawnAt = performance.now() + 8000 // first hostiles arrive after ~8s
@@ -4283,6 +4313,7 @@ function frame(now: number): void {
       // Black-hole proximity adds a low rumble (reusing the quantum-pressure ambience channel).
       audio.setAmbience({ atmosphere, quantum: bhPressure, speedFrac: ship.velocity.length() / (hubTimeTrial.active ? baseSpeed : effSpeed()) })
     }
+    if (!dailyPanelEl.hidden) renderDailyPanel(now)
   } else {
     sun.visible = true
     for (const mesh of planetGroups) mesh.visible = true
