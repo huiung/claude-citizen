@@ -298,34 +298,65 @@ function cloudTextureKey(kind: PlanetTextureKind, seed: number, width: number, h
   return `${kind}:clouds:${seed}:${Math.round(radius)}:${width}x${height}`
 }
 
+function fillPlanetRow(
+  color: Uint8ClampedArray, bump: Uint8ClampedArray, py: number,
+  kind: PlanetTextureKind, seed: number, baseColor: number, width: number, height: number, radius: number,
+): void {
+  const v = py / (height - 1)
+  const lat = Math.PI * (0.5 - v)
+  const cy = Math.sin(lat)
+  const r = Math.cos(lat)
+  for (let px = 0; px < width; px++) {
+    const u = px / width
+    const lon = u * Math.PI * 2
+    const x = Math.cos(lon) * r
+    const z = Math.sin(lon) * r
+    const sample = samplePlanetSurface(kind, seed, x, cy, z, baseColor, radius)
+    const i = (py * width + px) * 4
+    color[i] = Math.round(THREE.MathUtils.clamp(sample.color.r, 0, 1) * 255)
+    color[i + 1] = Math.round(THREE.MathUtils.clamp(sample.color.g, 0, 1) * 255)
+    color[i + 2] = Math.round(THREE.MathUtils.clamp(sample.color.b, 0, 1) * 255)
+    color[i + 3] = 255
+    const h = Math.round(THREE.MathUtils.clamp(sample.height * 0.9 + 0.5, 0, 1) * 255)
+    bump[i] = h
+    bump[i + 1] = h
+    bump[i + 2] = h
+    bump[i + 3] = 255
+  }
+}
+
 /** Pure CPU computation of a planet's color + bump pixel buffers. No DOM — safe in a Web Worker. */
 export function computePlanetPixels(
   kind: PlanetTextureKind, seed: number, baseColor: number, width: number, height: number, radius: number,
 ): { color: Uint8ClampedArray; bump: Uint8ClampedArray } {
   const color = new Uint8ClampedArray(width * height * 4)
   const bump = new Uint8ClampedArray(width * height * 4)
-  for (let py = 0; py < height; py++) {
-    const v = py / (height - 1)
-    const lat = Math.PI * (0.5 - v)
-    const cy = Math.sin(lat)
-    const r = Math.cos(lat)
-    for (let px = 0; px < width; px++) {
-      const u = px / width
-      const lon = u * Math.PI * 2
-      const x = Math.cos(lon) * r
-      const z = Math.sin(lon) * r
-      const sample = samplePlanetSurface(kind, seed, x, cy, z, baseColor, radius)
-      const i = (py * width + px) * 4
-      color[i] = Math.round(THREE.MathUtils.clamp(sample.color.r, 0, 1) * 255)
-      color[i + 1] = Math.round(THREE.MathUtils.clamp(sample.color.g, 0, 1) * 255)
-      color[i + 2] = Math.round(THREE.MathUtils.clamp(sample.color.b, 0, 1) * 255)
-      color[i + 3] = 255
-      const h = Math.round(THREE.MathUtils.clamp(sample.height * 0.9 + 0.5, 0, 1) * 255)
-      bump[i] = h
-      bump[i + 1] = h
-      bump[i + 2] = h
-      bump[i + 3] = 255
-    }
+  for (let py = 0; py < height; py++) fillPlanetRow(color, bump, py, kind, seed, baseColor, width, height, radius)
+  return { color, bump }
+}
+
+// Yield to the event loop so the browser can render between chunks (keeps the main thread responsive).
+function yieldToLoop(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+// ~a few ms of work per slice, so no single chunk drops a frame.
+function rowsPerSlice(width: number): number {
+  return Math.max(1, Math.floor(4096 / width))
+}
+
+/** Main-thread fallback when no Worker is available: same pixels, computed a few rows per tick so it
+ *  never freezes — the texture just fills in over ~1-2s instead of all at once. */
+async function computePlanetPixelsSliced(
+  kind: PlanetTextureKind, seed: number, baseColor: number, width: number, height: number, radius: number,
+): Promise<{ color: Uint8ClampedArray; bump: Uint8ClampedArray }> {
+  const color = new Uint8ClampedArray(width * height * 4)
+  const bump = new Uint8ClampedArray(width * height * 4)
+  const step = rowsPerSlice(width)
+  for (let py0 = 0; py0 < height; py0 += step) {
+    const end = Math.min(height, py0 + step)
+    for (let py = py0; py < end; py++) fillPlanetRow(color, bump, py, kind, seed, baseColor, width, height, radius)
+    if (end < height) await yieldToLoop()
   }
   return { color, bump }
 }
@@ -357,6 +388,31 @@ export function generatePlanetTextures(
   return set
 }
 
+function fillCloudRow(
+  data: Uint8ClampedArray, py: number, seed: number, scale: number, width: number, height: number,
+): void {
+  const v = py / (height - 1)
+  const lat = Math.PI * (0.5 - v)
+  const y = Math.sin(lat)
+  const r = Math.cos(lat)
+  for (let px = 0; px < width; px++) {
+    const u = px / width
+    const lon = u * Math.PI * 2
+    const x = Math.cos(lon) * r
+    const z = Math.sin(lon) * r
+    const broad = fbm(x * 3.4 * scale + 12, y * 3.4 * scale, z * 3.4 * scale - 7, seed + 501, 5)
+    const wisps = fbm(x * 17 * scale + y * 4, y * 17 * scale, z * 17 * scale - x * 4, seed + 557, 4)
+    const bands = Math.pow(1 - Math.abs(y), 0.45)
+    const cover = THREE.MathUtils.smoothstep(broad + wisps * 0.34 + bands * 0.16, 0.18, 0.58)
+    const alpha = Math.round(THREE.MathUtils.clamp(cover * 0.72, 0, 0.72) * 255)
+    const i = (py * width + px) * 4
+    data[i] = 245
+    data[i + 1] = 250
+    data[i + 2] = 255
+    data[i + 3] = alpha
+  }
+}
+
 /** Pure CPU computation of an earth-type cloud shell's RGBA buffer. No DOM — safe in a Web Worker. */
 export function computeCloudPixels(
   kind: PlanetTextureKind, seed: number, width: number, height: number, radius: number,
@@ -364,27 +420,21 @@ export function computeCloudPixels(
   if (kind !== 'earth') return null
   const scale = featureFrequency(kind, radius)
   const data = new Uint8ClampedArray(width * height * 4)
-  for (let py = 0; py < height; py++) {
-    const v = py / (height - 1)
-    const lat = Math.PI * (0.5 - v)
-    const y = Math.sin(lat)
-    const r = Math.cos(lat)
-    for (let px = 0; px < width; px++) {
-      const u = px / width
-      const lon = u * Math.PI * 2
-      const x = Math.cos(lon) * r
-      const z = Math.sin(lon) * r
-      const broad = fbm(x * 3.4 * scale + 12, y * 3.4 * scale, z * 3.4 * scale - 7, seed + 501, 5)
-      const wisps = fbm(x * 17 * scale + y * 4, y * 17 * scale, z * 17 * scale - x * 4, seed + 557, 4)
-      const bands = Math.pow(1 - Math.abs(y), 0.45)
-      const cover = THREE.MathUtils.smoothstep(broad + wisps * 0.34 + bands * 0.16, 0.18, 0.58)
-      const alpha = Math.round(THREE.MathUtils.clamp(cover * 0.72, 0, 0.72) * 255)
-      const i = (py * width + px) * 4
-      data[i] = 245
-      data[i + 1] = 250
-      data[i + 2] = 255
-      data[i + 3] = alpha
-    }
+  for (let py = 0; py < height; py++) fillCloudRow(data, py, seed, scale, width, height)
+  return data
+}
+
+async function computeCloudPixelsSliced(
+  kind: PlanetTextureKind, seed: number, width: number, height: number, radius: number,
+): Promise<Uint8ClampedArray | null> {
+  if (kind !== 'earth') return null
+  const scale = featureFrequency(kind, radius)
+  const data = new Uint8ClampedArray(width * height * 4)
+  const step = rowsPerSlice(width)
+  for (let py0 = 0; py0 < height; py0 += step) {
+    const end = Math.min(height, py0 + step)
+    for (let py = py0; py < end; py++) fillCloudRow(data, py, seed, scale, width, height)
+    if (end < height) await yieldToLoop()
   }
   return data
 }
@@ -407,72 +457,92 @@ export function generateCloudTexture(kind: PlanetTextureKind, seed: number, size
 // The per-pixel FBM loop for a high-res planet (2048×1024 ≈ 2M samples) blocks the main thread for
 // ~2s. We push that compute into a Worker and feed the result into the SAME caches the synchronous
 // builders read, so buildSolarPlanet() stays unchanged and just hits a warm cache (no freeze).
+//
+// The Worker is a CLASSIC worker (no { type: 'module' }) — Vite bundles its imports into a single
+// self-contained file, so this works in every browser and, crucially, matches the bundled format
+// (a module-typed request against an IIFE worker file fails to start in some production hosts).
+// If the worker can't start OR errors, we fall back to a TIME-SLICED main-thread computation that
+// fills the texture a few rows per tick — slower, but it never freezes the frame.
 type WorkerReply = { id: number; color?: ArrayBuffer; bump?: ArrayBuffer; data?: ArrayBuffer | null }
 let textureWorker: Worker | null | undefined
 let workerSeq = 0
-const pendingJobs = new Map<number, (reply: WorkerReply) => void>()
+const pendingJobs = new Map<number, { resolve: (reply: WorkerReply) => void; reject: (err: unknown) => void }>()
 
 function getTextureWorker(): Worker | null {
   if (textureWorker !== undefined) return textureWorker
   if (typeof Worker === 'undefined') { textureWorker = null; return null }
   try {
-    const w = new Worker(new URL('./planetTextures.worker.ts', import.meta.url), { type: 'module' })
+    const w = new Worker(new URL('./planetTextures.worker.ts', import.meta.url))
     w.onmessage = (e: MessageEvent<WorkerReply>) => {
-      const cb = pendingJobs.get(e.data.id)
-      if (cb) { pendingJobs.delete(e.data.id); cb(e.data) }
+      const job = pendingJobs.get(e.data.id)
+      if (job) { pendingJobs.delete(e.data.id); job.resolve(e.data) }
     }
-    w.onerror = () => { textureWorker = null } // give up on the worker; callers fall back to sync
+    w.onerror = () => {
+      // Worker is unusable — abandon it and reject every in-flight job so callers fall back gracefully.
+      textureWorker = null
+      for (const job of pendingJobs.values()) job.reject(new Error('texture worker failed'))
+      pendingJobs.clear()
+    }
     textureWorker = w
   } catch { textureWorker = null }
   return textureWorker
 }
 
-/** Like generatePlanetTextures, but runs the pixel loop in a Worker and warms the shared cache. */
-export function generatePlanetTexturesAsync(
+function runWorkerJob(message: Record<string, unknown>): Promise<WorkerReply> {
+  const worker = getTextureWorker()
+  if (!worker) return Promise.reject(new Error('no texture worker'))
+  return new Promise<WorkerReply>((resolve, reject) => {
+    const id = ++workerSeq
+    pendingJobs.set(id, { resolve, reject })
+    worker.postMessage({ id, ...message })
+  })
+}
+
+/** Like generatePlanetTextures, but computes off the main thread (Worker, or time-sliced fallback)
+ *  and warms the shared cache so the synchronous builder is a cache hit. Never freezes the frame. */
+export async function generatePlanetTexturesAsync(
   kind: PlanetTextureKind, seed: number, baseColor: number, size = 512, radius = 4300,
 ): Promise<PlanetTextureSet> {
   const width = size
   const height = Math.max(2, Math.floor(size / 2))
   const key = planetTextureKey(kind, seed, baseColor, width, height, radius)
   const cached = textureCache.get(key)
-  if (cached) return Promise.resolve(cached)
-  const worker = getTextureWorker()
-  if (!worker) return Promise.resolve(generatePlanetTextures(kind, seed, baseColor, size, radius))
-  return new Promise<PlanetTextureSet>((resolve) => {
-    const id = ++workerSeq
-    pendingJobs.set(id, (reply) => {
-      const again = textureCache.get(key) // a sibling request may have filled it while we waited
-      if (again) { resolve(again); return }
-      const set = planetSetFromPixels(kind, new Uint8ClampedArray(reply.color!), new Uint8ClampedArray(reply.bump!), width, height)
-      textureCache.set(key, set)
-      resolve(set)
-    })
-    worker.postMessage({ id, job: 'planet', kind, seed, baseColor, width, height, radius })
-  })
+  if (cached) return cached
+  let pixels: { color: Uint8ClampedArray; bump: Uint8ClampedArray }
+  try {
+    const reply = await runWorkerJob({ job: 'planet', kind, seed, baseColor, width, height, radius })
+    pixels = { color: new Uint8ClampedArray(reply.color!), bump: new Uint8ClampedArray(reply.bump!) }
+  } catch {
+    pixels = await computePlanetPixelsSliced(kind, seed, baseColor, width, height, radius)
+  }
+  const again = textureCache.get(key) // a sibling request may have filled it while we waited
+  if (again) return again
+  const set = planetSetFromPixels(kind, pixels.color, pixels.bump, width, height)
+  textureCache.set(key, set)
+  return set
 }
 
-/** Like generateCloudTexture, but runs the pixel loop in a Worker and warms the shared cache. */
-export function generateCloudTextureAsync(
+/** Like generateCloudTexture, but computes off the main thread (Worker, or time-sliced fallback). */
+export async function generateCloudTextureAsync(
   kind: PlanetTextureKind, seed: number, size = 512, radius = 4300,
 ): Promise<THREE.CanvasTexture | null> {
-  if (kind !== 'earth') return Promise.resolve(null)
+  if (kind !== 'earth') return null
   const width = size
   const height = Math.max(2, Math.floor(size / 2))
   const key = cloudTextureKey(kind, seed, width, height, radius)
   const cached = cloudCache.get(key)
-  if (cached) return Promise.resolve(cached)
-  const worker = getTextureWorker()
-  if (!worker) return Promise.resolve(generateCloudTexture(kind, seed, size, radius))
-  return new Promise<THREE.CanvasTexture | null>((resolve) => {
-    const id = ++workerSeq
-    pendingJobs.set(id, (reply) => {
-      const again = cloudCache.get(key)
-      if (again) { resolve(again); return }
-      if (!reply.data) { resolve(null); return }
-      const tex = textureFromPixels(new Uint8ClampedArray(reply.data), width, height, true)
-      cloudCache.set(key, tex)
-      resolve(tex)
-    })
-    worker.postMessage({ id, job: 'cloud', kind, seed, width, height, radius })
-  })
+  if (cached) return cached
+  let data: Uint8ClampedArray | null
+  try {
+    const reply = await runWorkerJob({ job: 'cloud', kind, seed, width, height, radius })
+    data = reply.data ? new Uint8ClampedArray(reply.data) : null
+  } catch {
+    data = await computeCloudPixelsSliced(kind, seed, width, height, radius)
+  }
+  const again = cloudCache.get(key)
+  if (again) return again
+  if (!data) return null
+  const tex = textureFromPixels(data, width, height, true)
+  cloudCache.set(key, tex)
+  return tex
 }
