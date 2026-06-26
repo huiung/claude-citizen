@@ -1,4 +1,5 @@
 // WebSocket relay client: position relay + token-keyed progress sync.
+import type { DailyState } from '../sim/daily'
 
 export interface PeerState {
   id: string
@@ -37,6 +38,7 @@ export interface PlayerProgress {
     equipped?: { trail: string | null; hull: string | null; aura: string | null }
     pityCount?: number
   }
+  daily?: DailyState
 }
 
 export interface MarketListingItem {
@@ -82,8 +84,9 @@ export interface NetEvents {
   onPeerState(peer: PeerState): void
   onPeerLeave(id: string): void
   onStatus(connected: boolean, online: number): void
-  /** Server returned saved progress for our token (server is the source of truth). */
-  onProgress(progress: PlayerProgress): void
+  /** Server answered our token's progress: the saved blob, or null when nothing is stored
+   *  (a brand-new token). Either way it's the signal that the server has spoken. */
+  onProgress(progress: PlayerProgress | null): void
   /** A chat line arrived (including our own, echoed by the server). */
   onChat(name: string, text: string, tier: number): void
   /** This Pilot Code signed in elsewhere — the server closed us and we won't reconnect. */
@@ -223,7 +226,9 @@ export class NetClient {
         }
         break
       case 'progress':
-        if (msg.data) this.events.onProgress(msg.data as PlayerProgress)
+        // data is the saved blob, or null for a token with nothing stored. Forward both —
+        // null is a valid "no saved progress" signal, not an absence of a message.
+        this.events.onProgress((msg.data ?? null) as PlayerProgress | null)
         break
       case 'chat':
         if (typeof msg.text === 'string') this.events.onChat(String(msg.name ?? '?'), msg.text, Number(msg.tier) || 0)

@@ -93,6 +93,7 @@ import {
 } from './sim/trainingDrones'
 import { BLACK_HOLE_APPROACH_DESTINATION, BLACK_HOLE_CENTER, distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, tidalDamageRate, TIDAL_RADIUS, withinInfluence } from './sim/blackHole'
 import { createBlackHoleRun, enterRun, sampleRun, exitRunAlive, dieRun } from './sim/blackHoleRun'
+import { type DailyState, type Objective, type ObjectiveKind, OBJECTIVE_REWARD, SET_BONUS, STREAK_REWARD_CAP, dailyObjectives, dayKey, emptyDaily, rollStreak } from './sim/daily'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { InventoryPanel } from './ui/inventory'
@@ -370,6 +371,17 @@ const LEADERBOARD_URLS: Record<LeaderboardMode, string> = {
 const lbListLandingEl = document.getElementById('lb-list-landing')!
 const lbListHudEl = document.getElementById('lb-list-hud')!
 const leaderboardPanelEl = document.getElementById('leaderboard-panel')!
+const dailyPanelEl = document.getElementById('daily-panel')!
+const dailyObjsEl = document.getElementById('daily-objs')!
+const dailyStreakEl = document.getElementById('daily-streak')!
+const dailyResetEl = document.getElementById('daily-reset')!
+const dailyCloseEl = document.getElementById('daily-close')!
+// Close the daily panel and hand flight input back (re-locks the pointer if nothing else is open).
+function closeDailyPanel(): void {
+  dailyPanelEl.hidden = true
+  restoreFlightInputAfterPanel()
+}
+dailyCloseEl.addEventListener('click', closeDailyPanel)
 const lbTitleLandingEl = document.getElementById('lb-title-landing')!
 const lbTitleHudEl = document.getElementById('lb-title-hud')!
 const lbModeCareerLandingEl = document.getElementById('lb-mode-career-landing') as HTMLButtonElement
@@ -1958,6 +1970,10 @@ function updateTrainingDroneWrecks(now: number, dt: number): void {
 // --- Game systems (main owns all state; modules are pure)
 const econ = loadEconomy()
 const crafting = loadCraftingState(localStorage)
+let dailyState: DailyState = emptyDaily()
+let dailyObjs: Objective[] = []
+const dailyProgress = new Map<string, number>() // ephemeral per-session progress, keyed by objective id
+let lastEarnedForDaily = 0                       // econ.earned watermark for the earn_credits objective
 const upgrades = loadUpgrades()
 // Objective chain (post-onboarding): conditions read live progress — no extra tracking or saving.
 const upgradeTotal = (): number => upgrades.tiers.cargo + upgrades.tiers.speed + upgrades.tiers.boost + upgrades.tiers.mining
@@ -2127,7 +2143,63 @@ function currentProgress(): PlayerProgress {
     upgrades: { cargo: upgrades.tiers.cargo, speed: upgrades.tiers.speed, boost: upgrades.tiers.boost, mining: upgrades.tiers.mining },
     hangar: { selected: selectedShipType, owned: [...ownedShips] },
     crafting: { cores: crafting.cores, items: [...crafting.items], equipped: crafting.equipped, pityCount: crafting.pityCount },
+    daily: dailyState,
   }
+}
+
+function initDaily(nowMs: number): void {
+  const today = dayKey(nowMs)
+  if (dailyState.day !== today) {
+    const roll = rollStreak(dailyState.streak, dailyState.lastStreakDay, today)
+    if (roll.advanced) {
+      dailyState.streak = roll.streak
+      dailyState.lastStreakDay = today
+      if (roll.reward > 0) {
+        crafting.cores += roll.reward
+        registerKillBanner(combatFeedback, `DAY ${roll.streak} STREAK`, `+${roll.reward} cores`, nowMs)
+      }
+    }
+    dailyState.day = today
+    dailyState.claimed = []
+    dailyState.setBonusClaimed = false
+    dailyProgress.clear()
+  }
+  dailyObjs = dailyObjectives(today)
+  lastEarnedForDaily = econ.earned
+}
+
+function recordDailyEvent(kind: ObjectiveKind, amount: number, nowMs: number): void {
+  const obj = dailyObjs.find((o) => o.kind === kind)
+  if (!obj || dailyState.claimed.includes(obj.id)) return
+  const next = (dailyProgress.get(obj.id) ?? 0) + amount
+  dailyProgress.set(obj.id, next)
+  if (next < obj.target) return
+  dailyState.claimed.push(obj.id)
+  crafting.cores += OBJECTIVE_REWARD
+  registerKillBanner(combatFeedback, 'DAILY COMPLETE', `+${OBJECTIVE_REWARD} cores`, nowMs)
+  if (dailyState.claimed.length >= 3 && !dailyState.setBonusClaimed) {
+    dailyState.setBonusClaimed = true
+    crafting.cores += SET_BONUS
+    registerKillBanner(combatFeedback, 'ALL DAILIES DONE', `+${SET_BONUS} cores`, nowMs)
+  }
+  refreshWallet() // persists cores + the daily block via currentProgress()
+}
+
+function renderDailyPanel(nowMs: number): void {
+  dailyObjsEl.innerHTML = dailyObjs.map((o) => {
+    const done = dailyState.claimed.includes(o.id)
+    const prog = Math.min(o.target, done ? o.target : (dailyProgress.get(o.id) ?? 0))
+    const pct = Math.round((prog / o.target) * 100)
+    return `<div class="obj${done ? ' done' : ''}">${done ? '✓ ' : ''}${o.label} `
+      + `<span class="rw">+${OBJECTIVE_REWARD} cores</span> — ${prog}/${o.target}`
+      + `<div class="bar"><i style="width:${pct}%"></i></div></div>`
+  }).join('')
+    + `<div class="bonus">All 3 done → <span class="rw">+${SET_BONUS} cores</span> bonus</div>`
+  const streakReward = Math.min(dailyState.streak, STREAK_REWARD_CAP)
+  dailyStreakEl.textContent = `🔥 Streak: ${dailyState.streak} day${dailyState.streak === 1 ? '' : 's'} · +${streakReward} core${streakReward === 1 ? '' : 's'}/day`
+  const msToReset = (Date.parse(`${dayKey(nowMs)}T00:00:00Z`) + 86_400_000) - nowMs
+  const h = Math.floor(msToReset / 3_600_000), m = Math.floor((msToReset % 3_600_000) / 60_000)
+  dailyResetEl.textContent = `Resets in ${h}h ${m}m`
 }
 
 function applyServerProgress(p: PlayerProgress): void {
@@ -2144,6 +2216,8 @@ function applyServerProgress(p: PlayerProgress): void {
   crafting.items.splice(0, crafting.items.length, ...nextCrafting.items)
   crafting.equipped = nextCrafting.equipped
   crafting.pityCount = nextCrafting.pityCount
+  dailyState = p.daily ? { ...emptyDaily(), ...p.daily } : emptyDaily()
+  initDaily(Date.now())
   ownedShips.clear()
   for (const t of p.hangar.owned) if (t in SHIP_STATS) ownedShips.add(t as ShipType)
   ownedShips.add('hauler')
@@ -2170,6 +2244,7 @@ const stationMenu = new StationMenu({
   // Hide the in-progress item from the inventory panel while the forge animates, so the
   // reveal isn't spoiled there either; cleared (null) on finish/cancel.
   onForgeChange: (id) => inventoryPanel.setHiddenItem(id),
+  onContractDelivered: () => recordDailyEvent('deliver_contracts', 1, Date.now()),
 })
 document.body.appendChild(stationMenu.root)
 
@@ -2490,11 +2565,13 @@ document.body.appendChild(solarMap.root)
 let dockOpenRequest = 0
 function dock(id: string): void {
   docked = true
+  recordDailyEvent('dock_outposts', 1, Date.now())
   const openRequest = ++dockOpenRequest
   if (!dockedEver) markOnboard('scc.ob.docked', (v) => { dockedEver = v }) // onboarding step 2 — opening the UI counts
   solarMap.close()
   miningActive = false
   leaderboardPanelEl.hidden = true // don't strand the leaderboard open behind the station menu
+  dailyPanelEl.hidden = true
   dockPromptEl.hidden = true
   mineEl.hidden = true
   beam.visible = false
@@ -2598,6 +2675,7 @@ function openSettingsPanel(): void {
   beam.visible = false
   impact.visible = false
   leaderboardPanelEl.hidden = true
+  dailyPanelEl.hidden = true
   settingsPanelEl.hidden = false
   renderSettingsPanel()
   if (MOBILE_COMPANION) mobileControlsEl.hidden = true
@@ -2613,7 +2691,7 @@ function closeSettingsPanel(): void {
 
 function restoreFlightInputAfterPanel(): void {
   if (MOBILE_COMPANION && running && !docked && !chatOpen && settingsPanelEl.hidden) mobileControlsEl.hidden = false
-  if (running && !docked && !chatOpen && !solarMap.isOpen && settingsPanelEl.hidden && leaderboardPanelEl.hidden) requestFlightPointerLock()
+  if (running && !docked && !chatOpen && !solarMap.isOpen && settingsPanelEl.hidden && leaderboardPanelEl.hidden && dailyPanelEl.hidden) requestFlightPointerLock()
 }
 
 const inventoryPanel = new InventoryPanel({
@@ -2635,6 +2713,7 @@ function openInventoryPanel(): void {
   beam.visible = false
   impact.visible = false
   leaderboardPanelEl.hidden = true
+  dailyPanelEl.hidden = true
   settingsPanelEl.hidden = true
   if (MOBILE_COMPANION) mobileControlsEl.hidden = true
   if (document.pointerLockElement) document.exitPointerLock()
@@ -2782,6 +2861,7 @@ addEventListener('keydown', (e) => {
     beam.visible = false
     impact.visible = false
     leaderboardPanelEl.hidden = true
+    dailyPanelEl.hidden = true
     if (MOBILE_COMPANION) mobileControlsEl.hidden = true
     audio.setMining(false, false)
     if (document.pointerLockElement) document.exitPointerLock()
@@ -2833,6 +2913,17 @@ addEventListener('keydown', (e) => {
       if (MOBILE_COMPANION) mobileControlsEl.hidden = false
       requestFlightPointerLock()
     }
+  }
+  if (e.code === 'KeyG' && running && !docked) {
+    if (dailyPanelEl.hidden) {
+      renderDailyPanel(Date.now())
+      dailyPanelEl.hidden = false
+      if (document.pointerLockElement) document.exitPointerLock() // free the cursor to read / click ✕
+    } else {
+      closeDailyPanel()
+    }
+    e.preventDefault()
+    return
   }
   if (e.code === 'KeyJ' && running && !docked) {
     toggleQuantumTravel()
@@ -2915,9 +3006,15 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     setWalletStatus('Wallet not linked — already has a pilot, or signing failed.')
   },
   onProgress(p) {
-    // Server is the source of truth — adopt saved progress when it arrives.
-    applyServerProgress(p)
-    finishOnboarding() // a returning token already knows the ropes
+    if (p) {
+      // Server is the source of truth — adopt saved progress when it arrives.
+      applyServerProgress(p)
+      finishOnboarding() // a returning token already knows the ropes
+    } else {
+      // Brand-new token: the server confirmed there's nothing saved. Init the daily loop now,
+      // event-driven — no timer guess, and no wrong-streak flash for returning pilots.
+      initDaily(Date.now())
+    }
   },
   onPeerJoin(peer) {
     const mesh = buildCraft(peerShipType(peer), PALETTE[peer.color % PALETTE.length])
@@ -3500,12 +3597,17 @@ function launch(): void {
     mobileControlsEl.hidden = false
   }
   leaderboardPanelEl.hidden = true
+  dailyPanelEl.hidden = true
   updateWalletHUD() // HUD only — don't net.saveProgress before onProgress restores, or we'd overwrite saved data
   hullBarEl.style.width = '100%'
   nextSpawnAt = performance.now() + 8000 // first hostiles arrive after ~8s
   audio.init()
   audio.resume()
   running = true
+  // Offline safety net: normally the relay answers with a 'progress' message (data or null) and
+  // onProgress inits the daily loop. If we're disconnected (no relay), that never arrives — so after
+  // a short delay, init locally if nothing else has. No-ops once any path has set the day.
+  setTimeout(() => { if (running && dailyState.day === '') initDaily(Date.now()) }, 1500)
   selectedJumpIdx = nearestPlanetIdx() // start aimed at the closest planet
   customJumpDestination = null
   setPlayerCraft(selectedShipType) // apply hull (and load its GLB model) on launch
@@ -4007,6 +4109,7 @@ function frame(now: number): void {
     // Mining: transfer ORE from the nearest in-range asteroid while the laser is held.
     const mineResult = mineStep(field, ship.position, econ, dt, miningActive, effCargo(), miningYield(upgrades))
     if (mineResult.mined > 0 && mineResult.asteroid) {
+      recordDailyEvent('mine_ore', mineResult.mined, now)
       if (!minedEver) markOnboard('scc.ob.mined', (v) => { minedEver = v }) // onboarding step 1
       const rm = rockMeshes.get(mineResult.asteroid.id)
       if (rm?.rare) gainCredits(econ, mineResult.mined * ORE_RARE_BONUS) // rare vein jackpot, on top of the ORE
@@ -4174,6 +4277,7 @@ function frame(now: number): void {
         registerKillBanner(combatFeedback, 'PIRATE DESTROYED', `+${p.reward} cr`, now)
         audio.blip('explosion')
         gainCredits(econ, p.reward)
+        recordDailyEvent('kill_pirates', 1, now)
         finishOnboarding() // graduates the onboarding objective
         refreshWallet()
         spawnLoot(p.position) // drop a loot crate where it died
@@ -4185,6 +4289,11 @@ function frame(now: number): void {
         removePirateMesh(pirates[i].id)
         pirates.splice(i, 1)
       }
+    }
+
+    if (econ.earned > lastEarnedForDaily) {
+      recordDailyEvent('earn_credits', econ.earned - lastEarnedForDaily, now)
+      lastEarnedForDaily = econ.earned
     }
 
     for (let i = trainingDrones.length - 1; i >= 0; i--) {
@@ -4228,6 +4337,7 @@ function frame(now: number): void {
       // Black-hole proximity adds a low rumble (reusing the quantum-pressure ambience channel).
       audio.setAmbience({ atmosphere, quantum: bhPressure, speedFrac: ship.velocity.length() / (hubTimeTrial.active ? baseSpeed : effSpeed()) })
     }
+    if (!dailyPanelEl.hidden) renderDailyPanel(now)
   } else {
     sun.visible = true
     for (const mesh of planetGroups) mesh.visible = true
