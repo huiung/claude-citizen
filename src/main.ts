@@ -1196,7 +1196,7 @@ const lastStreamPos = new THREE.Vector3(Infinity, Infinity, Infinity)
 // Celestials are built (mesh + 256px procedural textures) at most a few per frame so flying into a
 // fresh region doesn't block one frame building a whole batch (was the multi-hundred-ms / >1s hitch).
 const pendingBuild = new Map<string, Celestial>()
-const CELESTIAL_BUILD_BUDGET = 2
+const CELESTIAL_BUILD_BUDGET = 1
 
 function celestialRng(seed: number): () => number {
   let a = (seed >>> 0) || 1
@@ -1223,13 +1223,13 @@ function buildCelestial(c: Celestial): THREE.Object3D {
     const baseColor = new THREE.Color().setHSL(0.05 + rand() * 0.07, 0.2, 0.42).getHex()
     const segs = isPlanet ? 48 : 32
     const geo = new THREE.SphereGeometry(c.radius, segs, Math.max(16, segs >> 1))
-    const maps = generatePlanetTextures(kind, c.seed, baseColor, 256, c.radius)
+    const maps = generatePlanetTextures(kind, c.seed, baseColor, 96, c.radius)
     const body = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
       map: maps.colorMap, bumpMap: maps.bumpMap, bumpScale: c.radius * 0.025, roughness: 0.96, metalness: 0,
     }))
     group.add(body)
   } else if (c.type === 'asteroid-cluster') {
-    const mat = makeAsteroidMaterial(c.seed, 0x6b6258, 256)
+    const mat = makeAsteroidMaterial(c.seed, 0x6b6258, 96)
     const n = 6 + Math.floor(rand() * 8)
     for (let i = 0; i < n; i++) {
       const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(c.radius * (0.1 + rand() * 0.22), 0), mat)
@@ -3824,8 +3824,9 @@ function frame(now: number): void {
   ;(sun.userData.sunMat as THREE.ShaderMaterial).uniforms.uTime.value = now * 0.001 // boil the star surface
   if (shouldRunBackgroundWorldWork({ running, docked })) {
     streamCelestials(now)
-    processCelestialBuilds()
     pfMark('stream')
+    processCelestialBuilds()
+    pfMark('build')
     upgradeNextPlanet(now)
     for (const lod of planetLODs) lod.update(camera) // swap planet detail by distance
   }
