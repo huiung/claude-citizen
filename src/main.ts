@@ -1193,6 +1193,10 @@ let lastStream = -Infinity
 // the radius, so re-querying just burns a frame. Kills the periodic hitch when parked/rotating.
 const STREAM_MOVE_THRESHOLD_SQ = 2000 * 2000
 const lastStreamPos = new THREE.Vector3(Infinity, Infinity, Infinity)
+// Celestials are built (mesh + 256px procedural textures) at most a few per frame so flying into a
+// fresh region doesn't block one frame building a whole batch (was the multi-hundred-ms / >1s hitch).
+const pendingBuild = new Map<string, Celestial>()
+const CELESTIAL_BUILD_BUDGET = 2
 
 function celestialRng(seed: number): () => number {
   let a = (seed >>> 0) || 1
@@ -1284,19 +1288,33 @@ function streamCelestials(now: number): void {
       spawnedBodies.delete(id)
     }
   }
-  let added = false
-  for (const c of nearby) {
-    if (!spawnedBodies.has(c.id)) {
-      const mesh = buildCelestial(c)
-      scene.add(mesh)
-      spawnedBodies.set(c.id, mesh)
-      added = true
-    }
+  // Drop queued builds that left the radius before we got to them.
+  for (const id of pendingBuild.keys()) {
+    if (!liveIds.has(id)) pendingBuild.delete(id)
   }
-  // Warm up the new bodies' shaders/textures off the main thread, so they don't hitch the first time
-  // the camera rotates them into view (three compiles a material's program lazily on first render).
-  // compileAsync skips already-compiled programs, so repeat calls are cheap.
-  if (added) void renderer.compileAsync(scene, camera).catch(() => { /* warm-up is best-effort */ })
+  // Enqueue new bodies; the actual (expensive) build is amortized in processCelestialBuilds().
+  for (const c of nearby) {
+    if (!spawnedBodies.has(c.id) && !pendingBuild.has(c.id)) pendingBuild.set(c.id, c)
+  }
+}
+
+// Build a few queued celestials per frame. Spreading the synchronous mesh+texture generation across
+// frames keeps a burst of new bodies from freezing a single frame. Called every frame.
+function processCelestialBuilds(): void {
+  if (pendingBuild.size === 0) return
+  let built = 0
+  for (const [id, c] of pendingBuild) {
+    if (built >= CELESTIAL_BUILD_BUDGET) break
+    pendingBuild.delete(id)
+    if (spawnedBodies.has(id)) continue
+    const mesh = buildCelestial(c)
+    scene.add(mesh)
+    spawnedBodies.set(id, mesh)
+    built++
+  }
+  // Once the burst is fully built, warm up the new shaders off the main thread so they don't hitch when
+  // first rotated into view. compileAsync skips already-compiled programs, so this stays cheap.
+  if (built > 0 && pendingBuild.size === 0) void renderer.compileAsync(scene, camera).catch(() => { /* best-effort */ })
 }
 
 // --- Player & hangar
@@ -3806,6 +3824,7 @@ function frame(now: number): void {
   ;(sun.userData.sunMat as THREE.ShaderMaterial).uniforms.uTime.value = now * 0.001 // boil the star surface
   if (shouldRunBackgroundWorldWork({ running, docked })) {
     streamCelestials(now)
+    processCelestialBuilds()
     pfMark('stream')
     upgradeNextPlanet(now)
     for (const lod of planetLODs) lod.update(camera) // swap planet detail by distance
