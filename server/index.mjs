@@ -407,8 +407,11 @@ wss.on('connection', (ws) => {
       const peers = [...clients.values()].filter((c) => c.active && c !== client).map(({ token: _t, active: _a, authed: _au, pubkey: _pk, holderBalance: _hb, ...rest }) => rest)
       ws.send(JSON.stringify({ t: 'welcome', id: client.id, peers }))
       if (key && anonymousProgressAllowed(client)) {
-        if (store[key]) ws.send(JSON.stringify({ t: 'progress', data: store[key] }))
-        else if (!(key in store)) { store[key] = null; flush() }
+        // Always answer with a 'progress' message — data is the saved blob, or null when this
+        // token has nothing stored. The explicit null lets the client init day-one state right
+        // away (event-driven) instead of guessing with a timer.
+        ws.send(JSON.stringify({ t: 'progress', data: store[key] ?? null }))
+        if (!(key in store)) { store[key] = null; flush() }
       }
       broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q, tier: client.tier ?? 0, ship: client.ship, visual: client.visual, cosmetics: client.cosmetics, hull: client.hull, maxHull: client.maxHull })
       void refreshHolder(ws, client) // (re)check holder flair now that we're an active, visible pilot
@@ -451,7 +454,7 @@ wss.on('connection', (ws) => {
       const sessionId = sessions.create(pubkey)
       flushSessions() // persist so this login survives a relay restart
       ws.send(JSON.stringify({ t: 'auth-ok', pubkey, sessionId, name: client.name }))
-      if (store[pubkey]) ws.send(JSON.stringify({ t: 'progress', data: store[pubkey] }))
+      ws.send(JSON.stringify({ t: 'progress', data: store[pubkey] ?? null }))
       void refreshHolder(ws, client) // grant holder flair if this wallet holds the token
       return
     }

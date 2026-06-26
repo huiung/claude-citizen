@@ -2992,9 +2992,15 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     setWalletStatus('Wallet not linked — already has a pilot, or signing failed.')
   },
   onProgress(p) {
-    // Server is the source of truth — adopt saved progress when it arrives.
-    applyServerProgress(p)
-    finishOnboarding() // a returning token already knows the ropes
+    if (p) {
+      // Server is the source of truth — adopt saved progress when it arrives.
+      applyServerProgress(p)
+      finishOnboarding() // a returning token already knows the ropes
+    } else {
+      // Brand-new token: the server confirmed there's nothing saved. Init the daily loop now,
+      // event-driven — no timer guess, and no wrong-streak flash for returning pilots.
+      initDaily(Date.now())
+    }
   },
   onPeerJoin(peer) {
     const mesh = buildCraft(peerShipType(peer), PALETTE[peer.color % PALETTE.length])
@@ -3584,11 +3590,9 @@ function launch(): void {
   audio.init()
   audio.resume()
   running = true
-  // New/anonymous pilots never receive a server 'progress' message (the relay only sends one for
-  // tokens it already has stored), so applyServerProgress → initDaily never fires for them. If no
-  // server progress has restored the daily block shortly after launch, initialize it locally so the
-  // daily loop works on the very first session. Returning pilots get onProgress first (day set), so
-  // this no-ops for them.
+  // Offline safety net: normally the relay answers with a 'progress' message (data or null) and
+  // onProgress inits the daily loop. If we're disconnected (no relay), that never arrives — so after
+  // a short delay, init locally if nothing else has. No-ops once any path has set the day.
   setTimeout(() => { if (running && dailyState.day === '') initDaily(Date.now()) }, 1500)
   selectedJumpIdx = nearestPlanetIdx() // start aimed at the closest planet
   customJumpDestination = null
