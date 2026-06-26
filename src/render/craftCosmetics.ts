@@ -7,7 +7,9 @@ import * as THREE from 'three'
 import type { CosmeticStyle } from '../sim/cosmetics'
 
 const TRAIL_POINTS = 48
-const COMET_TRAIL_POINTS = 84
+const COMET_RIBBON_SAMPLES = 52
+const COMET_RIBBON_MAX_SUBSTEPS = 8
+const COMET_RIBBON_SAMPLE_SPACING = 2.8
 
 interface Effect {
   object: THREE.Object3D
@@ -79,28 +81,78 @@ function fillTrailColors(attr: THREE.BufferAttribute, color: THREE.Color): void 
 }
 
 function buildTrail(style: CosmeticStyle): THREE.Points {
-  const comet = style.recipeId === 'comet-wake-kit'
-  const pointCount = comet ? COMET_TRAIL_POINTS : TRAIL_POINTS
   const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pointCount * 3), 3))
-  const colorAttr = new THREE.BufferAttribute(new Float32Array(pointCount * 3), 3)
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_POINTS * 3), 3))
+  const colorAttr = new THREE.BufferAttribute(new Float32Array(TRAIL_POINTS * 3), 3)
   fillTrailColors(colorAttr, new THREE.Color(style.color))
   geo.setAttribute('color', colorAttr)
   const mat = new THREE.PointsMaterial({
-    size: comet ? 0.18 + style.intensity * 0.45 : 0.3 + style.intensity * 0.7,
+    size: 0.3 + style.intensity * 0.7,
     vertexColors: true,
     transparent: true,
-    opacity: comet ? 0.42 + style.intensity * 0.32 : 0.5 + style.intensity * 0.4,
+    opacity: 0.5 + style.intensity * 0.4,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     sizeAttenuation: true,
   })
   const points = new THREE.Points(geo, mat)
   points.userData.cosmeticTrail = true
-  points.userData.cosmeticTrailKind = comet ? 'comet' : 'aurum'
+  points.userData.cosmeticTrailKind = 'aurum'
   points.userData.cosmeticRecipeId = style.recipeId
   points.frustumCulled = false
   return points
+}
+
+function fillCometRibbonColors(attr: THREE.BufferAttribute, color: THREE.Color): void {
+  const samples = attr.count / 3
+  for (let i = 0; i < samples; i++) {
+    const f = Math.pow(1 - i / Math.max(1, samples - 1), 2.25)
+    const core = Math.pow(f, 0.74)
+    const edge = f * 0.22
+    attr.setXYZ(i * 3, color.r * edge, color.g * edge, color.b * edge)
+    attr.setXYZ(i * 3 + 1, color.r * core, color.g * core, color.b * core)
+    attr.setXYZ(i * 3 + 2, color.r * edge, color.g * edge, color.b * edge)
+  }
+  attr.needsUpdate = true
+}
+
+function buildCometRibbon(style: CosmeticStyle): THREE.Mesh {
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(COMET_RIBBON_SAMPLES * 3 * 3), 3))
+  const colorAttr = new THREE.BufferAttribute(new Float32Array(COMET_RIBBON_SAMPLES * 3 * 3), 3)
+  fillCometRibbonColors(colorAttr, new THREE.Color(style.color))
+  geo.setAttribute('color', colorAttr)
+  const indices: number[] = []
+  for (let i = 0; i < COMET_RIBBON_SAMPLES - 1; i++) {
+    const left = i * 3
+    const center = left + 1
+    const right = left + 2
+    const nextLeft = left + 3
+    const nextCenter = left + 4
+    const nextRight = left + 5
+    indices.push(
+      left, nextLeft, center,
+      center, nextLeft, nextCenter,
+      center, nextCenter, right,
+      right, nextCenter, nextRight,
+    )
+  }
+  geo.setIndex(indices)
+  const mat = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.16 + style.intensity * 0.2,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  })
+  const ribbon = new THREE.Mesh(geo, mat)
+  ribbon.userData.cosmeticTrail = true
+  ribbon.userData.cosmeticTrailKind = 'comet'
+  ribbon.userData.cosmeticTrailSurface = 'ribbon'
+  ribbon.userData.cosmeticRecipeId = style.recipeId
+  ribbon.frustumCulled = false
+  return ribbon
 }
 
 export function createShipCosmetics(shipGroup: THREE.Group, scene: THREE.Scene): ShipCosmetics {
@@ -136,17 +188,92 @@ export function createShipCosmetics(shipGroup: THREE.Group, scene: THREE.Scene):
           if (style.legendary) (object.material as THREE.SpriteMaterial).color.setHSL((t * 0.12) % 1, 0.78, 0.62)
         } })
       } else { // trail — lives in the scene, follows the ship in world space
-        const points = buildTrail(style); scene.add(points)
-        const attr = points.geometry.getAttribute('position') as THREE.BufferAttribute
-        const colorAttr = points.geometry.getAttribute('color') as THREE.BufferAttribute
-        let seeded = false
-        effects.push({ object: points, parent: scene, style, update(_dt, worldPos, t) {
-          if (!seeded) { for (let i = 0; i < attr.count; i++) attr.setXYZ(i, worldPos.x, worldPos.y, worldPos.z); seeded = true }
-          for (let i = attr.count - 1; i > 0; i--) attr.setXYZ(i, attr.getX(i - 1), attr.getY(i - 1), attr.getZ(i - 1))
-          attr.setXYZ(0, worldPos.x, worldPos.y, worldPos.z)
-          attr.needsUpdate = true
-          if (style.legendary) fillTrailColors(colorAttr, tmp.setHSL((t * 0.15) % 1, 0.85, 0.6))
-        } })
+        if (style.recipeId === 'comet-wake-kit') {
+          const ribbon = buildCometRibbon(style); scene.add(ribbon)
+          const attr = ribbon.geometry.getAttribute('position') as THREE.BufferAttribute
+          const colorAttr = ribbon.geometry.getAttribute('color') as THREE.BufferAttribute
+          const centers = new Float32Array(COMET_RIBBON_SAMPLES * 3)
+          const last = new THREE.Vector3()
+          const sample = new THREE.Vector3()
+          const tangent = new THREE.Vector3()
+          const side = new THREE.Vector3()
+          const worldUp = new THREE.Vector3(0, 1, 0)
+          const altUp = new THREE.Vector3(0, 0, 1)
+          let seeded = false
+
+          const writeCenter = (index: number, value: THREE.Vector3): void => {
+            const offset = index * 3
+            centers[offset] = value.x
+            centers[offset + 1] = value.y
+            centers[offset + 2] = value.z
+          }
+          const pushCenter = (value: THREE.Vector3): void => {
+            centers.copyWithin(3, 0, centers.length - 3)
+            writeCenter(0, value)
+          }
+          const seedCenters = (value: THREE.Vector3): void => {
+            for (let i = 0; i < COMET_RIBBON_SAMPLES; i++) writeCenter(i, value)
+            last.copy(value)
+            seeded = true
+          }
+          const redrawRibbon = (): void => {
+            const baseWidth = 0.2 + style.intensity * 0.38
+            for (let i = 0; i < COMET_RIBBON_SAMPLES; i++) {
+              const offset = i * 3
+              sample.set(centers[offset], centers[offset + 1], centers[offset + 2])
+              const prevIndex = Math.max(0, i - 1)
+              const nextIndex = Math.min(COMET_RIBBON_SAMPLES - 1, i + 1)
+              const prevOffset = prevIndex * 3
+              const nextOffset = nextIndex * 3
+              tangent.set(
+                centers[prevOffset] - centers[nextOffset],
+                centers[prevOffset + 1] - centers[nextOffset + 1],
+                centers[prevOffset + 2] - centers[nextOffset + 2],
+              )
+              if (tangent.lengthSq() < 0.0001) tangent.set(0, 0, -1)
+              tangent.normalize()
+              side.crossVectors(tangent, worldUp)
+              if (side.lengthSq() < 0.0001) side.crossVectors(tangent, altUp)
+              if (side.lengthSq() < 0.0001) side.set(1, 0, 0)
+              side.normalize()
+              const f = 1 - i / Math.max(1, COMET_RIBBON_SAMPLES - 1)
+              const width = baseWidth * (0.04 + Math.pow(f, 0.78) * 0.96)
+              attr.setXYZ(i * 3, sample.x - side.x * width, sample.y - side.y * width, sample.z - side.z * width)
+              attr.setXYZ(i * 3 + 1, sample.x, sample.y, sample.z)
+              attr.setXYZ(i * 3 + 2, sample.x + side.x * width, sample.y + side.y * width, sample.z + side.z * width)
+            }
+            attr.needsUpdate = true
+          }
+
+          effects.push({ object: ribbon, parent: scene, style, update(_dt, worldPos, t) {
+            if (!seeded) seedCenters(worldPos)
+            const distance = last.distanceTo(worldPos)
+            const steps = THREE.MathUtils.clamp(
+              Math.ceil(distance / COMET_RIBBON_SAMPLE_SPACING),
+              1,
+              COMET_RIBBON_MAX_SUBSTEPS,
+            )
+            for (let step = 1; step <= steps; step++) {
+              sample.copy(last).lerp(worldPos, step / steps)
+              pushCenter(sample)
+            }
+            last.copy(worldPos)
+            redrawRibbon()
+            if (style.legendary) fillCometRibbonColors(colorAttr, tmp.setHSL((t * 0.15) % 1, 0.85, 0.6))
+          } })
+        } else {
+          const points = buildTrail(style); scene.add(points)
+          const attr = points.geometry.getAttribute('position') as THREE.BufferAttribute
+          const colorAttr = points.geometry.getAttribute('color') as THREE.BufferAttribute
+          let seeded = false
+          effects.push({ object: points, parent: scene, style, update(_dt, worldPos, t) {
+            if (!seeded) { for (let i = 0; i < attr.count; i++) attr.setXYZ(i, worldPos.x, worldPos.y, worldPos.z); seeded = true }
+            for (let i = attr.count - 1; i > 0; i--) attr.setXYZ(i, attr.getX(i - 1), attr.getY(i - 1), attr.getZ(i - 1))
+            attr.setXYZ(0, worldPos.x, worldPos.y, worldPos.z)
+            attr.needsUpdate = true
+            if (style.legendary) fillTrailColors(colorAttr, tmp.setHSL((t * 0.15) % 1, 0.85, 0.6))
+          } })
+        }
       }
     }
   }

@@ -15,52 +15,64 @@
       text-shadow: 0 0 14px rgba(80, 230, 255, .32), 0 1px 3px rgba(0,0,0,.8);
     }
     .title {
-      position: absolute; left: 56px; top: 42px; letter-spacing: 2.8px;
-      font-size: 26px; font-weight: 700; color: #fff;
+      position: absolute; left: 48px; top: 36px; letter-spacing: 2.4px;
+      font-size: 22px; font-weight: 700; color: #fff;
     }
-    .title span { color: #ffd274; }
-    .subtitle {
-      position: absolute; right: 56px; top: 48px; text-align: right;
-      color: #aee9ff; font-size: 13px; letter-spacing: 1.4px; opacity: .82;
+    .title span { color: #9fffb0; }
+    .hud-card {
+      position: absolute; left: 48px; bottom: 42px; min-width: 360px;
+      border-left: 2px solid rgba(159, 255, 176, .72);
+      padding: 0 0 0 18px;
     }
-    .lane {
-      position: absolute; left: 56px; right: 56px; height: 1px;
-      border-top: 1px solid rgba(159, 255, 176, .08);
+    .slot {
+      color: #9fffb0; opacity: .78; font-size: 12px; letter-spacing: 1.6px;
     }
-    .lane-label {
-      position: absolute; left: 58px; width: 330px; transform: translateY(-50%);
-      display: grid; grid-template-columns: 92px 1fr; gap: 16px; align-items: center;
+    #rarity {
+      margin-top: 8px; font-size: 18px; letter-spacing: 2px; font-weight: 700;
     }
-    .rarity {
-      min-width: 92px; padding: 6px 9px; border: 1px solid currentColor; border-radius: 4px;
-      background: rgba(0, 0, 0, .28); font-size: 12px; letter-spacing: 1.5px; text-align: center;
+    #variant {
+      margin-top: 5px; color: #fff; font-size: 28px; letter-spacing: .8px;
+      font-family: Orbitron, "Share Tech Mono", ui-monospace, monospace;
     }
-    .variant { color: #fff; font-size: 15px; letter-spacing: .6px; }
-    .variant small { display: block; margin-top: 3px; color: #aee9ff; font-size: 10px; letter-spacing: 1.2px; opacity: .66; }
-    .common { color: #cfe3d0; }
-    .rare { color: #6fe8ff; }
-    .epic { color: #c08aff; }
-    .legendary { color: #ffe08a; }
-    .foot {
-      position: absolute; left: 56px; bottom: 34px; color: #9fffb0; opacity: .62;
-      font-size: 12px; letter-spacing: 1.2px;
+    .ship-readout {
+      position: absolute; right: 48px; bottom: 42px; text-align: right;
+      color: #aee9ff; font-size: 12px; letter-spacing: 1.4px; opacity: .82;
     }
+    .ship-readout strong {
+      display: block; color: #fff; margin-top: 6px; font-size: 17px; letter-spacing: 1.7px;
+    }
+    .grade-rail {
+      position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%);
+      display: grid; grid-template-columns: repeat(4, 54px); gap: 8px;
+    }
+    .grade-step {
+      height: 4px; border-radius: 999px; background: rgba(174, 233, 255, .16);
+      box-shadow: 0 0 0 1px rgba(174, 233, 255, .12);
+    }
+    .grade-step.past,
+    .grade-step.active {
+      background: rgba(159, 255, 176, .78);
+      box-shadow: 0 0 14px rgba(159, 255, 176, .34);
+    }
+    .grade-step.active { background: #fff; }
   </style>
 </head>
 <body>
   <div id="showcase-root"></div>
   <div class="hud" aria-hidden="true">
-    <div class="title">COMET WAKE <span>KIT</span></div>
-    <div class="subtitle">TRAIL SLOT · COMET WAKE ONLY EQUIPPED</div>
-    <div class="lane" style="top: 25%"></div>
-    <div class="lane" style="top: 43%"></div>
-    <div class="lane" style="top: 61%"></div>
-    <div class="lane" style="top: 79%"></div>
-    <div class="lane-label" style="top: 25%"><div class="rarity common">COMMON</div><div class="variant">Dust Comet Wake<small>baseline particle wake</small></div></div>
-    <div class="lane-label" style="top: 43%"><div class="rarity rare">RARE</div><div class="variant">Ion Comet Wake<small>brighter trail density</small></div></div>
-    <div class="lane-label" style="top: 61%"><div class="rarity epic">EPIC</div><div class="variant">Solar Comet Wake<small>higher intensity falloff</small></div></div>
-    <div class="lane-label" style="top: 79%"><div class="rarity legendary">LEGENDARY</div><div class="variant">Celestial Comet Wake<small>legendary hue cycling</small></div></div>
-    <div class="foot">Captured from the in-game cosmetic renderer · no hull / aura cosmetics equipped</div>
+    <div class="title">CLAUDE CITIZEN <span>FLIGHT CAPTURE</span></div>
+    <div class="hud-card">
+      <div class="slot">TRAIL SLOT ONLY · COMET WAKE KIT</div>
+      <div id="rarity">COMMON</div>
+      <div id="variant">Dust Comet Wake</div>
+    </div>
+    <div class="grade-rail">
+      <div class="grade-step active"></div>
+      <div class="grade-step"></div>
+      <div class="grade-step"></div>
+      <div class="grade-step"></div>
+    </div>
+    <div class="ship-readout">SHIP CLASS<strong>INTERCEPTOR</strong></div>
   </div>
   <script type="module" src="/src/social/cometWakeShowcase.ts"></script>
 </body>

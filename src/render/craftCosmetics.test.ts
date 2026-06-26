@@ -28,7 +28,7 @@ describe('createShipCosmetics', () => {
     cos.dispose()
   })
 
-  it('renders Comet Wake as a distinct long trail family', () => {
+  it('renders Comet Wake as a connected ribbon instead of separated high-speed particles', () => {
     const scene = new THREE.Scene()
     const ship = new THREE.Group()
     scene.add(ship)
@@ -36,10 +36,15 @@ describe('createShipCosmetics', () => {
 
     cos.apply([cosmeticStyle('comet-wake-kit', 'epic')])
 
-    const trail = scene.children.find((o) => o.userData.cosmeticTrailKind === 'comet') as THREE.Points | undefined
-    expect(trail).toBeDefined()
-    expect(trail!.geometry.getAttribute('position').count).toBeGreaterThan(48)
-    expect((trail!.material as THREE.PointsMaterial).size).toBeLessThan(0.8)
+    const trail = scene.children.find((o) => o.userData.cosmeticTrailKind === 'comet') as THREE.Mesh | undefined
+    expect(trail).toBeInstanceOf(THREE.Mesh)
+    expect(trail!.userData.cosmeticTrailSurface).toBe('ribbon')
+    expect(trail!.geometry.index?.count).toBeGreaterThan(0)
+
+    cos.update(0.016, new THREE.Vector3(0, 0, 0))
+    cos.update(0.016, new THREE.Vector3(90, 0, 0))
+    const positions = trail!.geometry.getAttribute('position') as THREE.BufferAttribute
+    expect(positions.count).toBeGreaterThan(84)
 
     cos.dispose()
   })

@@ -1,116 +1,224 @@
 import * as THREE from 'three'
-import { buildCraft } from '../render/shipyard'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import {
+  addCraftEngineGlowRig,
+  buildCraft,
+  collectCraftEngineGlows,
+  loadCraftModelForType,
+  type CraftEngineGlow,
+} from '../render/shipyard'
+import {
+  buildAsteroids,
+  buildDustField,
+  buildLights,
+  buildMineableAsteroid,
+  buildNebula,
+  buildPlanet,
+  buildStarfield,
+  buildStation,
+  buildWarpField,
+  updateDustField,
+  updateWarpField,
+} from '../render/world'
 import { createShipCosmetics, type ShipCosmetics } from '../render/craftCosmetics'
+import { engineGlowStyle, type EngineGlowStyle } from '../render/engineGlow'
 import { cosmeticStyle } from '../sim/cosmetics'
 import type { CraftingRarity } from '../sim/crafting'
+import { rearCameraOffset } from '../ui/cameraView'
 
 const WIDTH = 1920
 const HEIGHT = 1080
 const FPS = 30
 const DURATION_SECONDS = 16
 const TOTAL_FRAMES = FPS * DURATION_SECONDS
+const SEGMENT_FRAMES = TOTAL_FRAMES / 4
+const PLAYER_TINT = 0x58ddff
 
-interface Lane {
+interface Variant {
   rarity: CraftingRarity
-  group: THREE.Group
-  cosmetics: ShipCosmetics
-  y: number
-  phase: number
+  badge: string
+  name: string
+  color: string
 }
+
+const VARIANTS: Variant[] = [
+  { rarity: 'common', badge: 'COMMON', name: 'Dust Comet Wake', color: '#cfe3d0' },
+  { rarity: 'rare', badge: 'RARE', name: 'Ion Comet Wake', color: '#6fe8ff' },
+  { rarity: 'epic', badge: 'EPIC', name: 'Solar Comet Wake', color: '#c08aff' },
+  { rarity: 'legendary', badge: 'LEGENDARY', name: 'Celestial Comet Wake', color: '#ffe08a' },
+]
 
 const root = document.getElementById('showcase-root')
 if (!root) throw new Error('missing showcase root')
+
+const rarityEl = document.getElementById('rarity')
+const variantEl = document.getElementById('variant')
+const progressEls = Array.from(document.querySelectorAll<HTMLElement>('.grade-step'))
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true })
 renderer.setPixelRatio(1)
 renderer.setSize(WIDTH, HEIGHT, false)
 renderer.outputColorSpace = THREE.SRGBColorSpace
 renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.06
 renderer.domElement.width = WIDTH
 renderer.domElement.height = HEIGHT
 root.appendChild(renderer.domElement)
 
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x020507)
+scene.background = new THREE.Color(0x010206)
+scene.fog = new THREE.FogExp2(0x010206, 0.00042)
 
-const camera = new THREE.PerspectiveCamera(38, WIDTH / HEIGHT, 0.1, 120)
-camera.position.set(0, 6.8, 24)
-camera.lookAt(0, 0, 0)
+const camera = new THREE.PerspectiveCamera(72, WIDTH / HEIGHT, 0.5, 500000)
+scene.add(camera)
 
-scene.add(new THREE.AmbientLight(0x7fb0c8, 0.8))
-const key = new THREE.DirectionalLight(0xffffff, 2.6)
-key.position.set(6, 8, 8)
-scene.add(key)
-const rim = new THREE.DirectionalLight(0x6fe8ff, 1.4)
-rim.position.set(-8, 5, -6)
-scene.add(rim)
+const composer = new EffectComposer(renderer)
+composer.setSize(WIDTH, HEIGHT)
+composer.addPass(new RenderPass(scene, camera))
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(WIDTH, HEIGHT), 0.7, 0.5, 0.85))
 
-const starGeo = new THREE.BufferGeometry()
-const starPositions = new Float32Array(900 * 3)
-for (let i = 0; i < 900; i++) {
-  starPositions[i * 3] = (fract(Math.sin(i * 17.17) * 43758.5453) - 0.5) * 60
-  starPositions[i * 3 + 1] = (fract(Math.sin(i * 31.71) * 24634.6345) - 0.5) * 30
-  starPositions[i * 3 + 2] = -10 - fract(Math.sin(i * 47.37) * 91324.9317) * 50
+buildLights(scene)
+
+const nebula = buildNebula()
+const starfield = buildStarfield()
+const planet = buildPlanet()
+const asteroidBelt = buildAsteroids()
+const dustField = buildDustField()
+const warpField = buildWarpField()
+camera.add(warpField)
+scene.add(nebula, starfield, planet, asteroidBelt, dustField)
+
+const station = buildStation()
+station.position.set(145, 22, -360)
+station.rotation.set(0.15, -0.48, 0.04)
+scene.add(station)
+
+const oreRock = buildMineableAsteroid()
+oreRock.position.set(-64, -16, -132)
+oreRock.scale.setScalar(0.9)
+scene.add(oreRock)
+
+const rareRock = buildMineableAsteroid(true)
+rareRock.position.set(118, 24, -225)
+rareRock.scale.setScalar(0.72)
+scene.add(rareRock)
+
+let shipMesh = buildCraft('interceptor', PLAYER_TINT)
+scene.add(shipMesh)
+let engineGlows: CraftEngineGlow[] = collectCraftEngineGlows(shipMesh)
+let cosmetics: ShipCosmetics = createShipCosmetics(shipMesh, scene)
+
+const shipPosition = new THREE.Vector3()
+const nextShipPosition = new THREE.Vector3()
+const cameraOffset = new THREE.Vector3()
+const lookMatrix = new THREE.Matrix4()
+const up = new THREE.Vector3(0, 1, 0)
+const rollQuat = new THREE.Quaternion()
+let activeVariantIndex = -1
+
+function applyEngineGlowStyle(glows: CraftEngineGlow[], style: EngineGlowStyle): void {
+  for (const glow of glows) {
+    const mat = glow.mesh.material
+    const isCore = glow.role === 'core'
+    mat.color.setHex(isCore ? 0xffffff : style.color)
+    mat.color.multiplyScalar(isCore ? style.coreIntensity : style.discIntensity)
+    mat.opacity = isCore ? style.coreOpacity : style.discOpacity
+    glow.mesh.scale.setScalar(style.scale * (isCore ? 0.92 : 1))
+  }
 }
-starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3))
-const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({
-  color: 0xaee9ff,
-  size: 0.045,
-  transparent: true,
-  opacity: 0.72,
-  depthWrite: false,
-}))
-scene.add(stars)
 
-const lanes: Lane[] = [
-  { rarity: 'common', y: 4.9, phase: 0, group: buildCraft('interceptor', 0x8d98a3), cosmetics: undefined as unknown as ShipCosmetics },
-  { rarity: 'rare', y: 1.7, phase: 0.13, group: buildCraft('interceptor', 0x789fd6), cosmetics: undefined as unknown as ShipCosmetics },
-  { rarity: 'epic', y: -1.5, phase: 0.26, group: buildCraft('interceptor', 0x9370c8), cosmetics: undefined as unknown as ShipCosmetics },
-  { rarity: 'legendary', y: -4.7, phase: 0.39, group: buildCraft('interceptor', 0xcaa86b), cosmetics: undefined as unknown as ShipCosmetics },
-]
-
-for (const lane of lanes) {
-  lane.group.scale.setScalar(0.72)
-  lane.group.rotation.set(0.1, -Math.PI / 2, -0.06)
-  lane.group.position.set(-8.5, lane.y, 0)
-  scene.add(lane.group)
-  lane.cosmetics = createShipCosmetics(lane.group, scene)
-  lane.cosmetics.apply([cosmeticStyle('comet-wake-kit', lane.rarity)])
+function flightPositionAt(seconds: number, out: THREE.Vector3): THREE.Vector3 {
+  out.set(
+    Math.sin(seconds * 0.58) * 12,
+    -2 + Math.sin(seconds * 0.43 + 0.5) * 2.4,
+    74 - seconds * 34,
+  )
+  return out
 }
 
-function fract(value: number): number {
-  return value - Math.floor(value)
-}
-
-function easeInOutSine(value: number): number {
-  return -(Math.cos(Math.PI * value) - 1) / 2
-}
-
-function laneX(progress: number, phase: number): number {
-  const loop = (progress + phase) % 1
-  return -8.8 + easeInOutSine(loop) * 17.6
+function setActiveVariant(index: number): void {
+  if (activeVariantIndex === index) return
+  activeVariantIndex = index
+  const variant = VARIANTS[index]
+  cosmetics.apply([cosmeticStyle('comet-wake-kit', variant.rarity)])
+  if (rarityEl) {
+    rarityEl.textContent = variant.badge
+    rarityEl.style.color = variant.color
+  }
+  if (variantEl) variantEl.textContent = variant.name
+  for (const [stepIndex, el] of progressEls.entries()) {
+    el.classList.toggle('active', stepIndex === index)
+    el.classList.toggle('past', stepIndex < index)
+  }
 }
 
 function renderShowcaseFrame(frame: number, total = TOTAL_FRAMES): void {
   const safeTotal = Math.max(1, total)
-  const t = ((frame % safeTotal) / safeTotal)
   const seconds = frame / FPS
-  stars.rotation.z = seconds * 0.004
-  stars.position.x = Math.sin(seconds * 0.18) * 0.32
+  const segmentFrame = frame % SEGMENT_FRAMES
+  const variantIndex = Math.min(VARIANTS.length - 1, Math.floor((frame / safeTotal) * VARIANTS.length))
+  const boostKick = 0.18 + Math.sin(seconds * 2.1) * 0.05
+  const bank = Math.sin(seconds * 0.72) * 0.11
+  const dt = 1 / FPS
 
-  for (const lane of lanes) {
-    const x = laneX(t, lane.phase)
-    const bob = Math.sin(seconds * 2.2 + lane.phase * 12) * 0.08
-    lane.group.position.set(x, lane.y + bob, 0)
-    lane.group.rotation.y = -Math.PI / 2 + Math.sin(seconds * 0.9 + lane.phase * 9) * 0.06
-    lane.group.rotation.z = -0.06 + Math.sin(seconds * 1.15 + lane.phase * 11) * 0.035
-    lane.cosmetics.update(1 / FPS, lane.group.position)
-  }
+  setActiveVariant(variantIndex)
+  flightPositionAt(seconds, shipPosition)
+  flightPositionAt(seconds + 0.12, nextShipPosition)
+  lookMatrix.lookAt(shipPosition, nextShipPosition, up)
+  shipMesh.quaternion.setFromRotationMatrix(lookMatrix)
+  rollQuat.setFromAxisAngle(new THREE.Vector3(0, 0, 1), bank)
+  shipMesh.quaternion.multiply(rollQuat)
+  shipMesh.position.copy(shipPosition)
 
-  renderer.render(scene, camera)
+  cameraOffset.copy(rearCameraOffset(boostKick, 14)).applyQuaternion(shipMesh.quaternion)
+  camera.position.copy(shipPosition).add(cameraOffset)
+  camera.quaternion.copy(shipMesh.quaternion)
+  camera.fov = 74 + boostKick * 4
+  camera.updateProjectionMatrix()
+
+  nebula.position.copy(shipPosition)
+  starfield.position.copy(shipPosition)
+  planet.rotation.y += dt * 0.015
+  asteroidBelt.rotation.y += dt * 0.008
+  station.rotation.z += dt * 0.05
+  oreRock.rotation.y += dt * 0.34
+  rareRock.rotation.x += dt * 0.25
+  updateDustField(dustField, camera.position)
+  updateWarpField(warpField, 0, dt)
+
+  const segmentProgress = segmentFrame / SEGMENT_FRAMES
+  applyEngineGlowStyle(engineGlows, engineGlowStyle({
+    thrust: 0.78,
+    boost: segmentProgress > 0.68 && segmentProgress < 0.9,
+    speedFrac: 0.76 + Math.sin(seconds * 1.1) * 0.04,
+    cosmeticTier: 0,
+    time: seconds,
+  }))
+  cosmetics.update(dt, shipPosition)
+
+  composer.render()
 }
 
-renderShowcaseFrame(0)
+async function useGameShipModel(): Promise<void> {
+  const model = await loadCraftModelForType('interceptor', 0, 'standard')
+  if (!model) return
+  cosmetics.dispose()
+  scene.remove(shipMesh)
+  addCraftEngineGlowRig(model, 'interceptor')
+  shipMesh = model
+  scene.add(shipMesh)
+  engineGlows = collectCraftEngineGlows(shipMesh)
+  cosmetics = createShipCosmetics(shipMesh, scene)
+  activeVariantIndex = -1
+}
+
+async function boot(): Promise<void> {
+  await useGameShipModel()
+  renderShowcaseFrame(0)
+  window.__showcaseReady = true
+}
 
 declare global {
   interface Window {
@@ -120,6 +228,12 @@ declare global {
   }
 }
 
-window.__showcaseReady = true
+window.__showcaseReady = false
 window.__showcaseTotalFrames = TOTAL_FRAMES
 window.renderShowcaseFrame = renderShowcaseFrame
+
+boot().catch((error: unknown) => {
+  console.error(error)
+  renderShowcaseFrame(0)
+  window.__showcaseReady = true
+})

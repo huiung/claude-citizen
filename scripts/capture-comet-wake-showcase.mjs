@@ -42,6 +42,16 @@ class CdpPage {
       return
     }
     if (msg.method) this.events.push(msg)
+    if (msg.method === 'Runtime.exceptionThrown') {
+      console.error('page exception:', msg.params?.exceptionDetails?.text, msg.params?.exceptionDetails?.exception?.description)
+    }
+    if (msg.method === 'Runtime.consoleAPICalled') {
+      const args = msg.params?.args?.map((arg) => arg.value ?? arg.description).join(' ')
+      console.error('page console:', msg.params?.type, args)
+    }
+    if (msg.method === 'Log.entryAdded') {
+      console.error('page log:', msg.params?.entry?.level, msg.params?.entry?.text)
+    }
   }
 
   send(method, params = {}) {
@@ -118,8 +128,10 @@ async function main() {
   const profile = join(tmpdir(), `chrome-comet-wake-${Date.now()}`)
   const chrome = spawn(CHROME, [
     '--headless=new',
-    '--disable-gpu',
     '--disable-dev-shm-usage',
+    '--enable-unsafe-swiftshader',
+    '--use-angle=swiftshader',
+    '--use-gl=angle',
     '--no-sandbox',
     '--hide-scrollbars',
     '--mute-audio',
@@ -138,6 +150,7 @@ async function main() {
     await page.open()
     await page.send('Page.enable')
     await page.send('Runtime.enable')
+    await page.send('Log.enable')
     await page.send('Emulation.setDeviceMetricsOverride', {
       width: WIDTH,
       height: HEIGHT,

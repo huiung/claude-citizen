@@ -7,3 +7,7 @@ dist/
 progress.json
 docs/superpowers/
 .env*
+
+# Social showcase capture artifacts (video/poster) — too big for git, generate locally
+public/social/*.mp4
+public/social/*-poster.png
