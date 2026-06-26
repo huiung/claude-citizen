@@ -3584,6 +3584,12 @@ function launch(): void {
   audio.init()
   audio.resume()
   running = true
+  // New/anonymous pilots never receive a server 'progress' message (the relay only sends one for
+  // tokens it already has stored), so applyServerProgress → initDaily never fires for them. If no
+  // server progress has restored the daily block shortly after launch, initialize it locally so the
+  // daily loop works on the very first session. Returning pilots get onProgress first (day set), so
+  // this no-ops for them.
+  setTimeout(() => { if (running && dailyState.day === '') initDaily(Date.now()) }, 1500)
   selectedJumpIdx = nearestPlanetIdx() // start aimed at the closest planet
   customJumpDestination = null
   setPlayerCraft(selectedShipType) // apply hull (and load its GLB model) on launch
