@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import * as THREE from 'three'
 import {
   addCraftEngineGlowRig,
@@ -23,6 +25,15 @@ function firstMesh(root: THREE.Object3D): THREE.Mesh {
   return found
 }
 
+function glbJson(path: string): { nodes?: Array<{ name?: string }> } {
+  const buffer = readFileSync(resolve(path))
+  expect(buffer.toString('utf8', 0, 4)).toBe('glTF')
+  const jsonChunkLength = buffer.readUInt32LE(12)
+  const jsonChunkType = buffer.toString('utf8', 16, 20)
+  expect(jsonChunkType).toBe('JSON')
+  return JSON.parse(buffer.toString('utf8', 20, 20 + jsonChunkLength))
+}
+
 describe('pirate model asset', () => {
   it('points player craft at their generated GLB assets', () => {
     expect(craftModelUrl('hauler')).toBe('/assets/ships/hauler.glb')
@@ -40,6 +51,8 @@ describe('pirate model asset', () => {
     expect(craftModelUrlForHolderVisual('miner', 'sovereign-wraith', 3)).toBe('/assets/ships/holder-sovereign-wraith.glb')
     expect(craftModelUrlForHolderVisual('hauler', 'eclipse-corvette', 2)).toBe('/assets/ships/hauler.glb')
     expect(craftModelUrlForHolderVisual('hauler', 'eclipse-corvette', 3)).toBe('/assets/ships/holder-eclipse-corvette.glb')
+    expect(craftModelUrlForHolderVisual('miner', 'abyssal-driller', 2)).toBe('/assets/ships/miner.glb')
+    expect(craftModelUrlForHolderVisual('miner', 'abyssal-driller', 3)).toBe('/assets/ships/holder-abyssal-driller.glb')
   })
 
   it('scales the doge runner large enough to read as a prestige racing hull', () => {
@@ -49,6 +62,49 @@ describe('pirate model asset', () => {
     expect(craftModelTargetSizeForHolderVisual('fighter', 'void-interceptor', 3)).toBe(10.5)
     expect(craftModelTargetSizeForHolderVisual('miner', 'sovereign-wraith', 3)).toBe(12.2)
     expect(craftModelTargetSizeForHolderVisual('hauler', 'eclipse-corvette', 3)).toBe(15)
+    expect(craftModelTargetSizeForHolderVisual('miner', 'abyssal-driller', 3)).toBe(14.8)
+  })
+
+  it('gives the deep core mining ring a larger original Mining Ring silhouette', () => {
+    const source = readFileSync(resolve('scripts/create-holder-abyssal-driller.mjs'), 'utf8')
+    const nodeNames = new Set(glbJson('public/assets/ships/holder-abyssal-driller.glb').nodes?.map((node) => node.name))
+
+    expect(source).not.toContain('reinforced_probe_nose')
+    expect(source).not.toContain('yellow_dorsal_tool_spine')
+    expect(source).not.toContain('violetMat')
+    expect(source).not.toContain('cyanMat')
+    expect(nodeNames).not.toContain('solar_drill_crown')
+    expect(nodeNames).not.toContain('helios_extraction_halo')
+    expect(nodeNames).not.toContain('pearl_pressure_hull')
+    expect(nodeNames).toContain('obsidian_pressure_hull')
+    expect(nodeNames).not.toContain('prestige_mining_ring')
+    expect(nodeNames).not.toContain('inner_abyssal_mining_ring')
+    expect(nodeNames).not.toContain('ring_mounted_drill_array')
+    expect(nodeNames).toContain('prestige_refinery_drum')
+    expect(nodeNames).toContain('front_refinery_drum_band')
+    expect(nodeNames).not.toContain('middle_amber_drum_band')
+    expect(nodeNames).toContain('middle_muted_amber_drum_band')
+    expect(nodeNames).toContain('rear_refinery_drum_band')
+    expect(nodeNames).toContain('attached_mining_ring_carapace')
+    expect(nodeNames).toContain('amber_ore_refinery_core')
+    expect(nodeNames).toContain('worn_steel_mining_bit_l')
+    expect(nodeNames).toContain('worn_steel_mining_bit_r')
+    expect(nodeNames).toContain('left_heavy_mining_feed_arm')
+    expect(nodeNames).toContain('right_heavy_mining_feed_arm')
+    expect(nodeNames).not.toContain('left_heavy_mining_bit')
+    expect(nodeNames).not.toContain('right_heavy_mining_bit')
+    expect(nodeNames).not.toContain('left_amber_mining_bit_lumen')
+    expect(nodeNames).not.toContain('right_amber_mining_bit_lumen')
+    expect([...nodeNames].some((name) => name?.includes('violet'))).toBe(false)
+    expect([...nodeNames].some((name) => name?.includes('cyan'))).toBe(false)
+    expect(nodeNames).not.toContain('left_void_crack_wing')
+    expect(nodeNames).not.toContain('right_void_crack_wing')
+    expect(nodeNames).not.toContain('left_integrated_fracture_shoulder')
+    expect(nodeNames).not.toContain('right_integrated_fracture_shoulder')
+    expect(nodeNames).not.toContain('left_compact_stabilizer_fin')
+    expect(nodeNames).not.toContain('right_compact_stabilizer_fin')
+    expect(nodeNames).not.toContain('left_drill_clamp')
+    expect(nodeNames).not.toContain('right_drill_clamp')
   })
 
   it('points pirates at their dedicated raider GLB', () => {

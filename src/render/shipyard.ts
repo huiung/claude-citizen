@@ -15,6 +15,7 @@ const HOLDER_DOGE_RUNNER_MODEL_URL = '/assets/ships/holder-doge-runner.glb'
 const HOLDER_VOID_INTERCEPTOR_MODEL_URL = '/assets/ships/holder-void-interceptor.glb'
 const HOLDER_SOVEREIGN_WRAITH_MODEL_URL = '/assets/ships/holder-sovereign-wraith.glb'
 const HOLDER_ECLIPSE_CORVETTE_MODEL_URL = '/assets/ships/holder-eclipse-corvette.glb'
+const HOLDER_ABYSSAL_DRILLER_MODEL_URL = '/assets/ships/holder-abyssal-driller.glb'
 
 const CRAFT_MODEL_TARGET_SIZES: Record<ShipType, number> = {
   hauler: 9.5,
@@ -89,6 +90,7 @@ export function craftModelUrlForHolderVisual(type: ShipType, visual: HolderShipV
   if (visual === 'void-interceptor' && holderTier >= 3) return HOLDER_VOID_INTERCEPTOR_MODEL_URL
   if (visual === 'sovereign-wraith' && holderTier >= 3) return HOLDER_SOVEREIGN_WRAITH_MODEL_URL
   if (visual === 'eclipse-corvette' && holderTier >= 3) return HOLDER_ECLIPSE_CORVETTE_MODEL_URL
+  if (visual === 'abyssal-driller' && holderTier >= 3) return HOLDER_ABYSSAL_DRILLER_MODEL_URL
   return CRAFT_MODEL_URLS[type]
 }
 
@@ -97,6 +99,7 @@ export function craftModelTargetSizeForHolderVisual(type: ShipType, visual: Hold
   if (visual === 'void-interceptor' && holderTier >= 3) return 10.5
   if (visual === 'sovereign-wraith' && holderTier >= 3) return 12.2
   if (visual === 'eclipse-corvette' && holderTier >= 3) return 15
+  if (visual === 'abyssal-driller' && holderTier >= 3) return 14.8
   return CRAFT_MODEL_TARGET_SIZES[type]
 }
 

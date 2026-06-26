@@ -24,7 +24,14 @@ describe('holder ship visuals', () => {
     expect(holderShipVisualsForTier(0).map((visual) => visual.id)).toEqual(['standard'])
     expect(holderShipVisualsForTier(1).map((visual) => visual.id)).toEqual(['standard'])
     expect(holderShipVisualsForTier(2).map((visual) => visual.id)).toEqual(['standard', 'doge-runner'])
-    expect(holderShipVisualsForTier(3).map((visual) => visual.id)).toEqual(['standard', 'doge-runner', 'void-interceptor', 'sovereign-wraith', 'eclipse-corvette'])
+    expect(holderShipVisualsForTier(3).map((visual) => visual.id)).toEqual([
+      'standard',
+      'doge-runner',
+      'void-interceptor',
+      'sovereign-wraith',
+      'eclipse-corvette',
+      'abyssal-driller',
+    ])
   })
 
   it('falls back to the standard hull when a saved visual is locked', () => {
@@ -37,6 +44,8 @@ describe('holder ship visuals', () => {
     expect(resolveHolderShipVisual('sovereign-wraith', 3).id).toBe('sovereign-wraith')
     expect(resolveHolderShipVisual('eclipse-corvette', 2).id).toBe('standard')
     expect(resolveHolderShipVisual('eclipse-corvette', 3).id).toBe('eclipse-corvette')
+    expect(resolveHolderShipVisual('abyssal-driller', 2).id).toBe('standard')
+    expect(resolveHolderShipVisual('abyssal-driller', 3).id).toBe('abyssal-driller')
     expect(resolveHolderShipVisual('missing', 3).id).toBe('standard')
   })
 
@@ -54,6 +63,9 @@ describe('holder ship visuals', () => {
 
     saveHolderShipVisual(storage, 'eclipse-corvette')
     expect(loadHolderShipVisual(storage)).toBe('eclipse-corvette')
+
+    saveHolderShipVisual(storage, 'abyssal-driller')
+    expect(loadHolderShipVisual(storage)).toBe('abyssal-driller')
 
     storage.setItem('scc.holderShipVisual.v1', 'not-real')
     expect(loadHolderShipVisual(storage)).toBe('standard')
@@ -78,6 +90,14 @@ describe('holder ship visuals', () => {
     expect(holderShipVisualById('eclipse-corvette')).toMatchObject({
       name: 'Eclipse Corvette',
       description: 'T3 holder-only command ship hull. Stats stay unchanged.',
+      requiredTier: 3,
+    })
+  })
+
+  it('presents the deep core mining ring as a T3 prestige miner visual', () => {
+    expect(holderShipVisualById('abyssal-driller')).toMatchObject({
+      name: 'Deep Core Mining Ring',
+      description: 'T3 holder-only oversized deep-core mining rig. Stats stay unchanged.',
       requiredTier: 3,
     })
   })

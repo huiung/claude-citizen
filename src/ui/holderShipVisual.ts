@@ -1,4 +1,4 @@
-export type HolderShipVisualId = 'standard' | 'doge-runner' | 'void-interceptor' | 'sovereign-wraith' | 'eclipse-corvette'
+export type HolderShipVisualId = 'standard' | 'doge-runner' | 'void-interceptor' | 'sovereign-wraith' | 'eclipse-corvette' | 'abyssal-driller'
 
 export interface HolderShipVisual {
   id: HolderShipVisualId
@@ -36,6 +36,12 @@ export const HOLDER_SHIP_VISUALS: readonly HolderShipVisual[] = [
     id: 'eclipse-corvette',
     name: 'Eclipse Corvette',
     description: 'T3 holder-only command ship hull. Stats stay unchanged.',
+    requiredTier: 3,
+  },
+  {
+    id: 'abyssal-driller',
+    name: 'Deep Core Mining Ring',
+    description: 'T3 holder-only oversized deep-core mining rig. Stats stay unchanged.',
     requiredTier: 3,
   },
 ] as const
