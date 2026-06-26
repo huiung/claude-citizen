@@ -414,8 +414,9 @@ export class StationMenu {
         !this.forging &&
         this.ctx.econ.credits >= recipe.creditCost &&
         this.ctx.crafting.cores >= (recipe.coreCost ?? 0)
-      const craftedCount = this.ctx.crafting.items.filter((item) => item.recipeId === recipe.id).length
-      const row = this.rowEl(recipe.name, recipe.description, craftedCount > 0 ? `${craftedCount} OWNED` : cost)
+      // Crafting is repeatable (multiple copies to equip/trade), so always show the cost — never
+      // hide it behind an "owned" label. Owned counts live in the inventory section below.
+      const row = this.rowEl(recipe.name, recipe.description, cost)
       this.decorateCosmeticRow(row, recipe.id)
       const actions = row.querySelector('.s-actions')!
       actions.appendChild(this.btn('Craft', 'buy', !affordable, () => this.craft(recipe.id)))
