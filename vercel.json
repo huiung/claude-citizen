@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/supply", "destination": "https://star-citizen-caliber-production.up.railway.app/supply" },
+    { "source": "/supply/:path*", "destination": "https://star-citizen-caliber-production.up.railway.app/supply/:path*" }
+  ]
+}
