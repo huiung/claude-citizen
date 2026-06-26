@@ -99,6 +99,21 @@ export function sanitizeCrafting(value) {
   return { cores, items, equipped, pityCount }
 }
 
+function sanitizeDaily(value) {
+  const v = value && typeof value === 'object' ? value : {}
+  const dateStr = (s) => (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '')
+  const claimed = Array.isArray(v.claimed)
+    ? [...new Set(v.claimed.filter((x) => typeof x === 'string').map((x) => x.slice(0, 32)))].slice(0, 3)
+    : []
+  return {
+    day: dateStr(v.day),
+    claimed,
+    setBonusClaimed: v.setBonusClaimed === true,
+    streak: Math.max(0, Math.min(9999, Math.floor(Number(v.streak) || 0))),
+    lastStreakDay: dateStr(v.lastStreakDay),
+  }
+}
+
 /** Accept only the small, known progress shape - never trust the client blindly. */
 export function sanitizeProgress(p) {
   if (!p || typeof p !== 'object') return null
@@ -119,5 +134,6 @@ export function sanitizeProgress(p) {
       owned: Array.isArray(p.hangar?.owned) ? p.hangar.owned.slice(0, 16).map((t) => String(t).slice(0, 16)) : ['hauler'],
     },
     crafting: sanitizeCrafting(p.crafting),
+    daily: sanitizeDaily(p.daily),
   }
 }

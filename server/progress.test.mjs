@@ -88,6 +88,39 @@ describe('progress sanitization', () => {
   })
 })
 
+describe('daily sanitization', () => {
+  const base = {
+    credits: 1, earned: 1, cargo: { ORE: 0, ALLOY: 0 },
+    upgrades: { cargo: 0, speed: 0, boost: 0, mining: 0 },
+    hangar: { selected: 'hauler', owned: ['hauler'] },
+  }
+
+  it('passes through a valid daily block', () => {
+    const out = sanitizeProgress({ ...base, daily: {
+      day: '2026-06-26', claimed: ['mine_ore'], setBonusClaimed: false, streak: 4, lastStreakDay: '2026-06-26',
+    } })
+    expect(out.daily).toEqual({
+      day: '2026-06-26', claimed: ['mine_ore'], setBonusClaimed: false, streak: 4, lastStreakDay: '2026-06-26',
+    })
+  })
+
+  it('clamps streak and caps claimed to 3 distinct strings', () => {
+    const out = sanitizeProgress({ ...base, daily: {
+      day: '2026-06-26', claimed: ['a', 'a', 'b', 'c', 'd', 5], streak: 1e9, lastStreakDay: 'x',
+    } })
+    expect(out.daily.streak).toBe(9999)
+    expect(out.daily.claimed).toEqual(['a', 'b', 'c'])
+    expect(out.daily.lastStreakDay).toBe('') // not date-shaped
+  })
+
+  it('defaults a missing or garbage daily block', () => {
+    expect(sanitizeProgress(base).daily).toEqual({
+      day: '', claimed: [], setBonusClaimed: false, streak: 0, lastStreakDay: '',
+    })
+    expect(sanitizeProgress({ ...base, daily: 'nope' }).daily.streak).toBe(0)
+  })
+})
+
 describe('sanitizeCrafting equipped', () => {
   const item = { id: 'i1', recipeId: 'aurum-trail-kit', rarity: 'legendary', variant: 'Radiant Aurum Trail', createdAt: 1, tradable: true }
 
