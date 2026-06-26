@@ -104,7 +104,7 @@
     <p>Ore veins glow cyan and are scattered around you. Fly within range, hold <kbd>Left-click</kbd>, and the laser pulls ore straight into your hold. A vein holds only a fraction of a cargo hold and depletes as you mine — once it runs dry it vanishes and a fresh vein appears elsewhere nearby, so you're always prospecting and moving rather than parked on one rock. Upgrade your <strong>mining yield</strong> at a station to extract faster.</p>
 
     <h2>SHIPS &amp; UPGRADES</h2>
-    <p>At a station, the <strong>UPGRADES</strong> tab spends credits on <strong>cargo / speed / boost / mining-yield</strong> tiers — five tiers each, so there's always a bigger sink as your credits (and rank) grow. The <strong>SHIPYARD</strong> tab sells whole new hulls:</p>
+    <p>At a station, the <strong>UPGRADES</strong> tab spends credits across four tracks — <strong>cargo</strong>, <strong>speed</strong>, <strong>boost</strong>, and <strong>mining yield</strong>. Each track runs <strong>five tiers</strong> above the stock hull (Tier 0 → Tier 5), and prices ramp super-linearly — cargo, for example, costs 600 cr for the first tier and 14,000 cr for the fifth — so there's always a bigger sink as your credits (and rank) grow. The <strong>SHIPYARD</strong> tab sells whole new hulls:</p>
     <table>
       <tr><th>Hull</th><th>Role</th></tr>
       <tr><td class="key">Hauler</td><td>Balanced starter — solid cargo and hull</td></tr>
@@ -122,16 +122,20 @@
     <p>Equip what you craft across three cosmetic slots — <strong>trail</strong>, <strong>hull</strong>, and <strong>aura</strong> — and mix and match. Crafted cosmetics are purely visual and never change your stats.</p>
 
     <h2>MARKETPLACE</h2>
-    <p>Crafted cosmetics are tradable between pilots. From the station <strong>MARKET</strong> tab you can <strong>list</strong> a tradable cosmetic for a credit price, <strong>buy</strong> another pilot's listing, or <strong>cancel</strong> one of your own. Each listing shows a thumbnail and the item's rarity. Trading is tied to your wallet identity, so link a Solana wallet to buy and sell. Pulled a duplicate Legendary? List it and let another pilot chase the look.</p>
+    <p>Crafted cosmetics are tradable between pilots. From the station <strong>MARKET</strong> tab you can <strong>list</strong> a tradable cosmetic, <strong>buy</strong> another pilot's listing, or <strong>cancel</strong> one of your own. Listings can be priced in <strong>credits</strong> or in the <strong>$CITIZEN</strong> token — token sales settle <strong>on-chain</strong> while credit sales stay in-game, and you can filter the market by currency. Each listing shows a thumbnail and the item's rarity. Trading is tied to your wallet identity, so link a Solana wallet to buy and sell. Pulled a duplicate Legendary? List it and let another pilot chase the look.</p>
 
     <h2>HOLDER COSMETICS &amp; TIERS</h2>
-    <p>Linking a Solana wallet that holds the token unlocks <strong>holder tiers</strong>, set by your token balance:</p>
+    <p>Linking a Solana wallet that holds <strong>$CITIZEN</strong> unlocks <strong>holder tiers</strong>, set by your token balance:</p>
     <ul>
       <li><strong>T1 · Gold</strong> (1+ tokens) — a gold callsign color on your nameplate and in chat.</li>
       <li><strong>T2 · Cyan</strong> (100,000+ tokens) — a cyan callsign color, plus the <strong>Doge Runner Mk II</strong> hull visual in the station <strong>HANGAR</strong> tab.</li>
       <li><strong>T3 · Whale</strong> (1,000,000+ tokens) — a whale-tier callsign color, plus T3-only hull visuals: <strong>Void Interceptor</strong>, <strong>Sovereign Wraith</strong>, <strong>Eclipse Corvette</strong>, and the <strong>Deep Core Mining Ring</strong>.</li>
     </ul>
     <p>You can switch back to the standard hull at any time. Every holder perk is visual only — no speed, combat, mining, cargo, or economy advantage.</p>
+
+    <h2>$CITIZEN TOKEN</h2>
+    <p>The game's token is <strong>$CITIZEN</strong> on Solana. Holding it unlocks the cosmetic <strong>holder tiers</strong> above, makes you eligible for <strong>Ranked PvP</strong> (1,000+ tokens), and lets you buy and sell crafted cosmetics for token on the <strong>marketplace</strong>. It's cosmetic and economy flavor only — there is no pay-to-win advantage.</p>
+    <p><strong>Contract address (CA):</strong> <code>6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump</code></p>
 
     <h2>RANKS</h2>
     <p>Your <strong>pilot rank</strong> climbs through six tiers (<strong>Cadet → Admiral</strong>) based on <strong>lifetime earnings</strong> — every credit you've ever earned. Because it tracks earnings, not your current balance, spending on upgrades or ships never demotes you.</p>
@@ -145,11 +149,19 @@
     <h2>PIRATES &amp; SAFE ZONES</h2>
     <p>Out in open space, pirate interceptors hunt you. Fight back with <kbd>Right-click</kbd>, watch your hull bar, and collect the bounty on a kill. The combat HUD helps: <strong>red brackets</strong> mark hostiles with their range, <strong>arrows at the screen edge</strong> point to threats behind or beside you, and a <strong>green lead indicator</strong> shows where to aim so your shots land. If you're losing, run for an outpost — <strong>safe zones</strong> around the stations keep hostiles off you and repair your hull after a short peaceful delay. Die and you respawn at the origin, losing a little money but keeping your cargo.</p>
 
-    <h2>PVP ARENA</h2>
-    <p>Pilot-vs-pilot combat is opt-in. Cycle to the <strong>Practice Arena</strong> or <strong>Ranked Arena</strong> beacon with <kbd>N</kbd>, then press <kbd>J</kbd> to quantum-jump beyond the named solar system to the deep-space arena approach lane; the jump drops you outside the marker, not inside it. Practice is open to everyone. Ranked requires a verified 1,000+ token balance, and under-threshold pilots are pushed back at the boundary. Once <strong>PVP ENABLED</strong> appears, your weapons can damage other pilots inside the same arena ring. Leave the ring and PvP damage shuts off after a short grace window. Pirates are cleared away from PvP zones so dogfights stay pilot-vs-pilot. Peer hull bars appear under callsigns, kills hit the chat feed, and the killer receives a small credit bounty. Only Ranked Arena kills count on the wallet-only Ranked PvP leaderboard. Damage is checked by the relay, so the client can feel responsive without trusting local-only hits.</p>
+    <h2>PVP &amp; TRAINING ARENAS</h2>
+    <p>Out in deep space sit three combat zones. Cycle to one with <kbd>N</kbd> (or pick it on the Solar Atlas) and jump with <kbd>J</kbd> — the jump drops you just outside the ring, never inside it:</p>
+    <ul>
+      <li><strong>Training Arena</strong> — shoot practice <strong>drones</strong> (cyan targets) at zero risk. The place to learn the lead indicator and tune your aim before you fight real pilots.</li>
+      <li><strong>Practice Arena</strong> — open pilot-vs-pilot combat for everyone, no token requirement. Dogfight peers freely; kills here don't touch the ranked board.</li>
+      <li><strong>Ranked Arena</strong> — requires a verified <strong>1,000+ $CITIZEN</strong> balance (under-threshold pilots are pushed back at the boundary). Only kills here count on the wallet-only <strong>Ranked PvP</strong> leaderboard.</li>
+    </ul>
+    <p>Once <strong>PVP ENABLED</strong> appears, your weapons damage other pilots inside the same ring; leave the ring and PvP fire shuts off after a short grace window. Pirates are cleared from these zones so fights stay pilot-vs-pilot. Peer hull bars show under callsigns, kills hit the chat feed, and the killer earns a small credit bounty. Damage is checked by the relay, so the client feels responsive without trusting local-only hits.</p>
+    <p><strong>Tip:</strong> warm up in the Training Arena until you can reliably park the green lead pip on a moving drone — that aim transfers straight to Ranked.</p>
 
     <h2>RACE · TIME TRIALS</h2>
     <p>Set the <strong>Season Hub</strong> as your quantum destination on the Solar Atlas and fly out to its time-trial course. Thread the glowing <strong>gates</strong> in order — the clock starts at the first gate and stops at the last. Beat your own best time, then climb the <strong>Race</strong> leaderboard, which ranks pilots by their single fastest run.</p>
+    <p><strong>Tips:</strong> max your <strong>speed</strong> and <strong>boost</strong> upgrades first, hold <kbd>Shift</kbd> down the straights, and feather <kbd>X</kbd> into the tight gates. Toggling flight assist off (<kbd>V</kbd>) lets you rotate to line up the next gate while still drifting toward the current one — faster racing lines once you're comfortable with Newtonian control.</p>
 
     <h2>QUANTUM TRAVEL</h2>
     <p>Space is vast. Press <kbd>N</kbd> to pick a destination — it cycles through the named planets (Mercury → Saturn), then the deep-space Practice Arena and Ranked Arena beacons, shown on the HUD with distance. Or press <kbd>M</kbd> to open the <strong>Solar Atlas</strong>, a top-down map of the whole system — click any planet to set it as your destination at a glance. Then press <kbd>J</kbd> to spool the quantum drive: a couple seconds of charge, then you streak across the sector and drop out just short of the destination you chose. Press <kbd>J</kbd> again to cancel. Distant targets (Jupiter, Saturn) make for a long, cinematic cruise.</p>
@@ -157,6 +169,7 @@
     <h2>DEEP SPACE &amp; THE BLACK HOLE</h2>
     <p>Fly far from the core and a <strong>depth gauge</strong> climbs. The deeper you go, the richer the spoils — rare <strong>gold ore veins</strong> (credit jackpots) appear and pirates grow tankier with bigger bounties. Risk and reward scale together.</p>
     <p>In a remote corner of the system lurks a <strong>black hole</strong>. Its gravity reaches out roughly 50 km and steepens as you fall in. Cross into the <strong>tidal zone</strong> (~18 km) and your hull bleeds damage that ramps the deeper you dive; cross the <strong>event horizon</strong> (~5.5 km) and no hull survives. The game: dive as close as you dare and pull out alive. The <strong>Black Hole</strong> leaderboard ranks your <strong>closest approach</strong>.</p>
+    <p><strong>Tip:</strong> dive with a fast hull and a full <strong>boost</strong> tier — you need the thrust to claw back out against the pull. Commit to a clean line, watch your hull bleed through the tidal zone, and break away <em>before</em> you think you must, not after.</p>
 
     <h2>MULTIPLAYER</h2>
     <p>Other pilots share your sector in real time — you will see their craft and callsigns. Hit <kbd>Enter</kbd> to chat; open it any time to scroll back through the session history. The game tracks four leaderboards: <strong>Career</strong> (top 100 by lifetime credits), <strong>Ranked PvP</strong> (ranked arena kills), <strong>Race</strong> (fastest time-trial run), and <strong>Black Hole</strong> (closest approach to the horizon). Wallet-connected pilots display as callsign plus a shortened wallet address; anonymous Career pilots keep their callsign only. If you later link a wallet, your anonymous progress can be claimed to that wallet and the old anonymous token is retired to prevent duplicate leaderboard rows.</p>
