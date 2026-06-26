@@ -127,6 +127,32 @@ describe('forge reveal hiding', () => {
   })
 })
 
+describe('cosmetic slot readability', () => {
+  it('renders slot badges and slot-shaped thumbnails for crafted inventory cards', () => {
+    document.body.innerHTML = '<div id="inventory-panel" hidden><div id="inventory-count"></div><div id="inventory-grid"></div><button id="inventory-close"></button></div>'
+    const state = {
+      cores: 0,
+      equipped: { trail: null, hull: null, aura: null },
+      items: [
+        { id: 'i1', recipeId: 'aurum-trail-kit', rarity: 'rare', variant: 'Blue Aurum Trail', createdAt: 1, tradable: true },
+        { id: 'i2', recipeId: 'void-runner-kit', rarity: 'epic', variant: 'Void Runner Eclipse', createdAt: 2, tradable: true },
+      ],
+    }
+    const panel = new InventoryPanel({})
+    panel.open(state as any)
+
+    const trail = [...document.querySelectorAll('.inventory-card')]
+      .find((card) => card.textContent?.includes('Blue Aurum Trail'))!
+    const aura = [...document.querySelectorAll('.inventory-card')]
+      .find((card) => card.textContent?.includes('Void Runner Eclipse'))!
+
+    expect(trail.querySelector('.cosmetic-slot-badge')?.textContent).toBe('TRAIL')
+    expect(trail.querySelector('.inventory-thumb')?.classList.contains('slot-trail')).toBe(true)
+    expect(aura.querySelector('.cosmetic-slot-badge')?.textContent).toBe('AURA')
+    expect(aura.querySelector('.inventory-thumb')?.classList.contains('slot-aura')).toBe(true)
+  })
+})
+
 describe('equip controls', () => {
   const state = {
     cores: 0,

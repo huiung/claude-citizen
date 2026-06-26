@@ -269,6 +269,9 @@
       display: grid; grid-template-columns: 1.5fr .8fr .6fr auto; align-items: center;
       gap: 8px; padding: 11px 0; border-top: 1px solid rgba(63, 174, 95, .2);
     }
+    .station-row.cosmetic-row {
+      grid-template-columns: minmax(170px, 1.35fr) minmax(170px, .95fr) .55fr auto;
+    }
     .station-row.mkt-rarity-common { border-left: 3px solid #cfe3d0; }
     .station-row.mkt-rarity-rare { border-left: 3px solid #6fe8ff; }
     .station-row.mkt-rarity-epic { border-left: 3px solid #c08aff; }
@@ -276,6 +279,65 @@
     .station-row.mkt-rarity-rare .s-name { color: #6fe8ff; }
     .station-row.mkt-rarity-epic .s-name { color: #c08aff; }
     .station-row.mkt-rarity-legendary .s-name { color: #ffe08a; }
+    .station-cosmetic-name { display: flex; align-items: center; gap: 9px; min-width: 0; }
+    .s-name-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .s-price-with-badge { display: flex; align-items: center; gap: 7px; min-width: 0; color: #bcefd0; }
+    .s-price-with-badge > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; opacity: .72; }
+    .cosmetic-slot-badge {
+      display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+      min-width: 42px; padding: 2px 6px; border-radius: 3px;
+      border: 1px solid currentColor; background: rgba(0, 0, 0, .24);
+      font-size: 9px; line-height: 1.1; letter-spacing: 1.1px; font-weight: 700;
+    }
+    .cosmetic-slot-badge[data-slot="trail"] { color: #ffd274; }
+    .cosmetic-slot-badge[data-slot="hull"] { color: #8fd6ff; }
+    .cosmetic-slot-badge[data-slot="aura"] { color: #c7a0ff; }
+    .cosmetic-thumb {
+      position: relative; display: inline-block; flex: 0 0 auto; border: 1px solid currentColor;
+      overflow: hidden; background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.2), transparent 25%),
+        linear-gradient(135deg, rgba(255,255,255,.08), rgba(0,0,0,.14));
+      box-shadow: inset 0 0 18px rgba(255,255,255,.08), 0 0 16px rgba(255,255,255,.05);
+    }
+    .station-thumb { width: 34px; height: 34px; border-radius: 5px; }
+    .cosmetic-thumb.slot-trail { color: #ffd274; }
+    .cosmetic-thumb.slot-hull { color: #8fd6ff; }
+    .cosmetic-thumb.slot-aura { color: #c7a0ff; }
+    .cosmetic-thumb i, .cosmetic-thumb i::before, .cosmetic-thumb i::after {
+      content: ''; position: absolute; display: block;
+    }
+    .cosmetic-thumb.slot-trail i {
+      width: 58%; height: 5%; left: 22%; top: 48%; border-radius: 999px;
+      background: currentColor; box-shadow: 0 0 12px currentColor; transform: rotate(-24deg);
+    }
+    .cosmetic-thumb.slot-trail i::before,
+    .cosmetic-thumb.slot-trail i::after {
+      height: 100%; border-radius: inherit; background: currentColor; box-shadow: inherit;
+    }
+    .cosmetic-thumb.slot-trail i::before { width: 72%; left: -22%; top: -220%; opacity: .52; }
+    .cosmetic-thumb.slot-trail i::after { width: 48%; right: -12%; top: 220%; opacity: .46; }
+    .cosmetic-thumb.slot-hull i {
+      width: 56%; height: 22%; left: 22%; top: 39%; border-radius: 50% 12% 50% 12%;
+      background: currentColor; box-shadow: 0 0 15px currentColor; transform: skewX(-20deg);
+    }
+    .cosmetic-thumb.slot-hull i::before {
+      width: 32%; height: 150%; left: 34%; top: -25%; border-radius: 999px;
+      background: rgba(255,255,255,.68); opacity: .42; transform: rotate(88deg);
+    }
+    .cosmetic-thumb.slot-hull i::after {
+      width: 20%; height: 55%; left: 74%; top: 22%; border-radius: 999px;
+      background: rgba(0,0,0,.42);
+    }
+    .cosmetic-thumb.slot-aura i {
+      width: 46%; height: 46%; left: 27%; top: 27%; border: 2px solid currentColor;
+      border-radius: 50%; background: transparent; box-shadow: 0 0 15px currentColor, inset 0 0 12px currentColor;
+    }
+    .cosmetic-thumb.slot-aura i::before {
+      inset: -32%; border: 1px solid currentColor; border-radius: 50%; opacity: .38;
+    }
+    .cosmetic-thumb.slot-aura i::after {
+      width: 20%; height: 20%; left: 40%; top: 40%; border-radius: 50%;
+      background: currentColor; box-shadow: 0 0 12px currentColor; opacity: .78;
+    }
     /* Sort/currency controls — compact chips matching the station tab buttons, not action buttons. */
     .market-controls { display: flex; gap: 6px; margin: 4px 0 8px; }
     .market-ctl {
@@ -298,6 +360,12 @@
     .station-empty { padding: 24px 0; opacity: .5; font-size: 13px; text-align: center; }
     .station-hint { margin-top: 16px; font-size: 11px; opacity: .5; min-height: 14px; }
     .station-hint.flash { color: #ff9b6b; opacity: 1; }
+    @media (max-width: 640px) {
+      .station-row.cosmetic-row { grid-template-columns: 1fr auto; align-items: start; }
+      .station-row.cosmetic-row .s-price-with-badge { grid-column: 1 / -1; padding-left: 43px; }
+      .station-row.cosmetic-row .s-held { grid-column: 1; padding-left: 43px; }
+      .station-row.cosmetic-row .s-actions { grid-column: 2; grid-row: 1 / span 2; }
+    }
     #overlay {
       position: fixed; inset: 0; display: flex; flex-direction: column;
       align-items: center; justify-content: center; gap: 18px;
@@ -489,16 +557,9 @@
       border: 1px solid rgba(159, 255, 176, .2); background: rgba(0, 18, 8, .45);
     }
     .inventory-thumb {
-      width: 72px; height: 72px; border-radius: 7px; border: 1px solid currentColor; overflow: hidden;
-      background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.22), transparent 24%),
-        linear-gradient(135deg, rgba(255,255,255,.08), rgba(0,0,0,.1));
-      box-shadow: inset 0 0 18px rgba(255,255,255,.08), 0 0 18px rgba(255,255,255,.05);
+      width: 72px; height: 72px; border-radius: 7px;
     }
-    .inventory-thumb i {
-      display: block; width: 42px; height: 18px; margin: 27px auto;
-      border-radius: 50% 12% 50% 12%; background: currentColor; opacity: .78;
-      box-shadow: 0 0 18px currentColor; transform: skewX(-20deg);
-    }
+    .inventory-tags { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; min-width: 0; }
     .inventory-rarity { font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase; opacity: .78; }
     .inventory-name { margin-top: 3px; color: #fff; font-size: 13px; line-height: 1.25; }
     .inventory-recipe { margin-top: 5px; color: #aee9ff; font-size: 11px; opacity: .62; }
@@ -536,7 +597,6 @@
       #inventory-grid { grid-template-columns: 1fr; }
       .inventory-card { grid-template-columns: 64px 1fr auto; }
       .inventory-thumb { width: 60px; height: 60px; }
-      .inventory-thumb i { margin: 21px auto; }
     }
     #list-modal { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
       background: radial-gradient(ellipse at center, rgba(2,12,6,.7), rgba(0,0,0,.85)); }

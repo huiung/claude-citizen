@@ -6,7 +6,7 @@ import {
   type CraftingRarity,
   type CraftingState,
 } from '../sim/crafting'
-import { COSMETIC_CATEGORY } from '../sim/cosmetics'
+import { cosmeticSlotUi } from './cosmeticSlotUi'
 
 export interface CraftedItemGroup {
   key: string
@@ -205,12 +205,17 @@ export class InventoryPanel {
 
   private card(group: CraftedItemGroup): HTMLElement {
     const card = document.createElement('div')
-    card.className = `inventory-card rarity-${group.rarity}`
+    const slot = cosmeticSlotUi(group.recipeId)
+    card.className = `inventory-card rarity-${group.rarity} ${slot.className}`
+    card.dataset.slot = slot.slot
     const itemId = this.state ? listableItemId(group, this.state.items) : null
     card.innerHTML = `
-      <div class="inventory-thumb" aria-hidden="true"><i></i></div>
+      <div class="inventory-thumb cosmetic-thumb ${slot.className}" data-slot="${slot.slot}" title="${slot.description}" aria-label="${slot.description}"><i></i></div>
       <div class="inventory-meta">
-        <div class="inventory-rarity">${CRAFTING_RARITY_LABELS[group.rarity]}</div>
+        <div class="inventory-tags">
+          <span class="cosmetic-slot-badge" data-slot="${slot.slot}">${slot.label}</span>
+          <span class="inventory-rarity">${CRAFTING_RARITY_LABELS[group.rarity]}</span>
+        </div>
         <div class="inventory-name">${group.variant}</div>
         <div class="inventory-recipe">${recipeName(group.recipeId)}</div>
       </div>
@@ -226,8 +231,7 @@ export class InventoryPanel {
       actions.appendChild(button)
       card.appendChild(actions)
     }
-    const slot = COSMETIC_CATEGORY[group.recipeId]
-    const equippedId = this.equippedSlots()[slot]
+    const equippedId = this.equippedSlots()[slot.slot]
     const groupEquipped = equippedId != null && group.ids.includes(equippedId)
     if (groupEquipped) card.classList.add('inventory-equipped')
     if (itemId && (this.onEquipItem || this.onUnequipSlot)) {
@@ -237,7 +241,7 @@ export class InventoryPanel {
       equipBtn.className = 'inventory-equip'
       equipBtn.textContent = groupEquipped ? 'Unequip' : 'Equip'
       equipBtn.addEventListener('click', () => {
-        if (groupEquipped) this.onUnequipSlot?.(slot)
+        if (groupEquipped) this.onUnequipSlot?.(slot.slot)
         else this.onEquipItem?.(itemId)
       })
       actions.appendChild(equipBtn)

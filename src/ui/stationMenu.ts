@@ -27,6 +27,7 @@ import type { GameAudio } from '../audio/sound'
 import { HOLDER_SHIP_VISUALS, resolveHolderShipVisual, type HolderShipVisualId } from './holderShipVisual'
 import type { MarketListing } from '../net/client'
 import { sortFilterListings, type CurrencyFilter, type MarketSort } from './marketListSort'
+import { cosmeticSlotUi } from './cosmeticSlotUi'
 
 const COMMODITY_ORDER: CommodityId[] = ['ORE', 'ALLOY']
 type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard' | 'hangar' | 'crafting' | 'market'
@@ -411,6 +412,7 @@ export class StationMenu {
         this.ctx.crafting.cores >= (recipe.coreCost ?? 0)
       const craftedCount = this.ctx.crafting.items.filter((item) => item.recipeId === recipe.id).length
       const row = this.rowEl(recipe.name, recipe.description, craftedCount > 0 ? `${craftedCount} OWNED` : cost)
+      this.decorateCosmeticRow(row, recipe.id)
       const actions = row.querySelector('.s-actions')!
       actions.appendChild(this.btn('Craft', 'buy', !affordable, () => this.craft(recipe.id)))
       this.bodyEl.appendChild(row)
@@ -448,6 +450,7 @@ export class StationMenu {
     for (const group of groups.slice(0, 4)) {
       const recipe = CRAFTING_RECIPES.find((candidate) => candidate.id === group.recipeId)
       const row = this.rowEl(`${CRAFTING_RARITY_LABELS[group.rarity]} ${group.variant}`, recipe?.name ?? group.recipeId, `x${group.count}`)
+      this.decorateCosmeticRow(row, group.recipeId)
       const actions = row.querySelector('.s-actions')!
       const span = document.createElement('span')
       span.className = 'maxed'
@@ -658,6 +661,39 @@ export class StationMenu {
       <span class="s-held">${right}</span>
       <span class="s-actions"></span>`
     return row
+  }
+
+  private decorateCosmeticRow(row: HTMLElement, recipeId: CraftingCosmeticId): void {
+    const slot = cosmeticSlotUi(recipeId)
+    row.classList.add('cosmetic-row', slot.className)
+    row.dataset.slot = slot.slot
+
+    const nameEl = row.querySelector('.s-name')!
+    const name = nameEl.textContent ?? ''
+    nameEl.textContent = ''
+    nameEl.classList.add('station-cosmetic-name')
+    const thumb = document.createElement('span')
+    thumb.className = `station-thumb cosmetic-thumb ${slot.className}`
+    thumb.dataset.slot = slot.slot
+    thumb.title = slot.description
+    thumb.setAttribute('aria-label', slot.description)
+    thumb.appendChild(document.createElement('i'))
+    const nameText = document.createElement('span')
+    nameText.className = 's-name-text'
+    nameText.textContent = name
+    nameEl.append(thumb, nameText)
+
+    const priceEl = row.querySelector('.s-price')!
+    const detail = priceEl.textContent ?? ''
+    priceEl.textContent = ''
+    priceEl.classList.add('s-price-with-badge')
+    const badge = document.createElement('span')
+    badge.className = 'cosmetic-slot-badge'
+    badge.dataset.slot = slot.slot
+    badge.textContent = slot.label
+    const detailText = document.createElement('span')
+    detailText.textContent = detail
+    priceEl.append(badge, detailText)
   }
 
   private btn(label: string, kind: 'buy' | 'sell', disabled: boolean, onClick: () => void): HTMLButtonElement {

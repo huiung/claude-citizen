@@ -199,6 +199,28 @@ describe('station crafting forge sequence', () => {
     expect(root.textContent).toContain('Odds rising')
   })
 
+  it('shows cosmetic slot badges and thumbnails on craft recipes and inventory stacks', () => {
+    const { menu, ctx, root } = mountCraftingMenu(0)
+    ctx.crafting.items.push({
+      id: 'aura-1',
+      recipeId: 'void-runner-kit',
+      rarity: 'epic',
+      variant: 'Void Runner Eclipse',
+      createdAt: 1,
+      tradable: true,
+    })
+    ;(menu as any).render()
+
+    const rows = [...root.querySelectorAll('.station-row')]
+    const recipeRow = rows.find((row) => row.textContent?.includes('Void Runner Kit'))!
+    const stackRow = rows.find((row) => row.textContent?.includes('Void Runner Eclipse'))!
+
+    expect(recipeRow.querySelector('.cosmetic-slot-badge')?.textContent).toBe('AURA')
+    expect(recipeRow.querySelector('.station-thumb')?.classList.contains('slot-aura')).toBe(true)
+    expect(stackRow.querySelector('.cosmetic-slot-badge')?.textContent).toBe('AURA')
+    expect(stackRow.querySelector('.station-thumb')?.classList.contains('slot-aura')).toBe(true)
+  })
+
   it('cancels the forge when switching station tabs mid-forge', () => {
     vi.useFakeTimers()
     try {
