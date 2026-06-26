@@ -32,6 +32,10 @@ import { cosmeticSlotUi } from './cosmeticSlotUi'
 const COMMODITY_ORDER: CommodityId[] = ['ORE', 'ALLOY']
 type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard' | 'hangar' | 'crafting' | 'market'
 
+function isCraftingCosmeticId(id: string): id is CraftingCosmeticId {
+  return CRAFTING_RECIPES.some((recipe) => recipe.id === id)
+}
+
 /** Forge animation stage labels (smelt → shape → engrave), shown in order. */
 export const FORGE_STAGES = ['Smelt', 'Shape', 'Engrave'] as const
 /** Duration of each forge stage in ms; total = FORGE_STAGES.length × FORGE_STAGE_MS (≈ 2.25 s). */
@@ -509,6 +513,7 @@ export class StationMenu {
       const unit = listing.currency === 'token' ? '$CITIZEN' : 'cr'
       const seller = listing.sellerShort ? `Seller ${listing.sellerName} (${listing.sellerShort})` : `Seller ${listing.sellerName}`
       const row = this.rowEl(`${rarity} ${listing.item.variant}`, seller, `${listing.price.toLocaleString()} ${unit}`)
+      if (isCraftingCosmeticId(listing.item.recipeId)) this.decorateCosmeticRow(row, listing.item.recipeId)
       row.classList.add('mkt-rarity-' + listing.item.rarity)
       const actions = row.querySelector('.s-actions')!
       if (listing.owned) {
@@ -665,7 +670,7 @@ export class StationMenu {
 
   private decorateCosmeticRow(row: HTMLElement, recipeId: CraftingCosmeticId): void {
     const slot = cosmeticSlotUi(recipeId)
-    row.classList.add('cosmetic-row', slot.className)
+    row.classList.add('cosmetic-row', slot.className, slot.recipeClassName)
     row.dataset.slot = slot.slot
 
     const nameEl = row.querySelector('.s-name')!
@@ -673,7 +678,7 @@ export class StationMenu {
     nameEl.textContent = ''
     nameEl.classList.add('station-cosmetic-name')
     const thumb = document.createElement('span')
-    thumb.className = `station-thumb cosmetic-thumb ${slot.className}`
+    thumb.className = `station-thumb cosmetic-thumb ${slot.className} ${slot.recipeClassName}`
     thumb.dataset.slot = slot.slot
     thumb.title = slot.description
     thumb.setAttribute('aria-label', slot.description)

@@ -27,9 +27,10 @@ const COSMETIC_SLOT_META: Readonly<Record<CosmeticCategory, CosmeticSlotMeta>> =
 
 export interface CosmeticSlotUi extends CosmeticSlotMeta {
   slot: CosmeticCategory
+  recipeClassName: string
 }
 
 export function cosmeticSlotUi(recipeId: CraftingCosmeticId): CosmeticSlotUi {
   const slot = COSMETIC_CATEGORY[recipeId]
-  return { slot, ...COSMETIC_SLOT_META[slot] }
+  return { slot, recipeClassName: `recipe-${recipeId}`, ...COSMETIC_SLOT_META[slot] }
 }

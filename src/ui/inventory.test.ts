@@ -136,6 +136,7 @@ describe('cosmetic slot readability', () => {
       items: [
         { id: 'i1', recipeId: 'aurum-trail-kit', rarity: 'rare', variant: 'Blue Aurum Trail', createdAt: 1, tradable: true },
         { id: 'i2', recipeId: 'void-runner-kit', rarity: 'epic', variant: 'Void Runner Eclipse', createdAt: 2, tradable: true },
+        { id: 'i3', recipeId: 'comet-wake-kit', rarity: 'legendary', variant: 'Celestial Comet Wake', createdAt: 3, tradable: true },
       ],
     }
     const panel = new InventoryPanel({})
@@ -145,11 +146,15 @@ describe('cosmetic slot readability', () => {
       .find((card) => card.textContent?.includes('Blue Aurum Trail'))!
     const aura = [...document.querySelectorAll('.inventory-card')]
       .find((card) => card.textContent?.includes('Void Runner Eclipse'))!
+    const comet = [...document.querySelectorAll('.inventory-card')]
+      .find((card) => card.textContent?.includes('Celestial Comet Wake'))!
 
     expect(trail.querySelector('.cosmetic-slot-badge')?.textContent).toBe('TRAIL')
     expect(trail.querySelector('.inventory-thumb')?.classList.contains('slot-trail')).toBe(true)
     expect(aura.querySelector('.cosmetic-slot-badge')?.textContent).toBe('AURA')
     expect(aura.querySelector('.inventory-thumb')?.classList.contains('slot-aura')).toBe(true)
+    expect(comet.querySelector('.cosmetic-slot-badge')?.textContent).toBe('TRAIL')
+    expect(comet.querySelector('.inventory-thumb')?.classList.contains('recipe-comet-wake-kit')).toBe(true)
   })
 })
 

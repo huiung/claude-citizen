@@ -103,6 +103,25 @@ describe('stationMenu market tab currency display', () => {
     ;(menu.root.querySelector('[data-tab="market"]') as HTMLButtonElement).click()
     expect(menu.root.querySelector('.station-row.mkt-rarity-epic')).toBeTruthy()
   })
+
+  it('shows cosmetic slot badges and thumbnails on market listings', () => {
+    const comet = {
+      id: 'c1', sellerName: 'ACE', price: 120000, currency: 'credits' as const, status: 'active' as const, createdAt: 1, updatedAt: 1, owned: false,
+      item: { id: 'c1i', recipeId: 'comet-wake-kit', rarity: 'legendary', variant: 'Celestial Comet Wake', createdAt: 1, tradable: true },
+    }
+    const menu = new StationMenu({ onChange() {}, onUndock() {} })
+    document.body.appendChild(menu.root)
+    menu.open(makeMarketCtx([comet]))
+    ;(menu.root.querySelector('[data-tab="market"]') as HTMLButtonElement).click()
+
+    const row = [...menu.root.querySelectorAll('.station-row')]
+      .find((candidate) => candidate.textContent?.includes('Celestial Comet Wake'))!
+    expect(row.querySelector('.cosmetic-slot-badge')?.textContent).toBe('TRAIL')
+    expect(row.querySelector('.station-thumb')?.classList.contains('slot-trail')).toBe(true)
+    expect(row.querySelector('.station-thumb')?.classList.contains('recipe-comet-wake-kit')).toBe(true)
+    expect(row.textContent).toContain('ACE')
+    expect(row.textContent).toContain('120,000 cr')
+  })
 })
 
 describe('station crafting forge sequence', () => {

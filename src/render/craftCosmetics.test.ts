@@ -27,4 +27,20 @@ describe('createShipCosmetics', () => {
 
     cos.dispose()
   })
+
+  it('renders Comet Wake as a distinct long trail family', () => {
+    const scene = new THREE.Scene()
+    const ship = new THREE.Group()
+    scene.add(ship)
+    const cos = createShipCosmetics(ship, scene)
+
+    cos.apply([cosmeticStyle('comet-wake-kit', 'epic')])
+
+    const trail = scene.children.find((o) => o.userData.cosmeticTrailKind === 'comet') as THREE.Points | undefined
+    expect(trail).toBeDefined()
+    expect(trail!.geometry.getAttribute('position').count).toBeGreaterThan(48)
+    expect((trail!.material as THREE.PointsMaterial).size).toBeLessThan(0.8)
+
+    cos.dispose()
+  })
 })

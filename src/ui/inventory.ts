@@ -206,11 +206,11 @@ export class InventoryPanel {
   private card(group: CraftedItemGroup): HTMLElement {
     const card = document.createElement('div')
     const slot = cosmeticSlotUi(group.recipeId)
-    card.className = `inventory-card rarity-${group.rarity} ${slot.className}`
+    card.className = `inventory-card rarity-${group.rarity} ${slot.className} ${slot.recipeClassName}`
     card.dataset.slot = slot.slot
     const itemId = this.state ? listableItemId(group, this.state.items) : null
     card.innerHTML = `
-      <div class="inventory-thumb cosmetic-thumb ${slot.className}" data-slot="${slot.slot}" title="${slot.description}" aria-label="${slot.description}"><i></i></div>
+      <div class="inventory-thumb cosmetic-thumb ${slot.className} ${slot.recipeClassName}" data-slot="${slot.slot}" title="${slot.description}" aria-label="${slot.description}"><i></i></div>
       <div class="inventory-meta">
         <div class="inventory-tags">
           <span class="cosmetic-slot-badge" data-slot="${slot.slot}">${slot.label}</span>

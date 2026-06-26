@@ -13,12 +13,14 @@ export type CosmeticCategory = 'trail' | 'hull' | 'aura'
 export const COSMETIC_CATEGORY: Readonly<Record<CraftingCosmeticId, CosmeticCategory>> = {
   'aurum-trail-kit': 'trail',
   'nebula-hull-kit': 'hull',
+  'comet-wake-kit': 'trail',
   'void-runner-kit': 'aura',
 }
 
 export const COSMETIC_SLOTS: readonly CosmeticCategory[] = ['trail', 'hull', 'aura']
 
 export interface CosmeticStyle {
+  recipeId: CraftingCosmeticId
   category: CosmeticCategory
   color: number
   intensity: number
@@ -43,11 +45,12 @@ const RARITY_COLOR: Readonly<Record<CraftingRarity, number>> = {
 
 const KNOWN_RARITIES = new Set<CraftingRarity>(['common', 'rare', 'epic', 'legendary'])
 function isRecipe(id: string): id is CraftingCosmeticId {
-  return id === 'aurum-trail-kit' || id === 'nebula-hull-kit' || id === 'void-runner-kit'
+  return id === 'aurum-trail-kit' || id === 'nebula-hull-kit' || id === 'comet-wake-kit' || id === 'void-runner-kit'
 }
 
 export function cosmeticStyle(recipeId: CraftingCosmeticId, rarity: CraftingRarity): CosmeticStyle {
   return {
+    recipeId,
     category: COSMETIC_CATEGORY[recipeId],
     color: RARITY_COLOR[rarity] ?? RARITY_COLOR.common,
     intensity: RARITY_INTENSITY[rarity] ?? RARITY_INTENSITY.common,

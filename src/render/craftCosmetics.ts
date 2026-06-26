@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import type { CosmeticStyle } from '../sim/cosmetics'
 
 const TRAIL_POINTS = 48
+const COMET_TRAIL_POINTS = 84
 
 interface Effect {
   object: THREE.Object3D
@@ -78,17 +79,26 @@ function fillTrailColors(attr: THREE.BufferAttribute, color: THREE.Color): void 
 }
 
 function buildTrail(style: CosmeticStyle): THREE.Points {
+  const comet = style.recipeId === 'comet-wake-kit'
+  const pointCount = comet ? COMET_TRAIL_POINTS : TRAIL_POINTS
   const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_POINTS * 3), 3))
-  const colorAttr = new THREE.BufferAttribute(new Float32Array(TRAIL_POINTS * 3), 3)
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pointCount * 3), 3))
+  const colorAttr = new THREE.BufferAttribute(new Float32Array(pointCount * 3), 3)
   fillTrailColors(colorAttr, new THREE.Color(style.color))
   geo.setAttribute('color', colorAttr)
   const mat = new THREE.PointsMaterial({
-    size: 0.3 + style.intensity * 0.7, vertexColors: true, transparent: true,
-    opacity: 0.5 + style.intensity * 0.4, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+    size: comet ? 0.18 + style.intensity * 0.45 : 0.3 + style.intensity * 0.7,
+    vertexColors: true,
+    transparent: true,
+    opacity: comet ? 0.42 + style.intensity * 0.32 : 0.5 + style.intensity * 0.4,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true,
   })
   const points = new THREE.Points(geo, mat)
   points.userData.cosmeticTrail = true
+  points.userData.cosmeticTrailKind = comet ? 'comet' : 'aurum'
+  points.userData.cosmeticRecipeId = style.recipeId
   points.frustumCulled = false
   return points
 }
@@ -131,8 +141,8 @@ export function createShipCosmetics(shipGroup: THREE.Group, scene: THREE.Scene):
         const colorAttr = points.geometry.getAttribute('color') as THREE.BufferAttribute
         let seeded = false
         effects.push({ object: points, parent: scene, style, update(_dt, worldPos, t) {
-          if (!seeded) { for (let i = 0; i < TRAIL_POINTS; i++) attr.setXYZ(i, worldPos.x, worldPos.y, worldPos.z); seeded = true }
-          for (let i = TRAIL_POINTS - 1; i > 0; i--) attr.setXYZ(i, attr.getX(i - 1), attr.getY(i - 1), attr.getZ(i - 1))
+          if (!seeded) { for (let i = 0; i < attr.count; i++) attr.setXYZ(i, worldPos.x, worldPos.y, worldPos.z); seeded = true }
+          for (let i = attr.count - 1; i > 0; i--) attr.setXYZ(i, attr.getX(i - 1), attr.getY(i - 1), attr.getZ(i - 1))
           attr.setXYZ(0, worldPos.x, worldPos.y, worldPos.z)
           attr.needsUpdate = true
           if (style.legendary) fillTrailColors(colorAttr, tmp.setHSL((t * 0.15) % 1, 0.85, 0.6))

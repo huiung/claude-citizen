@@ -1,7 +1,7 @@
 import type { PlayerEconomy } from './economy'
 import { COSMETIC_CATEGORY, COSMETIC_SLOTS, type CosmeticCategory } from './cosmetics'
 
-export type CraftingCosmeticId = 'aurum-trail-kit' | 'nebula-hull-kit' | 'void-runner-kit'
+export type CraftingCosmeticId = 'aurum-trail-kit' | 'nebula-hull-kit' | 'comet-wake-kit' | 'void-runner-kit'
 export type CraftingRarity = 'common' | 'rare' | 'epic' | 'legendary'
 
 export interface CraftedCosmeticItem {
@@ -50,6 +50,13 @@ export const CRAFTING_RECIPES: readonly CraftingRecipe[] = [
     coreCost: 1,
   },
   {
+    id: 'comet-wake-kit',
+    name: 'Comet Wake Kit',
+    description: 'Craft a long-form engine wake for high-speed flybys.',
+    creditCost: 120_000,
+    coreCost: 2,
+  },
+  {
     id: 'void-runner-kit',
     name: 'Void Runner Kit',
     description: 'Craft a high-end deep-space cosmetic kit for future trading.',
@@ -77,6 +84,12 @@ export const CRAFTING_VARIANTS: Readonly<Record<CraftingCosmeticId, Record<Craft
     rare: 'Azure Nebula Hull',
     epic: 'Violet Nebula Hull',
     legendary: 'Supernova Nebula Hull',
+  },
+  'comet-wake-kit': {
+    common: 'Dust Comet Wake',
+    rare: 'Ion Comet Wake',
+    epic: 'Solar Comet Wake',
+    legendary: 'Celestial Comet Wake',
   },
   'void-runner-kit': {
     common: 'Void Runner Matte',

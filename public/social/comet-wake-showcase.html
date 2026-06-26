@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Comet Wake Kit Showcase</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #000; }
+    body { font-family: "Share Tech Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    #showcase-root { position: fixed; inset: 0; width: 100vw; height: 100vh; overflow: hidden; background: #000; }
+    canvas { display: block; width: 100%; height: 100%; }
+    .hud {
+      position: fixed; inset: 0; pointer-events: none; color: #eaffff;
+      text-shadow: 0 0 14px rgba(80, 230, 255, .32), 0 1px 3px rgba(0,0,0,.8);
+    }
+    .title {
+      position: absolute; left: 56px; top: 42px; letter-spacing: 2.8px;
+      font-size: 26px; font-weight: 700; color: #fff;
+    }
+    .title span { color: #ffd274; }
+    .subtitle {
+      position: absolute; right: 56px; top: 48px; text-align: right;
+      color: #aee9ff; font-size: 13px; letter-spacing: 1.4px; opacity: .82;
+    }
+    .lane {
+      position: absolute; left: 56px; right: 56px; height: 1px;
+      border-top: 1px solid rgba(159, 255, 176, .08);
+    }
+    .lane-label {
+      position: absolute; left: 58px; width: 330px; transform: translateY(-50%);
+      display: grid; grid-template-columns: 92px 1fr; gap: 16px; align-items: center;
+    }
+    .rarity {
+      min-width: 92px; padding: 6px 9px; border: 1px solid currentColor; border-radius: 4px;
+      background: rgba(0, 0, 0, .28); font-size: 12px; letter-spacing: 1.5px; text-align: center;
+    }
+    .variant { color: #fff; font-size: 15px; letter-spacing: .6px; }
+    .variant small { display: block; margin-top: 3px; color: #aee9ff; font-size: 10px; letter-spacing: 1.2px; opacity: .66; }
+    .common { color: #cfe3d0; }
+    .rare { color: #6fe8ff; }
+    .epic { color: #c08aff; }
+    .legendary { color: #ffe08a; }
+    .foot {
+      position: absolute; left: 56px; bottom: 34px; color: #9fffb0; opacity: .62;
+      font-size: 12px; letter-spacing: 1.2px;
+    }
+  </style>
+</head>
+<body>
+  <div id="showcase-root"></div>
+  <div class="hud" aria-hidden="true">
+    <div class="title">COMET WAKE <span>KIT</span></div>
+    <div class="subtitle">TRAIL SLOT · COMET WAKE ONLY EQUIPPED</div>
+    <div class="lane" style="top: 25%"></div>
+    <div class="lane" style="top: 43%"></div>
+    <div class="lane" style="top: 61%"></div>
+    <div class="lane" style="top: 79%"></div>
+    <div class="lane-label" style="top: 25%"><div class="rarity common">COMMON</div><div class="variant">Dust Comet Wake<small>baseline particle wake</small></div></div>
+    <div class="lane-label" style="top: 43%"><div class="rarity rare">RARE</div><div class="variant">Ion Comet Wake<small>brighter trail density</small></div></div>
+    <div class="lane-label" style="top: 61%"><div class="rarity epic">EPIC</div><div class="variant">Solar Comet Wake<small>higher intensity falloff</small></div></div>
+    <div class="lane-label" style="top: 79%"><div class="rarity legendary">LEGENDARY</div><div class="variant">Celestial Comet Wake<small>legendary hue cycling</small></div></div>
+    <div class="foot">Captured from the in-game cosmetic renderer · no hull / aura cosmetics equipped</div>
+  </div>
+  <script type="module" src="/src/social/cometWakeShowcase.ts"></script>
+</body>
+</html>

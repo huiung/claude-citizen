@@ -1,4 +1,4 @@
-const CRAFTING_COSMETICS = new Set(['aurum-trail-kit', 'nebula-hull-kit', 'void-runner-kit'])
+const CRAFTING_COSMETICS = new Set(['aurum-trail-kit', 'nebula-hull-kit', 'comet-wake-kit', 'void-runner-kit'])
 const CRAFTING_RARITIES = new Set(['common', 'rare', 'epic', 'legendary'])
 const CRAFTING_VARIANTS = {
   'aurum-trail-kit': {
@@ -12,6 +12,12 @@ const CRAFTING_VARIANTS = {
     rare: 'Azure Nebula Hull',
     epic: 'Violet Nebula Hull',
     legendary: 'Supernova Nebula Hull',
+  },
+  'comet-wake-kit': {
+    common: 'Dust Comet Wake',
+    rare: 'Ion Comet Wake',
+    epic: 'Solar Comet Wake',
+    legendary: 'Celestial Comet Wake',
   },
   'void-runner-kit': {
     common: 'Void Runner Matte',

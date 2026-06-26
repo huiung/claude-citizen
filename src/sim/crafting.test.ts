@@ -20,14 +20,17 @@ describe('crafting economy', () => {
     expect(CRAFTING_RECIPES.map((recipe) => recipe.id)).toEqual([
       'aurum-trail-kit',
       'nebula-hull-kit',
+      'comet-wake-kit',
       'void-runner-kit',
     ])
     expect(CRAFT_CORE_CREDIT_COST).toBe(50_000)
     expect(CRAFTING_RECIPES[0].creditCost).toBe(25_000)
     expect(CRAFTING_RECIPES[1].creditCost).toBe(75_000)
     expect(CRAFTING_RECIPES[1].coreCost).toBe(1)
-    expect(CRAFTING_RECIPES[2].creditCost).toBe(200_000)
-    expect(CRAFTING_RECIPES[2].coreCost).toBe(3)
+    expect(CRAFTING_RECIPES[2].creditCost).toBe(120_000)
+    expect(CRAFTING_RECIPES[2].coreCost).toBe(2)
+    expect(CRAFTING_RECIPES[3].creditCost).toBe(200_000)
+    expect(CRAFTING_RECIPES[3].coreCost).toBe(3)
   })
 
   it('refines craft cores from credits without touching cargo resources', () => {
@@ -100,6 +103,27 @@ describe('crafting economy', () => {
       'aurum-trail-kit-10-100000',
       'aurum-trail-kit-20-800000',
     ])
+  })
+
+  it('crafts Comet Wake as a core-gated high-end trail item', () => {
+    const econ = createEconomy()
+    econ.credits = 150_000
+    const crafting = createCraftingState()
+    crafting.cores = 2
+
+    expect(craftCosmetic(econ, crafting, 'comet-wake-kit', { random: () => 0.995, now: () => 3000 })).toEqual({
+      ok: true,
+      item: {
+        id: 'comet-wake-kit-3000-995000',
+        recipeId: 'comet-wake-kit',
+        rarity: 'legendary',
+        variant: 'Celestial Comet Wake',
+        createdAt: 3000,
+        tradable: true,
+      },
+    })
+    expect(econ.credits).toBe(30_000)
+    expect(crafting.cores).toBe(0)
   })
 
   it('rolls rarity from stable crafting odds', () => {
