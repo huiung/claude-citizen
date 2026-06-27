@@ -28,7 +28,7 @@ import {
   buildCapitalShip, buildDustField, buildLootCrate, buildNebula, buildSolarPlanet, buildStarfield, buildStation,
   buildMuchLaunchTower, buildRareFrogShrine, buildSun, buildWarpField, COLONY_POS, prewarmHighPlanetTextures, REFINERY_POS, SPAWN_PLANET, updateDustField, updateWarpField,
 } from './render/world'
-import { PLANETS, SUN_COLOR, SUN_POSITION, SUN_RADIUS, type SurfaceKind } from './sim/solarSystem'
+import { PLANETS, planetDockPosition, SUN_COLOR, SUN_POSITION, SUN_RADIUS, type SurfaceKind } from './sim/solarSystem'
 import { NetClient, type MarketActionResult, type MarketIntentResult, type MarketListing, type PeerState, type PlayerProgress } from './net/client'
 import { dockableTarget, type DockTarget } from './sim/docking'
 import { cargoUsed, gainCredits, loadEconomy, OUTPOSTS, saveEconomy } from './sim/economy'
@@ -1067,6 +1067,7 @@ const PLANET_UPGRADE_MAX_SPEED_SQ = 16
 let planetUpgradeInFlight = false
 let nextPlanetUpgradeAt = Infinity
 let planetUpgradeIdleSince = 0
+const planetDockTargets: DockTarget[] = []
 for (const [idx, planet] of PLANETS.entries()) {
   const mesh = buildSolarPlanet(planet.radius, planet.color, planet.hasRings, planet.surface, planet.seed, {
     startupTextureSize: planet.name === 'Earth' ? 1024 : 512,
@@ -1077,6 +1078,11 @@ for (const [idx, planet] of PLANETS.entries()) {
   scene.add(mesh)
   planetGroups.push(mesh)
   mesh.traverse((o) => { if (o instanceof THREE.LOD) planetLODs.push(o) })
+  const dockPos = planetDockPosition(planet.position, planet.radius, SUN_POSITION)
+  const station = buildStation()
+  station.position.copy(dockPos)
+  scene.add(station)
+  planetDockTargets.push({ id: `planet-${planet.name.toLowerCase()}`, position: dockPos })
 }
 buildLights(scene)
 
@@ -2006,6 +2012,7 @@ const audio = new GameAudio()
 const dockTargets: DockTarget[] = [
   { id: 'refinery', position: REFINERY_POS },
   { id: 'colony', position: COLONY_POS },
+  ...planetDockTargets,
 ]
 let dockable: string | null = null
 let docked = false
