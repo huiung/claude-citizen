@@ -27,6 +27,12 @@ export interface Outpost {
 export const OUTPOSTS: Record<string, Outpost> = {
   colony: { id: 'colony', name: 'Helios Mining Colony', prices: { ORE: 40, ALLOY: 150 } },
   refinery: { id: 'refinery', name: 'Meridian Refinery', prices: { ORE: 110, ALLOY: 70 } },
+  'planet-mercury': { id: 'planet-mercury', name: 'Mercury Foundry', prices: { ORE: 50, ALLOY: 140 } },
+  'planet-venus': { id: 'planet-venus', name: 'Venus Forgeworks', prices: { ORE: 125, ALLOY: 60 } },
+  'planet-earth': { id: 'planet-earth', name: 'Terra Exchange', prices: { ORE: 80, ALLOY: 100 } },
+  'planet-mars': { id: 'planet-mars', name: 'Mars Prospect', prices: { ORE: 45, ALLOY: 145 } },
+  'planet-jupiter': { id: 'planet-jupiter', name: 'Jovian Refinery', prices: { ORE: 130, ALLOY: 55 } },
+  'planet-saturn': { id: 'planet-saturn', name: 'Saturn Outpost', prices: { ORE: 100, ALLOY: 90 } },
 }
 
 export const STARTING_CREDITS = 500
