@@ -5,6 +5,7 @@ import { PVP_ARENA_CLEAR_RADIUS, PVP_ZONE_CENTER } from './pvp'
 import {
   CELL_SIZE, type Celestial, EXCLUSION_RADIUS, isSolidCelestial, queryCelestials,
 } from './galaxy'
+import { PLANETS, SUN_POSITION, SUN_RADIUS } from './solarSystem'
 
 describe('isSolidCelestial', () => {
   it('planets and moons are solid; small filler stays pass-through', () => {
@@ -133,6 +134,18 @@ describe('galaxy', () => {
     const r = 40000
     for (const b of queryCelestials(center, r)) {
       expect(b.position.distanceTo(center)).toBeLessThanOrEqual(r + 1e-6)
+    }
+  })
+})
+
+describe('named system exclusion', () => {
+  it('spawns no procedural body inside the sun', () => {
+    expect(queryCelestials(SUN_POSITION, SUN_RADIUS).length).toBe(0)
+  })
+
+  it('spawns no procedural body inside any named planet', () => {
+    for (const p of PLANETS) {
+      expect(queryCelestials(p.position, p.radius + 1000).length).toBe(0)
     }
   })
 })

@@ -10,6 +10,7 @@
 import { Vector3 } from 'three'
 import { COLONY_POS, REFINERY_POS } from '../render/world'
 import { PVP_ARENA_CLEAR_RADIUS, PVP_ZONE_CENTER } from './pvp'
+import { PLANETS, SUN_POSITION, SUN_RADIUS } from './solarSystem'
 
 export type CelestialType = 'planet' | 'moon' | 'asteroid-cluster' | 'station' | 'derelict'
 
@@ -49,6 +50,8 @@ const EXCLUSION_ZONES: ReadonlyArray<{ center: Vector3; radius: number }> = [
   { center: REFINERY_POS, radius: EXCLUSION_RADIUS },
   { center: COLONY_POS, radius: EXCLUSION_RADIUS },
   { center: PVP_ZONE_CENTER, radius: PVP_ARENA_CLEAR_RADIUS },
+  { center: SUN_POSITION, radius: SUN_RADIUS + 4000 },
+  ...PLANETS.map((p) => ({ center: p.position, radius: p.radius + 4000 })),
 ]
 
 // --- Integer hashing -------------------------------------------------------
