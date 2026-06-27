@@ -26,12 +26,12 @@ export interface Planet {
 // angle 90° puts a body on the sun→spawn side (toward the player). Earth sits there,
 // nearest and dead ahead at launch; the others fan out around the sun.
 const SPEC: ReadonlyArray<{ name: string; dist: number; radius: number; color: number; angle: number; surface: SurfaceKind; rings?: boolean }> = [
-  { name: 'Earth', dist: 37000, radius: 4300, color: 0x3a72a8, angle: 90, surface: 'earth' },
-  { name: 'Venus', dist: 33000, radius: 4000, color: 0xd9ad6a, angle: 160, surface: 'venus' },
-  { name: 'Mercury', dist: 28000, radius: 1700, color: 0x9a8a78, angle: 225, surface: 'rocky' },
-  { name: 'Mars', dist: 52000, radius: 2400, color: 0xc25433, angle: 315, surface: 'mars' },
-  { name: 'Jupiter', dist: 82000, radius: 16000, color: 0xc9aa80, angle: 25, surface: 'gas' },
-  { name: 'Saturn', dist: 112000, radius: 13000, color: 0xdac89c, angle: 200, surface: 'gas', rings: true },
+  { name: 'Mercury', dist: 40000, radius: 1700, color: 0x9a8a78, angle: 225, surface: 'rocky' },
+  { name: 'Venus', dist: 55000, radius: 4000, color: 0xd9ad6a, angle: 160, surface: 'venus' },
+  { name: 'Earth', dist: 70000, radius: 4300, color: 0x3a72a8, angle: 90, surface: 'earth' },
+  { name: 'Mars', dist: 85000, radius: 2400, color: 0xc25433, angle: 315, surface: 'mars' },
+  { name: 'Jupiter', dist: 100000, radius: 16000, color: 0xc9aa80, angle: 25, surface: 'gas' },
+  { name: 'Saturn', dist: 116000, radius: 13000, color: 0xdac89c, angle: 200, surface: 'gas', rings: true },
 ]
 
 export const PLANETS: ReadonlyArray<Planet> = SPEC.map((s, i) => {
@@ -55,3 +55,17 @@ export const PLANETS: ReadonlyArray<Planet> = SPEC.map((s, i) => {
 
 /** Farthest extent of the system from the sun — used to push the procedural galaxy outside it. */
 export const SYSTEM_RADIUS = 130000
+
+/** Clearance (world units) between a planet's surface and its orbital docking station. */
+export const DOCK_ORBIT_CLEARANCE = 600
+
+/**
+ * The fixed orbital point where a planet's docking station sits: `radius + clearance` from the
+ * planet center, on the sunward side (the consistent approach line). Pure — returns a new Vector3.
+ */
+export function planetDockPosition(planetCenter: Vector3, planetRadius: number, sunPosition: Vector3): Vector3 {
+  const toSun = new Vector3().subVectors(sunPosition, planetCenter)
+  if (toSun.lengthSq() < 1e-9) toSun.set(0, 0, 1) // degenerate (planet at the sun) — any direction
+  toSun.normalize()
+  return planetCenter.clone().addScaledVector(toSun, planetRadius + DOCK_ORBIT_CLEARANCE)
+}

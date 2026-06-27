@@ -77,6 +77,24 @@ describe('economy', () => {
   })
 })
 
+describe('planet outposts', () => {
+  const PLANET_IDS = ['planet-mercury', 'planet-venus', 'planet-earth', 'planet-mars', 'planet-jupiter', 'planet-saturn']
+
+  it('registers a trade outpost for every named planet', () => {
+    for (const id of PLANET_IDS) {
+      expect(OUTPOSTS[id]).toBeDefined()
+      expect(OUTPOSTS[id].id).toBe(id)
+      expect(OUTPOSTS[id].prices.ORE).toBeGreaterThan(0)
+      expect(OUTPOSTS[id].prices.ALLOY).toBeGreaterThan(0)
+    }
+  })
+
+  it('keeps the two start-area outposts', () => {
+    expect(OUTPOSTS.colony).toBeDefined()
+    expect(OUTPOSTS.refinery).toBeDefined()
+  })
+})
+
 describe('gainCredits + lifetime earned', () => {
   it('credits a payout to both balance and lifetime earned', () => {
     const econ = createEconomy()

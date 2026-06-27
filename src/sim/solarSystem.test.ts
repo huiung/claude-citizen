@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { PLANETS, SUN_POSITION, SUN_RADIUS } from './solarSystem'
+import { Vector3 } from 'three'
+import { PLANETS, SUN_POSITION, SUN_RADIUS, SYSTEM_RADIUS, DOCK_ORBIT_CLEARANCE, planetDockPosition } from './solarSystem'
 
 describe('planet orbits clear the sun', () => {
   // The sun's collision shell (resolvePlanetCollisions): radius * 1.06 + 30.
@@ -20,5 +21,43 @@ describe('planet orbits clear the sun', () => {
       const nearestArrival = p.position.distanceTo(SUN_POSITION) - standoff(p.radius)
       expect(nearestArrival, `${p.name} arrival can fall inside the sun shell`).toBeGreaterThan(sunCollision)
     }
+  })
+})
+
+describe('planet spacing', () => {
+  const distFromSun = (p: typeof PLANETS[number]) => p.position.distanceTo(SUN_POSITION)
+
+  it('every planet clears the sun with breathing room', () => {
+    for (const p of PLANETS) expect(distFromSun(p) - SUN_RADIUS).toBeGreaterThanOrEqual(15000)
+  })
+
+  it('distances strictly increase from Mercury outward', () => {
+    const sorted = [...PLANETS].sort((a, b) => distFromSun(a) - distFromSun(b))
+    for (let i = 1; i < sorted.length; i++) {
+      expect(distFromSun(sorted[i])).toBeGreaterThan(distFromSun(sorted[i - 1]))
+    }
+  })
+
+  it('the outermost planet body stays within the system bound', () => {
+    const outer = PLANETS[PLANETS.length - 1]
+    expect(distFromSun(outer) + outer.radius).toBeLessThanOrEqual(SYSTEM_RADIUS)
+  })
+})
+
+describe('planetDockPosition', () => {
+  it('sits one clearance above the surface, on the sunward side', () => {
+    const sun = new Vector3(0, 0, 0)
+    const center = new Vector3(1000, 0, 0) // planet 1000 to +x of the sun
+    const radius = 200
+    const dock = planetDockPosition(center, radius, sun)
+    expect(dock.distanceTo(center)).toBeCloseTo(radius + DOCK_ORBIT_CLEARANCE, 3)
+    expect(dock.distanceTo(sun)).toBeLessThan(center.distanceTo(sun)) // sunward of the center
+  })
+
+  it('does not mutate its inputs', () => {
+    const sun = new Vector3(0, 0, 0)
+    const center = new Vector3(0, 0, 5000)
+    planetDockPosition(center, 300, sun)
+    expect(center).toEqual(new Vector3(0, 0, 5000))
   })
 })
