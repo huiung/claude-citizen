@@ -15,7 +15,7 @@ import { raceLeaderboardPage, mergeRaceStats, recordRankedRaceFinish } from './r
 import { blackHoleLeaderboardPage, mergeBlackHoleStats, recordBlackHoleRun } from './blackHoleLeaderboard.mjs'
 import { applyPvpHit, applyPvpRespawn, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
 import { resolveCallsign, identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
-import { sanitizeProgress } from './progress.mjs'
+import { guardEconomyGrowth, sanitizeProgress, scrubCareerOutliers } from './progress.mjs'
 import {
   buyListing,
   cancelListing,
@@ -271,6 +271,15 @@ function flushClaimedAnonTokens() {
 let store = {}
 try { store = JSON.parse(readFileSync(STORE_FILE, 'utf8')) } catch { store = {} }
 let flushTimer = null
+// One-time hygiene: clamp pre-guard exploit rows (e.g. the 40M Career row) down to a plausible
+// ceiling so they drop off the leaderboard on the first deploy of the economy guard.
+{
+  const scrubbed = scrubCareerOutliers(store, Date.now())
+  if (scrubbed.length) {
+    console.log(`[scrub] clamped ${scrubbed.length} pre-guard outlier row(s):`, scrubbed)
+    flush() // persist the clamp so it survives even if no client saves before the next restart
+  }
+}
 function flush() {
   if (flushTimer) return
   flushTimer = setTimeout(() => {
@@ -561,7 +570,10 @@ wss.on('connection', (ws) => {
       const clean = sanitizeProgress(msg.progress)
       if (clean) {
         clean.name = client.name
-        store[key] = mergeBlackHoleStats(mergeRaceStats(mergePvpStats(clean, store[key]), store[key]), store[key])
+        const prev = store[key]
+        const merged = mergeBlackHoleStats(mergeRaceStats(mergePvpStats(clean, prev), prev), prev)
+        // Server owns earned/credits growth — reject implausible per-save jumps (Career + wallet anti-cheat).
+        store[key] = guardEconomyGrowth(merged, prev, Date.now())
         flush()
       } // stamp callsign for the leaderboard
       return

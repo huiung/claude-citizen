@@ -1,5 +1,73 @@
 import { describe, expect, it } from 'vitest'
-import { sanitizeProgress, sanitizeCrafting } from './progress.mjs'
+import {
+  CAREER_SCRUB_CEILING, guardEconomyGrowth, MAX_EARN_RATE, MAX_EARN_WINDOW_SEC,
+  sanitizeCrafting, sanitizeProgress, scrubCareerOutliers,
+} from './progress.mjs'
+
+describe('guardEconomyGrowth', () => {
+  const row = (earned, credits, careerAt) => ({ earned, credits, ...(careerAt !== undefined ? { _careerAt: careerAt } : {}) })
+
+  it('clamps a 40M earned/credit jump over a short interval to the time budget', () => {
+    const now = 10_000_000
+    const prev = row(5000, 5000, now - 2000) // last save 2s ago → 2000 budget
+    const out = guardEconomyGrowth({ earned: 40_000_000, credits: 40_000_000 }, prev, now)
+    expect(out.earned).toBe(5000 + MAX_EARN_RATE * 2)
+    expect(out.credits).toBe(5000 + MAX_EARN_RATE * 2)
+    expect(out._careerAt).toBe(now)
+  })
+
+  it('allows a legit increase within the time budget', () => {
+    const now = 10_000_000
+    const prev = row(1000, 1000, now - 60_000) // 60s → 60k budget
+    const out = guardEconomyGrowth({ earned: 31_000, credits: 25_000 }, prev, now)
+    expect(out.earned).toBe(31_000)
+    expect(out.credits).toBe(25_000)
+  })
+
+  it('never lowers lifetime earned, but lets credits be spent freely', () => {
+    const now = 10_000_000
+    const out = guardEconomyGrowth({ earned: 10, credits: 8000 }, row(50_000, 50_000, now - 1000), now)
+    expect(out.earned).toBe(50_000) // monotonic
+    expect(out.credits).toBe(8000)  // spending allowed
+  })
+
+  it('caps a first save / legacy row to a single window of budget', () => {
+    const now = 10_000_000
+    const first = guardEconomyGrowth({ earned: 40_000_000, credits: 40_000_000 }, null, now)
+    expect(first.earned).toBe(MAX_EARN_RATE * MAX_EARN_WINDOW_SEC) // 1000 * 3600 = 3.6M
+    const legacy = guardEconomyGrowth({ earned: 8_500_000, credits: 100 }, row(8_000_000, 100), now)
+    expect(legacy.earned).toBe(8_500_000) // +500k < 3.6M budget
+  })
+
+  it('window-caps the budget even after a long offline gap', () => {
+    const now = 10_000_000_000
+    const prev = row(1000, 1000, now - 7 * 24 * 3600 * 1000) // a week ago
+    const out = guardEconomyGrowth({ earned: 40_000_000, credits: 40_000_000 }, prev, now)
+    expect(out.earned).toBe(1000 + MAX_EARN_RATE * MAX_EARN_WINDOW_SEC)
+  })
+})
+
+describe('scrubCareerOutliers', () => {
+  it('clamps a legacy outlier row to the ceiling and stamps it', () => {
+    const store = { cheater: { earned: 40_000_000, credits: 40_000_000, name: 'X' } }
+    const scrubbed = scrubCareerOutliers(store, 12345)
+    expect(store.cheater.earned).toBe(CAREER_SCRUB_CEILING)
+    expect(store.cheater.credits).toBe(CAREER_SCRUB_CEILING)
+    expect(store.cheater._careerAt).toBe(12345)
+    expect(scrubbed.map((s) => s.key)).toEqual(['cheater'])
+  })
+
+  it('leaves normal rows and already-guarded rows untouched', () => {
+    const store = {
+      legit: { earned: 8_000_000, credits: 100_000 },
+      guarded: { earned: 40_000_000, credits: 40_000_000, _careerAt: 999 },
+    }
+    const scrubbed = scrubCareerOutliers(store, 12345)
+    expect(store.legit.earned).toBe(8_000_000)
+    expect(store.guarded.earned).toBe(40_000_000) // _careerAt → earned legitimately under the guard
+    expect(scrubbed).toEqual([])
+  })
+})
 
 describe('progress sanitization', () => {
   it('keeps known crafted inventory items and drops unknown entries', () => {
