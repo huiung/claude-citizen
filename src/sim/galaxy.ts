@@ -13,6 +13,12 @@ import { PVP_ARENA_CLEAR_RADIUS, PVP_ZONE_CENTER } from './pvp'
 
 export type CelestialType = 'planet' | 'moon' | 'asteroid-cluster' | 'station' | 'derelict'
 
+/** Galaxy bodies the ship collides with. Planets and moons are landmarks you fly around; the small
+ *  filler (stations, derelicts, asteroid clusters) stays pass-through. */
+export function isSolidCelestial(type: CelestialType): boolean {
+  return type === 'planet' || type === 'moon'
+}
+
 export interface Celestial {
   /** Stable id derived from cell + index — same body, same id, forever. */
   id: string

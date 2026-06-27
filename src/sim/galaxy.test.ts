@@ -3,8 +3,18 @@ import { Vector3 } from 'three'
 import { COLONY_POS, REFINERY_POS } from '../render/world'
 import { PVP_ARENA_CLEAR_RADIUS, PVP_ZONE_CENTER } from './pvp'
 import {
-  CELL_SIZE, type Celestial, EXCLUSION_RADIUS, queryCelestials,
+  CELL_SIZE, type Celestial, EXCLUSION_RADIUS, isSolidCelestial, queryCelestials,
 } from './galaxy'
+
+describe('isSolidCelestial', () => {
+  it('planets and moons are solid; small filler stays pass-through', () => {
+    expect(isSolidCelestial('planet')).toBe(true)
+    expect(isSolidCelestial('moon')).toBe(true)
+    expect(isSolidCelestial('station')).toBe(false)
+    expect(isSolidCelestial('derelict')).toBe(false)
+    expect(isSolidCelestial('asteroid-cluster')).toBe(false)
+  })
+})
 
 /** Stable key for set-comparing two body lists irrespective of order. */
 function sig(bodies: Celestial[]): string[] {

@@ -8,7 +8,7 @@ import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
-import { createShipState, stepShip, TUNING, type ControlInput } from './sim/physics'
+import { createShipState, resolveSphereCollision, stepShip, TUNING, type ControlInput } from './sim/physics'
 import {
   addCraftEngineGlowRig,
   buildCraft,
@@ -39,7 +39,7 @@ import { equippedStyles, encodeEquipped, decodeCosmetics } from './sim/cosmetics
 import { createMarket, step as marketStep } from './sim/market'
 import { generateContracts } from './sim/contracts'
 import { boostMultiplier, cargoCapacity, loadUpgrades, miningYield, saveUpgrades, topSpeed } from './sim/upgrades'
-import { type Celestial, queryCelestials } from './sim/galaxy'
+import { type Celestial, isSolidCelestial, queryCelestials } from './sim/galaxy'
 import { generatePlanetTextures, samplePlanetSurface, type PlanetTextureKind } from './render/planetTextures'
 import { makeAsteroidMaterial } from './render/asteroidTextures'
 import { engineGlowStyle, type EngineGlowStyle } from './render/engineGlow'
@@ -1212,7 +1212,10 @@ const lastStreamPos = new THREE.Vector3(Infinity, Infinity, Infinity)
 // Celestials are built (mesh + 256px procedural textures) at most a few per frame so flying into a
 // fresh region doesn't block one frame building a whole batch (was the multi-hundred-ms / >1s hitch).
 const pendingBuild = new Map<string, Celestial>()
-const CELESTIAL_BUILD_BUDGET = 1
+const CELESTIAL_BUILD_BUDGET = 2
+// Collision shells for the solid galaxy bodies (planets + moons). Registered at stream time — before
+// the mesh is even built — so you can't slip through a body that hasn't rendered yet.
+const solidBodies = new Map<string, { position: THREE.Vector3; radius: number }>()
 
 function celestialRng(seed: number): () => number {
   let a = (seed >>> 0) || 1
@@ -1304,13 +1307,18 @@ function streamCelestials(now: number): void {
       spawnedBodies.delete(id)
     }
   }
-  // Drop queued builds that left the radius before we got to them.
+  // Drop queued builds and collision shells that left the radius before we got to them.
   for (const id of pendingBuild.keys()) {
     if (!liveIds.has(id)) pendingBuild.delete(id)
   }
+  for (const id of solidBodies.keys()) {
+    if (!liveIds.has(id)) solidBodies.delete(id)
+  }
   // Enqueue new bodies; the actual (expensive) build is amortized in processCelestialBuilds().
+  // Solid bodies get a collision shell now (build-independent) so they're never pass-through.
   for (const c of nearby) {
     if (!spawnedBodies.has(c.id) && !pendingBuild.has(c.id)) pendingBuild.set(c.id, c)
+    if (isSolidCelestial(c.type) && !solidBodies.has(c.id)) solidBodies.set(c.id, { position: c.position, radius: c.radius })
   }
 }
 
@@ -1319,13 +1327,16 @@ function streamCelestials(now: number): void {
 function processCelestialBuilds(): void {
   if (pendingBuild.size === 0) return
   let built = 0
-  for (const [id, c] of pendingBuild) {
+  // Build the NEAREST pending bodies first, so what you're flying toward renders before you reach it.
+  const queue = [...pendingBuild.values()].sort((a, b) =>
+    a.position.distanceToSquared(ship.position) - b.position.distanceToSquared(ship.position))
+  for (const c of queue) {
     if (built >= CELESTIAL_BUILD_BUDGET) break
-    pendingBuild.delete(id)
-    if (spawnedBodies.has(id)) continue
+    pendingBuild.delete(c.id)
+    if (spawnedBodies.has(c.id)) continue
     const mesh = buildCelestial(c)
     scene.add(mesh)
-    spawnedBodies.set(id, mesh)
+    spawnedBodies.set(c.id, mesh)
     built++
   }
   // Once the burst is fully built, warm up the new shaders off the main thread so they don't hitch when
@@ -1705,6 +1716,8 @@ function resolvePlanetCollisions(): void {
   hit(SUN_POSITION.x, SUN_POSITION.y, SUN_POSITION.z, SUN_RADIUS)
   for (const p of PLANETS) hit(p.position.x, p.position.y, p.position.z, p.radius, p.surface, p.seed, p.color)
   hit(SPAWN_PLANET.position.x, SPAWN_PLANET.position.y, SPAWN_PLANET.position.z, SPAWN_PLANET.radius)
+  // Procedural galaxy planets/moons: fast spherical clamp (no surface data, so no terrain follow).
+  for (const b of solidBodies.values()) resolveSphereCollision(ship.position, ship.velocity, b.position, b.radius)
 }
 
 // Capital ship hull — fit collision spheres along the longest axis of the *actual* bounding box,

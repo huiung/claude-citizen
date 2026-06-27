@@ -1,5 +1,25 @@
 import { Quaternion, Vector3 } from 'three'
 
+const _sphereNormal = new Vector3()
+/**
+ * Clamp `position` outside a solid sphere and kill inward velocity so the ship slides along the
+ * surface instead of passing through. Mutates `position`/`velocity`; returns true if it collided.
+ * This is the fast spherical clamp (no terrain follow) used for the sun, gas giants, and the
+ * procedural galaxy's planets/moons. `minDist = radius * 1.06 + 30` matches the existing clamp.
+ */
+export function resolveSphereCollision(position: Vector3, velocity: Vector3, center: Vector3, radius: number): boolean {
+  _sphereNormal.subVectors(position, center)
+  const dist = _sphereNormal.length()
+  if (dist <= 1e-3) return false
+  const minDist = radius * 1.06 + 30
+  if (dist >= minDist) return false
+  _sphereNormal.multiplyScalar(1 / dist)
+  position.copy(center).addScaledVector(_sphereNormal, minDist)
+  const vn = velocity.dot(_sphereNormal)
+  if (vn < 0) velocity.addScaledVector(_sphereNormal, -vn)
+  return true
+}
+
 // Tuning constants — the entire game feel lives here.
 export const TUNING = {
   maxSpeed: 95,          // m/s, coupled mode commanded speed
