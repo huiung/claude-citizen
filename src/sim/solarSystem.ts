@@ -55,3 +55,17 @@ export const PLANETS: ReadonlyArray<Planet> = SPEC.map((s, i) => {
 
 /** Farthest extent of the system from the sun — used to push the procedural galaxy outside it. */
 export const SYSTEM_RADIUS = 130000
+
+/** Clearance (world units) between a planet's surface and its orbital docking station. */
+export const DOCK_ORBIT_CLEARANCE = 600
+
+/**
+ * The fixed orbital point where a planet's docking station sits: `radius + clearance` from the
+ * planet center, on the sunward side (the consistent approach line). Pure — returns a new Vector3.
+ */
+export function planetDockPosition(planetCenter: Vector3, planetRadius: number, sunPosition: Vector3): Vector3 {
+  const toSun = new Vector3().subVectors(sunPosition, planetCenter)
+  if (toSun.lengthSq() < 1e-9) toSun.set(0, 0, 1) // degenerate (planet at the sun) — any direction
+  toSun.normalize()
+  return planetCenter.clone().addScaledVector(toSun, planetRadius + DOCK_ORBIT_CLEARANCE)
+}
