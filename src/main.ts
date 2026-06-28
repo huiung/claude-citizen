@@ -36,6 +36,9 @@ import { createAsteroidField, mineStep } from './sim/mining'
 import { loadCraftingState, normalizeCraftingState, saveCraftingState, equipCosmetic, unequipCosmetic } from './sim/crafting'
 import { createShipCosmetics, type ShipCosmetics } from './render/craftCosmetics'
 import { equippedStyles, encodeEquipped, decodeCosmetics } from './sim/cosmetics'
+import { stepMover } from '../bot/mover.mjs'
+import { buildActivity, pickActivity, stepActivity } from '../bot/activities.mjs'
+import { BOT_WORLD } from '../bot/landmarks.mjs'
 import { createMarket, step as marketStep } from './sim/market'
 import { generateContracts } from './sim/contracts'
 import { boostMultiplier, cargoCapacity, loadUpgrades, miningYield, saveUpgrades, topSpeed } from './sim/upgrades'
@@ -162,6 +165,8 @@ const CAPTURE_OG = URL_PARAMS.get('capture') === 'og'
 const SHOWCASE_HOLDER = URL_PARAMS.get('showcase') === 'holder'
 const SHOWCASE_TIME_TRIAL = URL_PARAMS.get('showcase') === 'time-trial'
 const MOBILE_COMPANION = document.documentElement.classList.contains('is-mobile')
+const BOT = URL_PARAMS.get('bot') === '1' // browser autopilot: this tab IS the CLAUDE pilot
+const BOT_COSMETICS = 'comet-wake-kit:legendary,nebula-hull-kit:legendary,void-runner-kit:legendary'
 
 // --- DOM
 const appEl = document.getElementById('app')!
@@ -233,7 +238,7 @@ const flightPlanSkipEl = document.getElementById('flight-plan-skip') as HTMLButt
 const flightPlanButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-plan]'))
 // Onboarding: show a "next objective" only to brand-new pilots. localStorage gate (this device
 // hasn't onboarded) is the fast path; a returning token with saved progress also disables it.
-let onboardingActive = !CAPTURE_OG && !localStorage.getItem('scc.onboarded')
+let onboardingActive = !CAPTURE_OG && !BOT && !localStorage.getItem('scc.onboarded')
 let sessionKicked = false // signed in elsewhere — freeze the objective HUD on the warning
 let flightPlanObjective: string | null = null
 let flightPlanObjectiveUntil = 0
@@ -1420,6 +1425,13 @@ const blackHoleRun = createBlackHoleRun()
 let playerEngineGlows: CraftEngineGlow[] = collectCraftEngineGlows(shipMesh)
 let playerCosmetics: ShipCosmetics = createShipCosmetics(shipMesh, scene)
 function applyPlayerCosmetics(): void {
+  if (BOT) {
+    // BOT mode forces a fixed showcase loadout. Route it through the one apply path so the local ship
+    // keeps it across every hull rebuild (setPlayerCraft + the async GLB load both call this).
+    playerCosmetics.apply(decodeCosmetics(BOT_COSMETICS))
+    net.setCosmetics(BOT_COSMETICS)
+    return
+  }
   playerCosmetics.apply(equippedStyles(crafting))
   net.setCosmetics(encodeEquipped(crafting))
 }
@@ -2438,6 +2450,8 @@ interface RemoteShip {
 let selfTier = 0 // token-holder tier, cosmetic identity
 let selfHolderBalance = 0 // exact token balance from the relay; used only for holder-gated ranked PvP
 let selectedHolderShipVisual = loadHolderShipVisual(localStorage)
+let botActivity: ReturnType<typeof buildActivity> | null = null
+const _botPrevPos = new THREE.Vector3()
 let rankedPvpDeniedUntil = 0
 const _rankedBounceDir = new THREE.Vector3()
 function applyLocalDevHolderOverride(): void {
@@ -3602,16 +3616,22 @@ function launch(): void {
   if (running) return
   const callsign = nicknameEl.value.trim() || 'PILOT'
   localStorage.setItem('callsign', callsign)
+  if (BOT) {
+    setPlayerCraft('interceptor')                  // sets selectedShipType; the final setPlayerCraft + applyPlayerCosmetics render the loadout
+    selectedHolderShipVisual = 'void-interceptor' // T3 skin (shows once the relay grants tier 3)
+    net.setBotSecret(localStorage.getItem('scc.botSecret') ?? '')
+    botActivity = buildActivity(pickActivity(null, Math.random), ship.position, Math.random, performance.now(), BOT_WORLD)
+  }
   net.enterGame(callsign, selectedShipType, activeHolderShipVisual()) // promote from viewer (presence) to an active pilot
   if (statsTimer) clearInterval(statsTimer)
   overlayEl.hidden = true
   overlayEl.style.display = 'none'
-  hudEl.hidden = CAPTURE_OG
-  statusEl.hidden = CAPTURE_OG
-  helpEl.hidden = CAPTURE_OG || MOBILE_COMPANION
-  crosshairEl.hidden = CAPTURE_OG
-  walletEl.hidden = CAPTURE_OG
-  minimapWrapEl.hidden = CAPTURE_OG
+  hudEl.hidden = (CAPTURE_OG || BOT)
+  statusEl.hidden = (CAPTURE_OG || BOT)
+  helpEl.hidden = (CAPTURE_OG || BOT) || MOBILE_COMPANION
+  crosshairEl.hidden = (CAPTURE_OG || BOT)
+  walletEl.hidden = (CAPTURE_OG || BOT)
+  minimapWrapEl.hidden = (CAPTURE_OG || BOT)
   if (MOBILE_COMPANION) {
     document.documentElement.classList.add('mobile-flight')
     mobileControlsEl.hidden = false
@@ -3644,12 +3664,16 @@ if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) {
   nicknameEl.value = SHOWCASE_HOLDER ? HOLDER_SHOWCASE_STEPS[0].callsign : SHOWCASE_TIME_TRIAL ? 'RACER' : 'test'
   requestAnimationFrame(() => launch())
 }
+if (BOT) {
+  nicknameEl.value = 'CLAUDE'
+  requestAnimationFrame(() => launch())
+}
 function hideFlightPlan(): void {
   flightPlanEl.hidden = true
 }
 
 function showFlightPlan(): void {
-  if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) return
+  if (CAPTURE_OG || BOT || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) return
   const visiblePlans = new Set(flightPlansForDevice(MOBILE_COMPANION).map((plan) => plan.id))
   for (const button of flightPlanButtons) {
     button.hidden = !visiblePlans.has(button.dataset.plan as FlightPlanId)
@@ -3999,8 +4023,23 @@ function frame(now: number): void {
     const flightTuning = hubTimeTrial.active
       ? { maxSpeed: baseSpeed, boostMultiplier: baseBoost }
       : { maxSpeed: effSpeed(), boostMultiplier: effBoost() }
-    const input = readInput(dt)
-    stepShip(ship, input, dt, flightTuning)
+    let input: ControlInput
+    if (BOT && botActivity) {
+      input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
+      const cmd = stepActivity(botActivity, ship.position, dt, now, BOT_WORLD)
+      _botPrevPos.copy(ship.position)
+      const r = stepMover(ship.position, cmd.target, cmd.speed, dt)
+      ship.position.copy(r.pos)
+      ship.quaternion.copy(r.quat)
+      ship.velocity.copy(r.pos).sub(_botPrevPos).multiplyScalar(1 / Math.max(dt, 1e-4)) // for camera sway/boost feel
+      if (cmd.done) {
+        botActivity = buildActivity(pickActivity(botActivity.kind, Math.random), ship.position, Math.random, now, BOT_WORLD)
+        net.sendChat(botActivity.intro)
+      }
+    } else {
+      input = readInput(dt)
+      stepShip(ship, input, dt, flightTuning)
+    }
     if (quantum.phase === 'idle') {
       ship.velocity.addScaledVector(gravityAccel(ship.position, _bhGrav), dt)
       if (isPastHorizon(ship.position)) {
@@ -4227,7 +4266,7 @@ function frame(now: number): void {
       clearPirates()
     }
 
-    if (!safe && pveHostilesAllowed && now >= nextSpawnAt) {
+    if (!safe && pveHostilesAllowed && !BOT && now >= nextSpawnAt) {
       spawnPirateWave(now)
       nextSpawnAt = now + 19000
     }
@@ -4388,7 +4427,7 @@ function frame(now: number): void {
   if (running) updateDustField(dustField, camera.position)
 
   // Combat HUD — target brackets, threat arrows, lead pip (hidden while docked/in menu).
-  if (running && !docked) drawCombatHud(now)
+  if (running && !docked && !BOT) drawCombatHud(now)
   else cctx.clearRect(0, 0, combatCanvas.width, combatCanvas.height)
 
   if (running && !docked) updateLootCrates(now, dt) // spin / magnet / collect loot crates
