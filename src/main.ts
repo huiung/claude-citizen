@@ -39,6 +39,8 @@ import { equippedStyles, encodeEquipped, decodeCosmetics } from './sim/cosmetics
 import { stepMover } from '../bot/mover.mjs'
 import { buildActivity, pickActivity, stepActivity } from '../bot/activities.mjs'
 import { BOT_WORLD } from '../bot/landmarks.mjs'
+import { think } from '../bot/brain.mjs'
+import { buildBrainContext } from '../bot/brainContext.mjs'
 import { createMarket, step as marketStep } from './sim/market'
 import { generateContracts } from './sim/contracts'
 import { boostMultiplier, cargoCapacity, loadUpgrades, miningYield, saveUpgrades, topSpeed } from './sim/upgrades'
@@ -2452,6 +2454,10 @@ let selfHolderBalance = 0 // exact token balance from the relay; used only for h
 let selectedHolderShipVisual = loadHolderShipVisual(localStorage)
 let botActivity: ReturnType<typeof buildActivity> | null = null
 const _botPrevPos = new THREE.Vector3()
+let botChatRecent: { name: string; text: string }[] = []
+let botLastReplyAt = 0
+let botThinking = false
+const BOT_CHAT_COOLDOWN_MS = 6000
 let rankedPvpDeniedUntil = 0
 const _rankedBounceDir = new THREE.Vector3()
 function applyLocalDevHolderOverride(): void {
@@ -3115,6 +3121,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   },
   onChat(name, text, tier) {
     addChatLine(name, text, tier)
+    maybeBotReply(name, text)
   },
   onPvpHealth(id, hull, maxHull, self) {
     if (self) {
@@ -3244,6 +3251,23 @@ applyPlayerCosmetics() // broadcast initial equipped loadout now that net is con
 // --- Chat
 let chatOpen = false
 const chatLines: HTMLElement[] = []
+
+function maybeBotReply(name: string, text: string): void {
+  if (!BOT || name === 'CLAUDE') return
+  const apiKey = localStorage.getItem('scc.botApiKey')
+  if (!apiKey) return
+  botChatRecent.push({ name, text })
+  botChatRecent = botChatRecent.slice(-12)
+  const now = performance.now()
+  if (botThinking || now - botLastReplyAt < BOT_CHAT_COOLDOWN_MS) return
+  botLastReplyAt = now
+  botThinking = true
+  const activityLabel = botActivity ? `${botActivity.kind}${botActivity.name ? ' -> ' + botActivity.name : ''}` : 'idle'
+  const ctx = buildBrainContext({ location: 'in flight', currentActivity: activityLabel, recentChat: botChatRecent })
+  void think(ctx, { apiKey, model: 'claude-haiku-4-5' })
+    .then((action) => { if (action.say) net.sendChat(action.say) })
+    .finally(() => { botThinking = false })
+}
 
 function addChatLine(name: string, text: string, tier = 0): void {
   const line = document.createElement('div')
