@@ -57,7 +57,8 @@ export function buildActivity(kind, fromPos, rng, nowMs, world) {
     }
     case 'race':
       return { kind, phase: 'run', waypoints: world.raceGates.map((g) => g.clone()), index: 0,
-               target: world.raceGates[0].clone(), intro: 'Running the hub time trial. Watch the line.' }
+               target: world.raceGates[0].clone(), gateUntil: nowMs + GATE_TIMEOUT_MS,
+               intro: 'Running the hub time trial. Watch the line.' }
     case 'black-hole-dive': {
       const dir = new Vector3().subVectors(fromPos, world.blackHoleCenter)
       if (dir.lengthSq() < 1) dir.set(1, 0, 0)
@@ -90,6 +91,7 @@ export function buildActivity(kind, fromPos, rng, nowMs, world) {
 
 const ARRIVE = 1200          // generic arrival radius
 const GATE_HIT = 260         // race gate radius (230) + margin
+const GATE_TIMEOUT_MS = 3500 // give up on a gate the on-rails bot can't thread (hub collider shove) and skip on
 const LOITER_MS = 20000
 const SKIM_MS = 1000         // dwell at the dive's deepest point — short, so the deep (9000) dive survives
 const SPAR_MS = 20000
@@ -122,7 +124,11 @@ export function stepActivity(a, botPos, dtSec, nowMs, world) {
       return { target: orbit, speed: SPEEDS.APPROACH, done: nowMs >= a.loiterUntil }
     }
     case 'race': {
-      if (a.index < a.waypoints.length && botPos.distanceTo(a.waypoints[a.index]) < GATE_HIT) a.index += 1
+      const reached = a.index < a.waypoints.length && botPos.distanceTo(a.waypoints[a.index]) < GATE_HIT
+      // Stall guard: the hub structure's collider can shove the on-rails bot off a gate it can't thread
+      // head-on. If it can't reach the gate in time, skip to the next so the race never freezes mid-run.
+      const stalled = nowMs >= a.gateUntil
+      if (reached || stalled) { a.index += 1; a.gateUntil = nowMs + GATE_TIMEOUT_MS }
       const done = a.index >= a.waypoints.length
       return { target: a.waypoints[Math.min(a.index, a.waypoints.length - 1)], speed: SPEEDS.RACE, done }
     }

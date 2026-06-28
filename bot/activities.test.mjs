@@ -102,6 +102,15 @@ describe('stepActivity', () => {
     expect(stepActivity(a, a.waypoints[a.waypoints.length - 1].clone(), 0.125, 0, BOT_WORLD).done).toBe(true)
   })
 
+  it('race skips a gate it can never reach (stall guard) so it never freezes mid-run', () => {
+    const a = buildActivity('race', new Vector3(0, 0, 0), () => 0, 0, BOT_WORLD)
+    const stuck = new Vector3(-1e9, 0, 0) // never within GATE_HIT of any gate (simulates the hub-collider shove)
+    let ms = 0
+    let r
+    for (let i = 0; i < a.waypoints.length; i++) { ms += 3501; r = stepActivity(a, stuck, 0.125, ms, BOT_WORLD) }
+    expect(r.done).toBe(true) // every gate timed out and was skipped → race completed instead of stalling
+  })
+
   it('black-hole-dive approaches, skims, then escapes influence', () => {
     const a = buildActivity('black-hole-dive', new Vector3(0, 0, 0), () => 0, 0, BOT_WORLD)
     stepActivity(a, a.target.clone(), 0.125, 1000, BOT_WORLD) // reach approach point → skim
