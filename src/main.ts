@@ -1652,7 +1652,12 @@ function startBotTransit(): void {
   }
   net.sendChat(`Quantum jump to ${destinationArrival().name}.`)
   toggleQuantumTravel() // spool + warp, exactly as a player pressing J
-  botPhase = 'transit'
+  if (quantum.phase !== 'idle') {
+    botPhase = 'transit' // the jump started; arrival = back to idle
+  } else {
+    // jump didn't start (e.g. already there) — drop into a short planet-style dwell and retry next tick
+    botPhase = 'perform'; botActivity = null; botStopKind = 'planet'; botDwellUntil = 0
+  }
 }
 
 function setQuantumDestinationFromAtlas(target: SolarMapNavigationTarget): SolarMapDestinationResult {
@@ -2483,7 +2488,6 @@ let botPhase: 'transit' | 'perform' = 'transit'
 let botStopKind = 'planet'
 let botLastStop = ''
 let botActivity: ReturnType<typeof buildActivity> | null = null
-let botWasTraveling = false
 let botDwellUntil = 0      // planet-loiter timer
 let botPerformUntil = 0    // hard cap so a maneuver can't run forever
 const _botPrevPos = new THREE.Vector3()
@@ -3679,11 +3683,12 @@ function launch(): void {
   const callsign = nicknameEl.value.trim() || 'PILOT'
   localStorage.setItem('callsign', callsign)
   if (BOT) {
-    setPlayerCraft('interceptor')                  // sets selectedShipType; the final setPlayerCraft + applyPlayerCosmetics render the loadout
-    selectedHolderShipVisual = 'void-interceptor' // T3 skin (shows once the relay grants tier 3)
-    net.setBotSecret(localStorage.getItem('scc.botSecret') ?? '')
+    selfTier = 3                                   // local cosmetic: unlock the T3 hull skin for the showcase (relay still gates ranked by balance)
+    selectedHolderShipVisual = 'void-interceptor' // T3 skin; with selfTier=3 it resolves now (no relay round-trip needed)
+    setPlayerCraft('interceptor')                  // rebuild the hull; enterGame + the final setPlayerCraft use selfTier=3 → void-interceptor
+    net.setBotSecret(localStorage.getItem('scc.botSecret') ?? '') // also lets the relay grant peers the T3 view
     // Start in a brief planet-style "perform" dwell at spawn, then the loop transits to the first stop.
-    botPhase = 'perform'; botActivity = null; botStopKind = 'planet'; botWasTraveling = false
+    botPhase = 'perform'; botActivity = null; botStopKind = 'planet'
     botDwellUntil = performance.now() + 2000
   }
   net.enterGame(callsign, selectedShipType, activeHolderShipVisual()) // promote from viewer (presence) to an active pilot
@@ -4092,16 +4097,15 @@ function frame(now: number): void {
     let input: ControlInput
     if (BOT) {
       input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
-      const traveling = quantum.phase !== 'idle'
-      const arrived = botPhase === 'transit' && botWasTraveling && !traveling
-      botWasTraveling = traveling
-      if (arrived) {
-        // Dropped out of the jump — begin PERFORM: do the thing here (or just loiter at a planet).
+      const idle = quantum.phase === 'idle'
+      // We only enter 'transit' right after a jump starts (phase != idle), so transit + idle = arrived.
+      // (Robust against a missed traveling→idle edge, e.g. a backgrounded tab fast-forwarding the jump.)
+      if (botPhase === 'transit' && idle) {
         if (botStopKind === 'planet') { botActivity = null; botDwellUntil = now + BOT_PLANET_DWELL_MS }
         else { botActivity = buildActivity(botStopKind, ship.position, Math.random, now, BOT_WORLD); botPerformUntil = now + BOT_PERFORM_CAP_MS; net.sendChat(botActivity.intro) }
         botPhase = 'perform'
       }
-      if (botPhase === 'perform' && !traveling) {
+      if (botPhase === 'perform' && idle) {
         if (botActivity) {
           // Run the local maneuver on-rails, but slow + boost-free so it's clearly visible.
           const cmd = stepActivity(botActivity, ship.position, dt, now, BOT_WORLD)
