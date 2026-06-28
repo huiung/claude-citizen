@@ -3556,14 +3556,6 @@ function updateCamera(dt: number): void {
     return
   }
 
-  if (CAM) {
-    // First-person spectator: the camera IS the followed pilot's seat. `ship` was snapped to the
-    // (already-interpolated) remote pose this frame, so copy it directly — no chase boom, no lerp.
-    camera.position.copy(ship.position)
-    camera.quaternion.copy(ship.quaternion)
-    return
-  }
-
   // Acceleration this frame → a damped offset opposite to it (push back on boost, dip on brake).
   _accel.copy(ship.velocity).sub(prevCamVel).multiplyScalar(1 / Math.max(dt, 1e-4))
   prevCamVel.copy(ship.velocity)
@@ -4019,16 +4011,15 @@ function frame(now: number): void {
     let input: ControlInput
     if (CAM) {
       input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
-      // First-person: ride in the followed pilot's seat. The remote mesh is already smoothly
-      // interpolated by updateRemotes(), so copying its pose gives a steady cockpit view. Hide that
-      // mesh every frame so the followed ship's hull never blocks the camera.
+      // Spectate the followed pilot with the normal gameplay camera: snap our (hidden) ship to the
+      // followed pilot's interpolated pose, then let updateCamera() frame it from behind exactly as
+      // it frames the player's own ship. The followed ship stays visible — it's what we're watching.
       const camTargets = [...remotes.values()].map((r) => ({ name: r.peer.name, mesh: r.mesh }))
       const followed = pickFollowTarget(camTargets, CAM_TARGET!)
       if (followed) {
         ship.position.copy(followed.mesh.position)
         ship.quaternion.copy(followed.mesh.quaternion)
         ship.velocity.set(0, 0, 0)
-        followed.mesh.visible = false
       }
     } else {
       input = readInput(dt)
