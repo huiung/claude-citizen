@@ -52,7 +52,7 @@ async function runBrain() {
       currentActivity: `${activity.kind}${activity.name ? ' -> ' + activity.name : ''}`,
       recentChat,
     })
-    const action = await think(ctx, new Set(LANDMARKS.map((l) => l.id)), { apiKey: API_KEY, model: MODEL })
+    const action = await think(ctx, { apiKey: API_KEY, model: MODEL })
     if (action.say) relay.sendChat(action.say)
   } finally { thinking = false }
 }
