@@ -18,7 +18,9 @@ const SPEED = 1200                                     // world units/sec
 const TOKEN = process.env.BOT_TOKEN ?? `bot-claude-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 const landmarkIds = new Set(LANDMARKS.map((l) => l.id))
 
-let pos = LANDMARKS[0].position.clone()
+// Start at the loiter area (refinery) so the camera drone, which spawns at the player start, is
+// within CLAUDE's AOI from the first frame.
+let pos = (LANDMARKS.find((l) => l.id === 'refinery') ?? LANDMARKS[0]).position.clone()
 let dest = pickDestination(LANDMARKS, LANDMARKS[0].id, Math.random)
 let recentChat = []
 let lastChatReplyAt = 0
