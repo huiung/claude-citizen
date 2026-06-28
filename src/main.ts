@@ -36,9 +36,6 @@ import { createAsteroidField, mineStep } from './sim/mining'
 import { loadCraftingState, normalizeCraftingState, saveCraftingState, equipCosmetic, unequipCosmetic } from './sim/crafting'
 import { createShipCosmetics, type ShipCosmetics } from './render/craftCosmetics'
 import { equippedStyles, encodeEquipped, decodeCosmetics } from './sim/cosmetics'
-import { stepMover } from '../bot/mover.mjs'
-import { buildActivity, pickActivity, stepActivity, SPEEDS } from '../bot/activities.mjs'
-import { BOT_WORLD } from '../bot/landmarks.mjs'
 import { think } from '../bot/brain.mjs'
 import { buildBrainContext } from '../bot/brainContext.mjs'
 import { createMarket, step as marketStep } from './sim/market'
@@ -1632,6 +1629,36 @@ function toggleQuantumTravel(): void {
   }
 }
 
+// --- Browser autopilot (?bot=1): drive the quantum drive like a touring player
+function pickBotDestination(): void {
+  const nCycle = quantumDestinationCount() // planets + arenas + season hub
+  const total = nCycle + 1                 // + the black hole approach (a custom destination)
+  let choice = botLastDestIdx
+  while (total > 1 && choice === botLastDestIdx) choice = Math.floor(Math.random() * total)
+  botLastDestIdx = choice
+  if (choice >= nCycle) {
+    customJumpDestination = {
+      id: BLACK_HOLE_APPROACH_DESTINATION.id, name: BLACK_HOLE_APPROACH_DESTINATION.name,
+      kind: BLACK_HOLE_APPROACH_DESTINATION.kind, position: BLACK_HOLE_APPROACH_DESTINATION.position.clone(),
+      radius: BLACK_HOLE_APPROACH_DESTINATION.radius, approachDistance: BLACK_HOLE_APPROACH_DESTINATION.approachDistance,
+    }
+  } else {
+    customJumpDestination = null
+    selectedJumpIdx = choice
+  }
+}
+
+function botTourStep(now: number): void {
+  const traveling = quantum.phase !== 'idle'
+  if (botWasTraveling && !traveling) botDwellUntil = now + BOT_DWELL_MS // just dropped out — linger
+  botWasTraveling = traveling
+  if (traveling || now < botDwellUntil) return // mid-jump or taking in the view
+  pickBotDestination()
+  const dest = destinationArrival()
+  net.sendChat(`Quantum jump to ${dest.name}.`)
+  toggleQuantumTravel() // spool + warp, exactly as a player pressing J
+}
+
 function setQuantumDestinationFromAtlas(target: SolarMapNavigationTarget): SolarMapDestinationResult {
   if (target.id === 'player' || target.id === 'sun' || target.id.startsWith('peer.')) {
     return { ok: false, reason: 'moving or reference-only target' }
@@ -2452,8 +2479,13 @@ interface RemoteShip {
 let selfTier = 0 // token-holder tier, cosmetic identity
 let selfHolderBalance = 0 // exact token balance from the relay; used only for holder-gated ranked PvP
 let selectedHolderShipVisual = loadHolderShipVisual(localStorage)
-let botActivity: ReturnType<typeof buildActivity> | null = null
-const _botPrevPos = new THREE.Vector3()
+// Browser autopilot (?bot=1) tours the system via the game's real quantum drive: it picks a
+// destination, jumps (warp visual + flies through the system, no straight-line collision), dwells to
+// take in the view, then jumps again. `botWasTraveling` detects the jump→arrival edge.
+let botDwellUntil = 0
+let botWasTraveling = false
+let botLastDestIdx = -1
+const BOT_DWELL_MS = 4500
 let botChatRecent: { name: string; text: string }[] = []
 let botLastReplyAt = 0
 let botThinking = false
@@ -3262,7 +3294,7 @@ function maybeBotReply(name: string, text: string): void {
   if (botThinking || now - botLastReplyAt < BOT_CHAT_COOLDOWN_MS) return
   botLastReplyAt = now
   botThinking = true
-  const activityLabel = botActivity ? `${botActivity.kind}${botActivity.name ? ' -> ' + botActivity.name : ''}` : 'idle'
+  const activityLabel = quantum.phase !== 'idle' ? `quantum-jumping to ${jumpTargetName}` : 'touring the system'
   const ctx = buildBrainContext({ location: 'in flight', currentActivity: activityLabel, recentChat: botChatRecent })
   void think(ctx, { apiKey, model: 'claude-haiku-4-5' })
     .then((action) => { if (action.say) net.sendChat(action.say) })
@@ -3644,7 +3676,7 @@ function launch(): void {
     setPlayerCraft('interceptor')                  // sets selectedShipType; the final setPlayerCraft + applyPlayerCosmetics render the loadout
     selectedHolderShipVisual = 'void-interceptor' // T3 skin (shows once the relay grants tier 3)
     net.setBotSecret(localStorage.getItem('scc.botSecret') ?? '')
-    botActivity = buildActivity(pickActivity(null, Math.random), ship.position, Math.random, performance.now(), BOT_WORLD)
+    botDwellUntil = performance.now() + 2000       // settle a beat after spawn, then start the quantum tour
   }
   net.enterGame(callsign, selectedShipType, activeHolderShipVisual()) // promote from viewer (presence) to an active pilot
   if (statsTimer) clearInterval(statsTimer)
@@ -4050,20 +4082,12 @@ function frame(now: number): void {
       ? { maxSpeed: baseSpeed, boostMultiplier: baseBoost }
       : { maxSpeed: effSpeed(), boostMultiplier: effBoost() }
     let input: ControlInput
-    if (BOT && botActivity) {
-      const cmd = stepActivity(botActivity, ship.position, dt, now, BOT_WORLD)
-      // Flag boost at high activity speeds (cruise bursts / warp) so the camera FOV widen + engine
-      // bloom + boost-kick fire — otherwise fast travel reads as flat constant-speed gliding.
-      input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: cmd.speed >= SPEEDS.BOOST, brake: false, assist: true }
-      _botPrevPos.copy(ship.position)
-      const r = stepMover(ship.position, cmd.target, cmd.speed, dt)
-      ship.position.copy(r.pos)
-      ship.quaternion.copy(r.quat)
-      ship.velocity.copy(r.pos).sub(_botPrevPos).multiplyScalar(1 / Math.max(dt, 1e-4)) // for camera sway/boost feel
-      if (cmd.done) {
-        botActivity = buildActivity(pickActivity(botActivity.kind, Math.random), ship.position, Math.random, now, BOT_WORLD)
-        net.sendChat(botActivity.intro)
-      }
+    if (BOT) {
+      botTourStep(now) // travel happens via real quantum jumps (warp visual, flies through the system)
+      // Between jumps: a gentle, boost-free forward cruise so the ship reads as alive and stays clearly
+      // visible (no fast boosting). During a jump the quantum drive owns movement — don't fight it.
+      input = { thrust: new THREE.Vector3(0, 0, -0.35), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
+      if (quantum.phase === 'idle') stepShip(ship, input, dt, flightTuning)
     } else {
       input = readInput(dt)
       stepShip(ship, input, dt, flightTuning)
