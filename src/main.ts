@@ -238,7 +238,7 @@ const flightPlanSkipEl = document.getElementById('flight-plan-skip') as HTMLButt
 const flightPlanButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-plan]'))
 // Onboarding: show a "next objective" only to brand-new pilots. localStorage gate (this device
 // hasn't onboarded) is the fast path; a returning token with saved progress also disables it.
-let onboardingActive = !CAPTURE_OG && !localStorage.getItem('scc.onboarded')
+let onboardingActive = !CAPTURE_OG && !CAM && !localStorage.getItem('scc.onboarded')
 let sessionKicked = false // signed in elsewhere — freeze the objective HUD on the warning
 let flightPlanObjective: string | null = null
 let flightPlanObjectiveUntil = 0
@@ -3660,7 +3660,7 @@ function hideFlightPlan(): void {
 }
 
 function showFlightPlan(): void {
-  if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) return
+  if (CAPTURE_OG || CAM || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) return
   const visiblePlans = new Set(flightPlansForDevice(MOBILE_COMPANION).map((plan) => plan.id))
   for (const button of flightPlanButtons) {
     button.hidden = !visiblePlans.has(button.dataset.plan as FlightPlanId)
