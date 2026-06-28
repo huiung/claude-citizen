@@ -9,7 +9,6 @@ const URL = process.env.RELAY_WS_URL ?? 'ws://localhost:8080'
 const API_KEY = process.env.ANTHROPIC_API_KEY ?? ''
 const MODEL = process.env.BOT_MODEL ?? 'claude-haiku-4-5'
 const TICK_MS = 125                                    // ~8 state updates/sec
-const BRAIN_MS = Number(process.env.BOT_BRAIN_MS ?? 15000)
 const CHAT_COOLDOWN_MS = Number(process.env.BOT_CHAT_COOLDOWN_MS ?? 6000)
 const SPEED = 1200                                     // world units/sec
 // Unique per process by default: two bot instances sharing one token would kick each other off the
@@ -69,5 +68,6 @@ setInterval(() => {
   relay.sendState(pos, r.quat)
   if (r.arrived) dest = pickDestination(LANDMARKS, undefined, Math.random).position.clone()
 }, TICK_MS)
-setInterval(runBrain, BRAIN_MS)
+// No periodic self-chatter: CLAUDE only speaks in reply to other pilots' chat (see onChat). It flies
+// continuously via the tick above, picking a new destination on arrival.
 console.log('[bot] CLAUDE pilot starting…')
