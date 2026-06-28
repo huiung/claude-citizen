@@ -2491,7 +2491,7 @@ let botActivity: ReturnType<typeof buildActivity> | null = null
 let botDwellUntil = 0      // planet-loiter timer
 let botPerformUntil = 0    // hard cap so a maneuver can't run forever
 const _botPrevPos = new THREE.Vector3()
-const BOT_LOCAL_SPEED = 1800      // visible cruising maneuver speed — no boost FOV-warp, but brisk enough to finish
+const BOT_ENGINE_REF_SPEED = 700  // bot engine-audio reference: the on-rails speed that reads as full-throttle hum
 const BOT_PLANET_DWELL_MS = 6000
 const BOT_PERFORM_CAP_MS = 45000  // safety cap; black-hole dive's long in-and-out needs room
 const BOT_STOP_KINDS = ['planet', 'race', 'pvp-training', 'black-hole-dive']
@@ -4107,12 +4107,17 @@ function frame(now: number): void {
       }
       if (botPhase === 'perform' && idle) {
         if (botActivity) {
-          // Run the local maneuver on-rails, but slow + boost-free so it's clearly visible.
+          // Run the local maneuver on-rails. Each activity carries its own speed (close-quarters content
+          // flies near real flight speed; the black-hole dive boosts) — no global cap, so it reads naturally.
           const cmd = stepActivity(botActivity, ship.position, dt, now, BOT_WORLD)
-          if (cmd.done || now >= botPerformUntil) { startBotTransit() }
-          else {
+          if (cmd.done || now >= botPerformUntil) {
+            // Content done → linger and wander the spot for a few seconds before jumping on. The wander
+            // activity itself ends straight into the next transit (so we never nest wander-on-wander).
+            if (botActivity.kind === 'wander') startBotTransit()
+            else { botActivity = buildActivity('wander', ship.position, Math.random, now, BOT_WORLD); botPerformUntil = now + BOT_PERFORM_CAP_MS }
+          } else {
             _botPrevPos.copy(ship.position)
-            const r = stepMover(ship.position, cmd.target, Math.min(cmd.speed, BOT_LOCAL_SPEED), dt)
+            const r = stepMover(ship.position, cmd.target, cmd.speed, dt)
             ship.position.copy(r.pos)
             ship.quaternion.copy(r.quat)
             ship.velocity.copy(r.pos).sub(_botPrevPos).multiplyScalar(1 / Math.max(dt, 1e-4))
@@ -4241,9 +4246,10 @@ function frame(now: number): void {
     } // ignition punch
     prevBoost = input.boost
 
-    // Engine audio tracks commanded thrust; wind layer tracks actual speed.
-    camThrust = Math.min(1, input.thrust.length())
-    audio.setThrust(camThrust, input.boost, ship.velocity.length() / flightTuning.maxSpeed)
+    // Engine audio tracks commanded thrust; wind layer tracks actual speed. The bot flies on-rails with
+    // no thrust input, so for it the engine note tracks actual speed instead — else content play is silent.
+    camThrust = BOT ? Math.min(1, ship.velocity.length() / BOT_ENGINE_REF_SPEED) : Math.min(1, input.thrust.length())
+    audio.setThrust(camThrust, input.boost || (BOT && ship.velocity.length() > 1500), ship.velocity.length() / flightTuning.maxSpeed)
 
     // Market prices drift back toward base over time.
     marketStep(market, dt)

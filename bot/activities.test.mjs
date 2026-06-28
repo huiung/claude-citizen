@@ -47,10 +47,10 @@ describe('buildActivity', () => {
     expect(a.waypoints).toHaveLength(10)
     expect(a.index).toBe(0)
   })
-  it('black-hole-dive aims ~24000 units from the center (clear of the 18000 tidal zone)', () => {
+  it('black-hole-dive aims ~9000 units from the center (deep inside the 18000 tidal zone)', () => {
     const a = buildActivity('black-hole-dive', here, rng, 0, BOT_WORLD)
     expect(a.phase).toBe('approach')
-    expect(a.target.distanceTo(new Vector3(118000, 9000, 118000))).toBeCloseTo(24000, -1)
+    expect(a.target.distanceTo(new Vector3(118000, 9000, 118000))).toBeCloseTo(9000, -1)
   })
   it('falls back to a cruise for an unknown kind (never throws)', () => {
     const a = buildActivity('nonsense', here, rng, 0, BOT_WORLD)
@@ -117,5 +117,62 @@ describe('stepActivity', () => {
     stepActivity(a, a.center.clone(), 0.125, 1000, BOT_WORLD)
     expect(a.phase).toBe('spar')
     expect(stepActivity(a, a.center.clone(), 0.125, a.sparUntil + 1, BOT_WORLD).done).toBe(true)
+  })
+
+  it('wander loiters locally (no intro) then finishes after its timer', () => {
+    const spot = new Vector3(1000, 0, 1000)
+    const a = buildActivity('wander', spot, () => 0, 0, BOT_WORLD)
+    expect(a.kind).toBe('wander')
+    expect(a.intro).toBeNull()
+    const mid = stepActivity(a, spot.clone(), 1 / 60, 1000, BOT_WORLD)
+    expect(mid.done).toBe(false)
+    expect(mid.target.distanceTo(spot)).toBeLessThan(2000) // stays in the neighborhood, not a cross-system jaunt
+    expect(stepActivity(a, spot.clone(), 1 / 60, a.wanderUntil + 1, BOT_WORLD).done).toBe(true)
+  })
+})
+
+// The deep dive (target 9000, inside the 18000 tidal zone) only works if the unattended bot survives it.
+// Simulate the real flight loop — stepActivity → stepMover → tidal HP bleed — and prove the bot lives,
+// goes deep enough to qualify for the board, and finishes within the perform cap.
+import { stepMover } from './mover.mjs'
+import {
+  tidalDamageRate, TIDAL_RADIUS, BLACK_HOLE_CENTER, BLACK_HOLE_APPROACH_DESTINATION,
+} from '../src/sim/blackHole.ts'
+
+function simulateDive(hullMax) {
+  const dt = 1 / 60
+  let pos = BLACK_HOLE_APPROACH_DESTINATION.position.clone() // where the bot drops out of its transit jump
+  let hp = hullMax
+  let minDist = Infinity
+  let minHp = hullMax
+  let t = 0
+  let nowMs = 0
+  let completed = false
+  const a = buildActivity('black-hole-dive', pos, () => 0, 0, BOT_WORLD)
+  while (t < 60) {
+    const cmd = stepActivity(a, pos, dt, nowMs, BOT_WORLD)
+    if (cmd.done) { completed = true; break }
+    pos = stepMover(pos, cmd.target, cmd.speed, dt).pos
+    hp -= tidalDamageRate(pos) * dt // tidal bleed mirrors the main loop (only nonzero inside TIDAL_RADIUS)
+    minDist = Math.min(minDist, pos.distanceTo(BLACK_HOLE_CENTER))
+    minHp = Math.min(minHp, hp)
+    t += dt
+    nowMs += dt * 1000
+  }
+  return { minDist, minHp, durationS: t, completed }
+}
+
+describe('black-hole-dive survival (deep 9000 tuning)', () => {
+  it('a hauler (hull 100) dives deep, qualifies, survives, and finishes inside the perform cap', () => {
+    const r = simulateDive(100)
+    expect(r.completed).toBe(true)              // escapes influence on its own
+    expect(r.durationS).toBeLessThan(45)        // within BOT_PERFORM_CAP_MS
+    expect(r.minDist).toBeLessThan(TIDAL_RADIUS) // reaches the tidal zone → qualifies for the board
+    expect(r.minDist).toBeLessThan(11000)        // genuinely deep, not a timid skim
+    expect(r.minHp).toBeGreaterThan(0)           // never dies on stream
+  })
+
+  it('survives even on the frailest hull (interceptor, hull 60)', () => {
+    expect(simulateDive(60).minHp).toBeGreaterThan(0)
   })
 })
