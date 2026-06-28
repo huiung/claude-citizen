@@ -17,15 +17,20 @@ function planetPos(dist, angleDeg) {
   return new Vector3(SUN.x + Math.cos(a) * dist, SUN.y, SUN.z + Math.sin(a) * dist)
 }
 
+// `weight` biases the bot toward the start-area outposts (where players spawn) so it actually gets
+// within the relay's small AOI of real pilots, instead of wandering empty space around far planets.
 export const LANDMARKS = [
-  ...PLANET_SPEC.map((p) => ({ id: p.id, name: p.name, position: planetPos(p.dist, p.angle) })),
-  { id: 'refinery', name: 'Meridian Refinery', position: new Vector3(120, 30, -350) },
-  { id: 'colony', name: 'Helios Mining Colony', position: new Vector3(-1900, -800, -7000) },
+  ...PLANET_SPEC.map((p) => ({ id: p.id, name: p.name, position: planetPos(p.dist, p.angle), weight: 1 })),
+  { id: 'refinery', name: 'Meridian Refinery', position: new Vector3(120, 30, -350), weight: 6 },
+  { id: 'colony', name: 'Helios Mining Colony', position: new Vector3(-1900, -800, -7000), weight: 4 },
 ]
 
-/** Pick a landmark other than `currentId`. `rng` returns a float in [0,1). */
+/** Weighted pick of a landmark other than `currentId`. `rng` returns a float in [0,1). */
 export function pickDestination(landmarks, currentId, rng) {
   const options = landmarks.filter((l) => l.id !== currentId)
   const pool = options.length ? options : landmarks
-  return pool[Math.min(pool.length - 1, Math.floor(rng() * pool.length))]
+  const total = pool.reduce((s, l) => s + (l.weight ?? 1), 0)
+  let r = rng() * total
+  for (const l of pool) { r -= l.weight ?? 1; if (r <= 0) return l }
+  return pool[pool.length - 1]
 }

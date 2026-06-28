@@ -30,3 +30,20 @@ describe('pickDestination', () => {
     expect(LANDMARKS).toContain(pickDestination(LANDMARKS, null, () => 0.5))
   })
 })
+
+describe('pickDestination weighting', () => {
+  it('biases toward higher-weight landmarks (start outposts) over planets', () => {
+    let i = 0
+    const rng = () => (i++ % 100) / 100 // sweep [0,1)
+    const counts = {}
+    for (let k = 0; k < 400; k++) {
+      const l = pickDestination(LANDMARKS, null, rng)
+      counts[l.id] = (counts[l.id] ?? 0) + 1
+    }
+    const outpostPicks = (counts.refinery ?? 0) + (counts.colony ?? 0)
+    const planetPicks = Object.entries(counts)
+      .filter(([id]) => id.startsWith('planet-'))
+      .reduce((s, [, n]) => s + n, 0)
+    expect(outpostPicks).toBeGreaterThan(planetPicks) // bot loiters where players spawn
+  })
+})
