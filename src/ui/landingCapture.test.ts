@@ -9,10 +9,10 @@ describe('holderCaptureLaunchConfig', () => {
     })
   })
 
-  it('auto-launches the camera drone with the CAM callsign', () => {
-    expect(holderCaptureLaunchConfig(new URLSearchParams('cam=CLAUDE'))).toEqual({
+  it('auto-launches the browser autopilot as CLAUDE for ?bot=1', () => {
+    expect(holderCaptureLaunchConfig(new URLSearchParams('bot=1'))).toEqual({
       autoLaunch: true,
-      callsign: 'CAM',
+      callsign: 'CLAUDE',
     })
   })
 
