@@ -93,7 +93,6 @@ import {
 } from './sim/trainingDrones'
 import { BLACK_HOLE_APPROACH_DESTINATION, BLACK_HOLE_CENTER, distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, tidalDamageRate, TIDAL_RADIUS, withinInfluence } from './sim/blackHole'
 import { createBlackHoleRun, enterRun, sampleRun, exitRunAlive, dieRun } from './sim/blackHoleRun'
-import { pickFollowTarget } from './sim/camFollow'
 import { type DailyState, type Objective, type ObjectiveKind, OBJECTIVE_REWARD, SET_BONUS, STREAK_REWARD_CAP, dailyObjectives, dayKey, emptyDaily, rollStreak } from './sim/daily'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
@@ -162,8 +161,6 @@ const URL_PARAMS = new URLSearchParams(location.search)
 const CAPTURE_OG = URL_PARAMS.get('capture') === 'og'
 const SHOWCASE_HOLDER = URL_PARAMS.get('showcase') === 'holder'
 const SHOWCASE_TIME_TRIAL = URL_PARAMS.get('showcase') === 'time-trial'
-const CAM_TARGET = URL_PARAMS.get('cam') // e.g. ?cam=CLAUDE — first-person spectator from that pilot's seat
-const CAM = !!CAM_TARGET
 const MOBILE_COMPANION = document.documentElement.classList.contains('is-mobile')
 
 // --- DOM
@@ -236,7 +233,7 @@ const flightPlanSkipEl = document.getElementById('flight-plan-skip') as HTMLButt
 const flightPlanButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-plan]'))
 // Onboarding: show a "next objective" only to brand-new pilots. localStorage gate (this device
 // hasn't onboarded) is the fast path; a returning token with saved progress also disables it.
-let onboardingActive = !CAPTURE_OG && !CAM && !localStorage.getItem('scc.onboarded')
+let onboardingActive = !CAPTURE_OG && !localStorage.getItem('scc.onboarded')
 let sessionKicked = false // signed in elsewhere — freeze the objective HUD on the warning
 let flightPlanObjective: string | null = null
 let flightPlanObjectiveUntil = 0
@@ -3584,15 +3581,13 @@ function updateCamera(dt: number): void {
     camOffset.applyQuaternion(ship.quaternion)
   }
   camTarget.copy(ship.position).add(camOffset).add(gSway)
-  // CAM (spectator) snaps rigidly to the chase pose so the bot stays centered even at boost/warp
-  // speeds the smoothed follow can't keep up with; normal play keeps the eased follow.
-  camera.position.lerp(camTarget, CAM ? 1 : 1 - Math.exp(-8 * dt))
+  camera.position.lerp(camTarget, 1 - Math.exp(-8 * dt))
   if (!SHOWCASE_HOLDER && cameraMode === 'orbit') {
     _cameraLookAtOffset.set(0, 0.18, 0).applyQuaternion(ship.quaternion)
     _cameraLookAt.copy(ship.position).add(_cameraLookAtOffset)
     camera.lookAt(_cameraLookAt)
   } else {
-    camera.quaternion.slerp(ship.quaternion, CAM ? 1 : 1 - Math.exp(-10 * dt))
+    camera.quaternion.slerp(ship.quaternion, 1 - Math.exp(-10 * dt))
   }
   // FOV gives a gentle sense of speed: a touch wider under boost / quantum travel. No hard punches.
   // Near the black hole it stretches hard (up to +20°) — a cheap "space is warping / lensing" feel.
@@ -3607,16 +3602,16 @@ function launch(): void {
   if (running) return
   const callsign = nicknameEl.value.trim() || 'PILOT'
   localStorage.setItem('callsign', callsign)
-  net.enterGame(callsign, selectedShipType, activeHolderShipVisual(), CAM) // promote from viewer (presence) to an active pilot
+  net.enterGame(callsign, selectedShipType, activeHolderShipVisual()) // promote from viewer (presence) to an active pilot
   if (statsTimer) clearInterval(statsTimer)
   overlayEl.hidden = true
   overlayEl.style.display = 'none'
-  hudEl.hidden = (CAPTURE_OG || CAM)
-  statusEl.hidden = (CAPTURE_OG || CAM)
-  helpEl.hidden = (CAPTURE_OG || CAM) || MOBILE_COMPANION
-  crosshairEl.hidden = (CAPTURE_OG || CAM)
-  walletEl.hidden = (CAPTURE_OG || CAM)
-  minimapWrapEl.hidden = (CAPTURE_OG || CAM)
+  hudEl.hidden = CAPTURE_OG
+  statusEl.hidden = CAPTURE_OG
+  helpEl.hidden = CAPTURE_OG || MOBILE_COMPANION
+  crosshairEl.hidden = CAPTURE_OG
+  walletEl.hidden = CAPTURE_OG
+  minimapWrapEl.hidden = CAPTURE_OG
   if (MOBILE_COMPANION) {
     document.documentElement.classList.add('mobile-flight')
     mobileControlsEl.hidden = false
@@ -3636,7 +3631,6 @@ function launch(): void {
   selectedJumpIdx = nearestPlanetIdx() // start aimed at the closest planet
   customJumpDestination = null
   setPlayerCraft(selectedShipType) // apply hull (and load its GLB model) on launch
-  if (CAM) shipMesh.visible = false
   schedulePlanetUpgrades()
   showFlightPlan()
 }
@@ -3650,17 +3644,12 @@ if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) {
   nicknameEl.value = SHOWCASE_HOLDER ? HOLDER_SHOWCASE_STEPS[0].callsign : SHOWCASE_TIME_TRIAL ? 'RACER' : 'test'
   requestAnimationFrame(() => launch())
 }
-if (CAM) {
-  nicknameEl.value = 'CAM'
-  requestAnimationFrame(() => launch())
-}
-
 function hideFlightPlan(): void {
   flightPlanEl.hidden = true
 }
 
 function showFlightPlan(): void {
-  if (CAPTURE_OG || CAM || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) return
+  if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) return
   const visiblePlans = new Set(flightPlansForDevice(MOBILE_COMPANION).map((plan) => plan.id))
   for (const button of flightPlanButtons) {
     button.hidden = !visiblePlans.has(button.dataset.plan as FlightPlanId)
@@ -4010,25 +3999,8 @@ function frame(now: number): void {
     const flightTuning = hubTimeTrial.active
       ? { maxSpeed: baseSpeed, boostMultiplier: baseBoost }
       : { maxSpeed: effSpeed(), boostMultiplier: effBoost() }
-    let input: ControlInput
-    if (CAM) {
-      input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
-      // Keep our own drone hull hidden every frame: the async holder-model load rebuilds shipMesh
-      // (visible=true) after launch, so a one-time hide isn't enough — it would reappear and overlap
-      // the followed bot. Spectate the followed pilot with the normal gameplay camera: snap our
-      // (hidden) ship to its interpolated pose; updateCamera() then frames it from behind.
-      shipMesh.visible = false
-      const camTargets = [...remotes.values()].map((r) => ({ name: r.peer.name, mesh: r.mesh }))
-      const followed = pickFollowTarget(camTargets, CAM_TARGET!)
-      if (followed) {
-        ship.position.copy(followed.mesh.position)
-        ship.quaternion.copy(followed.mesh.quaternion)
-        ship.velocity.set(0, 0, 0)
-      }
-    } else {
-      input = readInput(dt)
-      stepShip(ship, input, dt, flightTuning)
-    }
+    const input = readInput(dt)
+    stepShip(ship, input, dt, flightTuning)
     if (quantum.phase === 'idle') {
       ship.velocity.addScaledVector(gravityAccel(ship.position, _bhGrav), dt)
       if (isPastHorizon(ship.position)) {
@@ -4255,9 +4227,7 @@ function frame(now: number): void {
       clearPirates()
     }
 
-    // No pirates for the CAM spectator drone — it can't fight back, so it would just be shot down and
-    // respawn, breaking the follow. Suppressing spawns keeps the cinematic view stable.
-    if (!safe && pveHostilesAllowed && !CAM && now >= nextSpawnAt) {
+    if (!safe && pveHostilesAllowed && now >= nextSpawnAt) {
       spawnPirateWave(now)
       nextSpawnAt = now + 19000
     }
@@ -4417,9 +4387,8 @@ function frame(now: number): void {
   updateWarpField(warpField, warpIntensity, dt, warpInward)
   if (running) updateDustField(dustField, camera.position)
 
-  // Combat HUD — target brackets, threat arrows, lead pip (hidden while docked/in menu, and in CAM
-  // spectator mode where there are no hostiles and the markers would just clutter the view).
-  if (running && !docked && !CAM) drawCombatHud(now)
+  // Combat HUD — target brackets, threat arrows, lead pip (hidden while docked/in menu).
+  if (running && !docked) drawCombatHud(now)
   else cctx.clearRect(0, 0, combatCanvas.width, combatCanvas.height)
 
   if (running && !docked) updateLootCrates(now, dt) // spin / magnet / collect loot crates
