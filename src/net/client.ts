@@ -131,6 +131,7 @@ export class NetClient {
   private activeShip: string | undefined
   private activeVisual: string | undefined
   private activeCosmetics: string | undefined
+  private invisible = false // spectator camera: join as an active pilot the relay never broadcasts
   private sessionId: string | null = null
 
   constructor(private name: string, private token: string, private events: NetEvents) {}
@@ -162,7 +163,7 @@ export class NetClient {
       this.reconnectDelay = 2000 // connected — reset backoff
       // Viewer presence by default; a full 'join' once the player launches.
       this.ws?.send(JSON.stringify(this.active
-        ? { t: 'join', name: this.name, token: this.token, sessionId: this.sessionId, ship: this.activeShip, visual: this.activeVisual, cosmetics: this.activeCosmetics }
+        ? { t: 'join', name: this.name, token: this.token, sessionId: this.sessionId, ship: this.activeShip, visual: this.activeVisual, cosmetics: this.activeCosmetics, invisible: this.invisible }
         : { t: 'hello', token: this.token, sessionId: this.sessionId }))
       this.events.onStatus(true, this.online)
     }
@@ -344,13 +345,14 @@ export class NetClient {
   }
 
   /** Promote from viewer (presence) to an active in-game pilot — call on LAUNCH. */
-  enterGame(name: string, ship?: string, visual?: string): void {
+  enterGame(name: string, ship?: string, visual?: string, invisible = false): void {
     this.name = name
     if (ship) this.activeShip = ship
     if (visual) this.activeVisual = visual
+    this.invisible = invisible
     this.active = true
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ t: 'join', name, token: this.token, sessionId: this.sessionId, ship: this.activeShip, visual: this.activeVisual, cosmetics: this.activeCosmetics }))
+      this.ws.send(JSON.stringify({ t: 'join', name, token: this.token, sessionId: this.sessionId, ship: this.activeShip, visual: this.activeVisual, cosmetics: this.activeCosmetics, invisible: this.invisible }))
     }
     // If the socket isn't open yet, onopen will send 'join' since active is now true.
   }

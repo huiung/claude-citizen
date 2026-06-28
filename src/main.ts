@@ -93,6 +93,7 @@ import {
 } from './sim/trainingDrones'
 import { BLACK_HOLE_APPROACH_DESTINATION, BLACK_HOLE_CENTER, distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, tidalDamageRate, TIDAL_RADIUS, withinInfluence } from './sim/blackHole'
 import { createBlackHoleRun, enterRun, sampleRun, exitRunAlive, dieRun } from './sim/blackHoleRun'
+import { chaseSteer, pickFollowTarget } from './sim/camFollow'
 import { type DailyState, type Objective, type ObjectiveKind, OBJECTIVE_REWARD, SET_BONUS, STREAK_REWARD_CAP, dailyObjectives, dayKey, emptyDaily, rollStreak } from './sim/daily'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
@@ -161,6 +162,10 @@ const URL_PARAMS = new URLSearchParams(location.search)
 const CAPTURE_OG = URL_PARAMS.get('capture') === 'og'
 const SHOWCASE_HOLDER = URL_PARAMS.get('showcase') === 'holder'
 const SHOWCASE_TIME_TRIAL = URL_PARAMS.get('showcase') === 'time-trial'
+const CAM_TARGET = URL_PARAMS.get('cam') // e.g. ?cam=CLAUDE — spectator camera that follows that pilot
+const CAM = !!CAM_TARGET
+const CAM_SPEED = 2600   // faster than the bot (1200) so the drone stays glued in AOI
+const CAM_TRAIL = 90     // settle this far behind the followed pilot
 const MOBILE_COMPANION = document.documentElement.classList.contains('is-mobile')
 
 // --- DOM
@@ -3602,16 +3607,16 @@ function launch(): void {
   if (running) return
   const callsign = nicknameEl.value.trim() || 'PILOT'
   localStorage.setItem('callsign', callsign)
-  net.enterGame(callsign, selectedShipType, activeHolderShipVisual()) // promote from viewer (presence) to an active pilot
+  net.enterGame(callsign, selectedShipType, activeHolderShipVisual(), CAM) // promote from viewer (presence) to an active pilot
   if (statsTimer) clearInterval(statsTimer)
   overlayEl.hidden = true
   overlayEl.style.display = 'none'
-  hudEl.hidden = CAPTURE_OG
-  statusEl.hidden = CAPTURE_OG
-  helpEl.hidden = CAPTURE_OG || MOBILE_COMPANION
-  crosshairEl.hidden = CAPTURE_OG
-  walletEl.hidden = CAPTURE_OG
-  minimapWrapEl.hidden = CAPTURE_OG
+  hudEl.hidden = (CAPTURE_OG || CAM)
+  statusEl.hidden = (CAPTURE_OG || CAM)
+  helpEl.hidden = (CAPTURE_OG || CAM) || MOBILE_COMPANION
+  crosshairEl.hidden = (CAPTURE_OG || CAM)
+  walletEl.hidden = (CAPTURE_OG || CAM)
+  minimapWrapEl.hidden = (CAPTURE_OG || CAM)
   if (MOBILE_COMPANION) {
     document.documentElement.classList.add('mobile-flight')
     mobileControlsEl.hidden = false
@@ -3631,6 +3636,7 @@ function launch(): void {
   selectedJumpIdx = nearestPlanetIdx() // start aimed at the closest planet
   customJumpDestination = null
   setPlayerCraft(selectedShipType) // apply hull (and load its GLB model) on launch
+  if (CAM) shipMesh.visible = false
   schedulePlanetUpgrades()
   showFlightPlan()
 }
@@ -3642,6 +3648,10 @@ export function launchGame(callsign?: string): void {
 }
 if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) {
   nicknameEl.value = SHOWCASE_HOLDER ? HOLDER_SHOWCASE_STEPS[0].callsign : SHOWCASE_TIME_TRIAL ? 'RACER' : 'test'
+  requestAnimationFrame(() => launch())
+}
+if (CAM) {
+  nicknameEl.value = 'CAM'
   requestAnimationFrame(() => launch())
 }
 
@@ -3997,11 +4007,24 @@ function frame(now: number): void {
     navHintEl.textContent = MOBILE_COMPANION
       ? `[NAV] ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km | [JUMP]`
       : `[B/N] pick destination | ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km   |   [J] jump`
-    const input = readInput(dt)
     const flightTuning = hubTimeTrial.active
       ? { maxSpeed: baseSpeed, boostMultiplier: baseBoost }
       : { maxSpeed: effSpeed(), boostMultiplier: effBoost() }
-    stepShip(ship, input, dt, flightTuning)
+    let input: ControlInput
+    if (CAM) {
+      input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
+      const camTargets = [...remotes.values()].map((r) => ({ name: r.peer.name, position: r.mesh.position }))
+      const followed = pickFollowTarget(camTargets, CAM_TARGET!)
+      if (followed) {
+        const cr = chaseSteer(ship.position, followed.position, CAM_SPEED, dt, CAM_TRAIL)
+        ship.position.copy(cr.pos)
+        ship.quaternion.copy(cr.quat)
+        ship.velocity.set(0, 0, 0)
+      }
+    } else {
+      input = readInput(dt)
+      stepShip(ship, input, dt, flightTuning)
+    }
     if (quantum.phase === 'idle') {
       ship.velocity.addScaledVector(gravityAccel(ship.position, _bhGrav), dt)
       if (isPastHorizon(ship.position)) {
