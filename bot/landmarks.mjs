@@ -62,3 +62,14 @@ export const STATIONS = [
   COLONY,
   { id: 'season-hub', name: 'Citizen Season Hub', position: SEASON_HUB_CENTER },
 ]
+
+// Bundle of every coordinate the activity engine needs, so the engine itself is world-agnostic and
+// can be driven by either the Node bot (these mirror coords) or the browser (the same bundle).
+export const BOT_WORLD = {
+  landmarks: LANDMARKS,
+  stations: STATIONS,
+  raceGates: RACE_GATES,
+  pvpArenaCenter: PVP_ARENA_CENTER,
+  blackHoleCenter: BLACK_HOLE_CENTER,
+  blackHoleInfluence: BLACK_HOLE_INFLUENCE,
+}

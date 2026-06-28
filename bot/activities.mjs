@@ -1,9 +1,5 @@
-// Vector3 + landmark imports are used by buildActivity / stepActivity (added in Tasks 3 & 4).
+// Vector3 for the orbit/weave vector math. All world coordinates are injected via `world`.
 import { Vector3 } from 'three'
-import {
-  LANDMARKS, STATIONS, RACE_GATES, PVP_ARENA_CENTER,
-  BLACK_HOLE_CENTER, BLACK_HOLE_INFLUENCE,
-} from './landmarks.mjs'
 
 // World units/sec. Tuned so the bot reads as a lively pilot, not a crawler.
 export const SPEEDS = { CRUISE_BASE: 900, BOOST: 3200, APPROACH: 1500, RACE: 2500, WARP: 12000 }
@@ -28,50 +24,52 @@ export function pickActivity(prevKind, rng) {
   return kinds[kinds.length - 1]
 }
 
-function farLandmark(fromPos, rng, pool = LANDMARKS) {
-  const far = pool.filter((l) => l.position.distanceTo(fromPos) > 5000)
-  const options = far.length ? far : pool
+function farLandmark(fromPos, rng, landmarks) {
+  if (!landmarks?.length) throw new Error('farLandmark: world.landmarks is empty')
+  const far = landmarks.filter((l) => l.position.distanceTo(fromPos) > 5000)
+  const options = far.length ? far : landmarks
   return options[Math.floor(rng() * options.length)]
 }
 
 const SPOOL_MS = 1200
 
 /** Build the initial activity object (mutated in place by stepActivity) plus its intro line. */
-export function buildActivity(kind, fromPos, rng, nowMs) {
+export function buildActivity(kind, fromPos, rng, nowMs, world) {
+  if (!world) throw new Error('buildActivity: world is required') // fail fast on a mis-wired caller
   switch (kind) {
     case 'cruise': {
-      const lm = farLandmark(fromPos, rng)
+      const lm = farLandmark(fromPos, rng, world.landmarks)
       return { kind, phase: 'fly', target: lm.position.clone(), name: lm.name, t0: nowMs,
                intro: `Setting course for ${lm.name}.` }
     }
     case 'quantum-jump': {
-      const lm = farLandmark(fromPos, rng)
+      const lm = farLandmark(fromPos, rng, world.landmarks)
       return { kind, phase: 'spool', target: lm.position.clone(), name: lm.name,
                phaseUntil: nowMs + SPOOL_MS, intro: `Quantum jump to ${lm.name}. Hold on.` }
     }
     case 'hub-visit': {
-      const st = STATIONS[Math.floor(rng() * STATIONS.length)]
+      const st = world.stations[Math.floor(rng() * world.stations.length)]
       return { kind, phase: 'approach', center: st.position.clone(), name: st.name,
                target: st.position.clone(), intro: `Pulling in by ${st.name} for a look.` }
     }
     case 'race':
-      return { kind, phase: 'run', waypoints: RACE_GATES.map((g) => g.clone()), index: 0,
-               target: RACE_GATES[0].clone(), intro: 'Running the hub time trial. Watch the line.' }
+      return { kind, phase: 'run', waypoints: world.raceGates.map((g) => g.clone()), index: 0,
+               target: world.raceGates[0].clone(), intro: 'Running the hub time trial. Watch the line.' }
     case 'black-hole-dive': {
-      const dir = new Vector3().subVectors(fromPos, BLACK_HOLE_CENTER)
+      const dir = new Vector3().subVectors(fromPos, world.blackHoleCenter)
       if (dir.lengthSq() < 1) dir.set(1, 0, 0)
       dir.normalize()
       return { kind, phase: 'approach', escapeDir: dir.clone(),
-               target: BLACK_HOLE_CENTER.clone().addScaledVector(dir, 20000),
+               target: world.blackHoleCenter.clone().addScaledVector(dir, 20000),
                intro: 'Threading the black hole. Watch this.' }
     }
     case 'pvp-training':
-      return { kind, phase: 'approach', center: PVP_ARENA_CENTER.clone(),
-               target: PVP_ARENA_CENTER.clone(), intro: 'Warming up in the training arena.' }
+      return { kind, phase: 'approach', center: world.pvpArenaCenter.clone(),
+               target: world.pvpArenaCenter.clone(), intro: 'Warming up in the training arena.' }
     default: {
       // Unknown kind → behave exactly like cruise (a far target, never the bot's current spot, so it
       // can't instantly satisfy stepActivity's arrival check and spin-loop transitions).
-      const lm = farLandmark(fromPos, rng)
+      const lm = farLandmark(fromPos, rng, world.landmarks)
       return { kind: 'cruise', phase: 'fly', target: lm.position.clone(), name: lm.name, t0: nowMs,
                intro: `Setting course for ${lm.name}.` }
     }
@@ -85,7 +83,8 @@ const SKIM_MS = 3000
 const SPAR_MS = 20000
 
 /** Advance the activity by one tick. Mutates phase/timers on `a`; returns the steering command. */
-export function stepActivity(a, botPos, dtSec, nowMs) {
+export function stepActivity(a, botPos, dtSec, nowMs, world) {
+  if (!world) throw new Error('stepActivity: world is required') // fail fast on a mis-wired caller
   switch (a.kind) {
     case 'cruise': {
       const cyc = (nowMs - a.t0) % 5000 // 3s boost / 2s cruise
@@ -122,11 +121,11 @@ export function stepActivity(a, botPos, dtSec, nowMs) {
       if (a.phase === 'skim') {
         if (nowMs >= a.skimUntil) {
           a.phase = 'escape'
-          a.escape = BLACK_HOLE_CENTER.clone().addScaledVector(a.escapeDir, BLACK_HOLE_INFLUENCE + 8000)
+          a.escape = world.blackHoleCenter.clone().addScaledVector(a.escapeDir, world.blackHoleInfluence + 8000)
         }
         return { target: a.target, speed: SPEEDS.APPROACH, done: false }
       }
-      return { target: a.escape ?? a.target, speed: SPEEDS.BOOST, done: botPos.distanceTo(BLACK_HOLE_CENTER) > BLACK_HOLE_INFLUENCE }
+      return { target: a.escape ?? a.target, speed: SPEEDS.BOOST, done: botPos.distanceTo(world.blackHoleCenter) > world.blackHoleInfluence }
     }
     case 'pvp-training': {
       if (a.phase === 'approach') {

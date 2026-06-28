@@ -1,5 +1,5 @@
 import { createRelayClient } from './relayClient.mjs'
-import { LANDMARKS } from './landmarks.mjs'
+import { LANDMARKS, BOT_WORLD } from './landmarks.mjs'
 import { stepMover } from './mover.mjs'
 import { buildBrainContext } from './brainContext.mjs'
 import { think } from './brain.mjs'
@@ -22,7 +22,7 @@ const BOT_COSMETIC_SECRET = process.env.BOT_COSMETIC_SECRET ?? ''
 // Start at the loiter area (refinery) so the camera drone, which spawns at the player start, is
 // within CLAUDE's AOI from the first frame.
 let pos = (LANDMARKS.find((l) => l.id === 'refinery') ?? LANDMARKS[0]).position.clone()
-let activity = buildActivity(pickActivity(null, Math.random), pos, Math.random, Date.now())
+let activity = buildActivity(pickActivity(null, Math.random), pos, Math.random, Date.now(), BOT_WORLD)
 let recentChat = []
 let lastChatReplyAt = 0
 let thinking = false
@@ -65,12 +65,12 @@ async function runBrain() {
 relay.connect()
 setInterval(() => {
   const now = Date.now()
-  const cmd = stepActivity(activity, pos, TICK_MS / 1000, now)
+  const cmd = stepActivity(activity, pos, TICK_MS / 1000, now, BOT_WORLD)
   const r = stepMover(pos, cmd.target, cmd.speed, TICK_MS / 1000)
   pos = r.pos
   relay.sendState(pos, r.quat)
   if (cmd.done) {
-    activity = buildActivity(pickActivity(activity.kind, Math.random), pos, Math.random, now)
+    activity = buildActivity(pickActivity(activity.kind, Math.random), pos, Math.random, now, BOT_WORLD)
     relay.sendChat(activity.intro)
   }
 }, TICK_MS)
