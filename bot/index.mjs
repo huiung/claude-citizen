@@ -1,26 +1,24 @@
-import { Vector3 } from 'three'
 import { createRelayClient } from './relayClient.mjs'
-import { LANDMARKS, pickDestination } from './landmarks.mjs'
+import { LANDMARKS } from './landmarks.mjs'
 import { stepMover } from './mover.mjs'
 import { buildBrainContext } from './brainContext.mjs'
 import { think } from './brain.mjs'
+import { buildActivity, pickActivity, stepActivity } from './activities.mjs'
 
 const URL = process.env.RELAY_WS_URL ?? 'ws://localhost:8080'
 const API_KEY = process.env.ANTHROPIC_API_KEY ?? ''
 const MODEL = process.env.BOT_MODEL ?? 'claude-haiku-4-5'
 const TICK_MS = 125                                    // ~8 state updates/sec
 const CHAT_COOLDOWN_MS = Number(process.env.BOT_CHAT_COOLDOWN_MS ?? 6000)
-const SPEED = 1200                                     // world units/sec
 // Unique per process by default: two bot instances sharing one token would kick each other off the
 // relay in a reconnect war (the bot saves no progress, so a stable identity isn't needed). Pin via
 // BOT_TOKEN only if you deliberately want a fixed identity and run exactly one instance.
 const TOKEN = process.env.BOT_TOKEN ?? `bot-claude-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
-const landmarkIds = new Set(LANDMARKS.map((l) => l.id))
 
 // Start at the loiter area (refinery) so the camera drone, which spawns at the player start, is
 // within CLAUDE's AOI from the first frame.
 let pos = (LANDMARKS.find((l) => l.id === 'refinery') ?? LANDMARKS[0]).position.clone()
-let dest = pickDestination(LANDMARKS, LANDMARKS[0].id, Math.random)
+let activity = buildActivity(pickActivity(null, Math.random), pos, Math.random, Date.now())
 let recentChat = []
 let lastChatReplyAt = 0
 let thinking = false
@@ -28,7 +26,7 @@ let thinking = false
 const relay = createRelayClient({
   url: URL, name: 'CLAUDE', token: TOKEN,
   handlers: {
-    onOpen: () => console.log(`[bot] joined ${URL} as CLAUDE`),
+    onOpen: () => { console.log(`[bot] joined ${URL} as CLAUDE`); relay.sendChat(activity.intro) },
     onChat: (name, text) => {
       if (name === 'CLAUDE') return // ignore our own echoed lines
       recentChat.push({ name, text })
@@ -51,23 +49,26 @@ async function runBrain() {
   try {
     const ctx = buildBrainContext({
       location: nearestLandmarkName(pos),
-      destinationName: LANDMARKS.find((l) => l.position.equals(dest))?.name,
-      nearbyPilots: [],
+      currentActivity: `${activity.kind}${activity.name ? ' -> ' + activity.name : ''}`,
       recentChat,
     })
-    const action = await think(ctx, landmarkIds, { apiKey: API_KEY, model: MODEL })
+    const action = await think(ctx, new Set(LANDMARKS.map((l) => l.id)), { apiKey: API_KEY, model: MODEL })
     if (action.say) relay.sendChat(action.say)
-    if (action.goto) { const l = LANDMARKS.find((x) => x.id === action.goto); if (l) dest = l.position.clone() }
   } finally { thinking = false }
 }
 
 relay.connect()
 setInterval(() => {
-  const r = stepMover(pos, dest, SPEED, TICK_MS / 1000)
+  const now = Date.now()
+  const cmd = stepActivity(activity, pos, TICK_MS / 1000, now)
+  const r = stepMover(pos, cmd.target, cmd.speed, TICK_MS / 1000)
   pos = r.pos
   relay.sendState(pos, r.quat)
-  if (r.arrived) dest = pickDestination(LANDMARKS, undefined, Math.random).position.clone()
+  if (cmd.done) {
+    activity = buildActivity(pickActivity(activity.kind, Math.random), pos, Math.random, now)
+    relay.sendChat(activity.intro)
+  }
 }, TICK_MS)
 // No periodic self-chatter: CLAUDE only speaks in reply to other pilots' chat (see onChat). It flies
-// continuously via the tick above, picking a new destination on arrival.
+// continuously via the activity system above, announcing transitions.
 console.log('[bot] CLAUDE pilot starting…')
