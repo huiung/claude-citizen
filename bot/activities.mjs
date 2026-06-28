@@ -77,3 +77,67 @@ export function buildActivity(kind, fromPos, rng, nowMs) {
     }
   }
 }
+
+const ARRIVE = 1200          // generic arrival radius
+const GATE_HIT = 260         // race gate radius (230) + margin
+const LOITER_MS = 20000
+const SKIM_MS = 3000
+const SPAR_MS = 20000
+
+/** Advance the activity by one tick. Mutates phase/timers on `a`; returns the steering command. */
+export function stepActivity(a, botPos, dtSec, nowMs) {
+  switch (a.kind) {
+    case 'cruise': {
+      const cyc = (nowMs - a.t0) % 5000 // 3s boost / 2s cruise
+      const speed = cyc < 3000 ? SPEEDS.BOOST : SPEEDS.CRUISE_BASE
+      return { target: a.target, speed, done: botPos.distanceTo(a.target) < ARRIVE }
+    }
+    case 'quantum-jump': {
+      if (a.phase === 'spool') {
+        if (nowMs >= a.phaseUntil) { a.phase = 'warp' } else {
+          return { target: a.target, speed: 0, done: false } // hold and charge
+        }
+      }
+      return { target: a.target, speed: SPEEDS.WARP, done: botPos.distanceTo(a.target) < ARRIVE }
+    }
+    case 'hub-visit': {
+      if (a.phase === 'approach') {
+        if (botPos.distanceTo(a.center) < ARRIVE) { a.phase = 'loiter'; a.loiterUntil = nowMs + LOITER_MS; a.theta = 0 }
+        return { target: a.center, speed: SPEEDS.APPROACH, done: false }
+      }
+      a.theta += dtSec * 0.8 // slow circle around the station
+      const orbit = new Vector3(Math.cos(a.theta) * 600, 120, Math.sin(a.theta) * 600).add(a.center)
+      return { target: orbit, speed: SPEEDS.APPROACH, done: nowMs >= a.loiterUntil }
+    }
+    case 'race': {
+      if (a.index < a.waypoints.length && botPos.distanceTo(a.waypoints[a.index]) < GATE_HIT) a.index += 1
+      const done = a.index >= a.waypoints.length
+      return { target: a.waypoints[Math.min(a.index, a.waypoints.length - 1)], speed: SPEEDS.RACE, done }
+    }
+    case 'black-hole-dive': {
+      if (a.phase === 'approach') {
+        if (botPos.distanceTo(a.target) < ARRIVE) { a.phase = 'skim'; a.skimUntil = nowMs + SKIM_MS }
+        return { target: a.target, speed: SPEEDS.BOOST, done: false }
+      }
+      if (a.phase === 'skim') {
+        if (nowMs >= a.skimUntil) {
+          a.phase = 'escape'
+          a.escape = BLACK_HOLE_CENTER.clone().addScaledVector(a.escapeDir, BLACK_HOLE_INFLUENCE + 8000)
+        }
+        return { target: a.target, speed: SPEEDS.APPROACH, done: false }
+      }
+      return { target: a.escape, speed: SPEEDS.BOOST, done: botPos.distanceTo(BLACK_HOLE_CENTER) > BLACK_HOLE_INFLUENCE }
+    }
+    case 'pvp-training': {
+      if (a.phase === 'approach') {
+        if (botPos.distanceTo(a.center) < ARRIVE) { a.phase = 'spar'; a.sparUntil = nowMs + SPAR_MS; a.t = 0 }
+        return { target: a.center, speed: SPEEDS.APPROACH, done: false }
+      }
+      a.t += dtSec // weave: lissajous figure around the arena center
+      const weave = new Vector3(Math.sin(a.t * 1.3) * 1400, Math.sin(a.t * 0.7) * 500, Math.cos(a.t * 1.1) * 1400).add(a.center)
+      return { target: weave, speed: SPEEDS.RACE, done: nowMs >= a.sparUntil }
+    }
+    default:
+      return { target: a.target, speed: SPEEDS.CRUISE_BASE, done: true }
+  }
+}

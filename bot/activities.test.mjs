@@ -56,3 +56,65 @@ describe('buildActivity', () => {
     expect(a.kind).toBe('cruise')
   })
 })
+
+import { stepActivity } from './activities.mjs'
+
+describe('stepActivity', () => {
+  const center = new Vector3(118000, 9000, 118000)
+
+  it('cruise is done on arrival and alternates boost/cruise speed', () => {
+    const a = buildActivity('cruise', new Vector3(0, 0, 0), () => 0, 0)
+    const far = stepActivity(a, new Vector3(0, 0, 0), 0.125, 1000) // 1s into the 5s cycle → boost
+    expect(far.speed).toBe(SPEEDS.BOOST)
+    expect(far.done).toBe(false)
+    const slow = stepActivity(a, new Vector3(0, 0, 0), 0.125, 4000) // 4s into cycle → cruise
+    expect(slow.speed).toBe(SPEEDS.CRUISE_BASE)
+    const atTarget = stepActivity(a, a.target.clone(), 0.125, 1000)
+    expect(atTarget.done).toBe(true)
+  })
+
+  it('quantum-jump holds during spool then warps', () => {
+    const a = buildActivity('quantum-jump', new Vector3(0, 0, 0), () => 0, 0)
+    const spool = stepActivity(a, new Vector3(0, 0, 0), 0.125, 500) // before phaseUntil 1200
+    expect(spool.speed).toBe(0)
+    const warp = stepActivity(a, new Vector3(0, 0, 0), 0.125, 1300) // past spool
+    expect(a.phase).toBe('warp')
+    expect(warp.speed).toBe(SPEEDS.WARP)
+  })
+
+  it('hub-visit approaches then loiters for ~20s', () => {
+    const a = buildActivity('hub-visit', new Vector3(0, 0, 0), () => 0, 0)
+    stepActivity(a, a.center.clone(), 0.125, 1000) // arrive → enter loiter
+    expect(a.phase).toBe('loiter')
+    const mid = stepActivity(a, a.center.clone(), 0.125, 5000)
+    expect(mid.done).toBe(false)
+    const end = stepActivity(a, a.center.clone(), 0.125, a.loiterUntil + 1)
+    expect(end.done).toBe(true)
+  })
+
+  it('race advances through gates and finishes after the last', () => {
+    const a = buildActivity('race', new Vector3(0, 0, 0), () => 0, 0)
+    for (let i = 0; i < a.waypoints.length; i++) {
+      const r = stepActivity(a, a.waypoints[i].clone(), 0.125, 0)
+      if (i < a.waypoints.length - 1) expect(r.done).toBe(false)
+    }
+    expect(stepActivity(a, a.waypoints[a.waypoints.length - 1].clone(), 0.125, 0).done).toBe(true)
+  })
+
+  it('black-hole-dive approaches, skims, then escapes influence', () => {
+    const a = buildActivity('black-hole-dive', new Vector3(0, 0, 0), () => 0, 0)
+    stepActivity(a, a.target.clone(), 0.125, 1000) // reach approach point → skim
+    expect(a.phase).toBe('skim')
+    stepActivity(a, a.target.clone(), 0.125, a.skimUntil + 1) // skim done → escape
+    expect(a.phase).toBe('escape')
+    const out = stepActivity(a, center.clone().add(new Vector3(60000, 0, 0)), 0.125, 0)
+    expect(out.done).toBe(true) // beyond INFLUENCE (50000)
+  })
+
+  it('pvp-training approaches then spars for ~20s', () => {
+    const a = buildActivity('pvp-training', new Vector3(0, 0, 0), () => 0, 0)
+    stepActivity(a, a.center.clone(), 0.125, 1000)
+    expect(a.phase).toBe('spar')
+    expect(stepActivity(a, a.center.clone(), 0.125, a.sparUntil + 1).done).toBe(true)
+  })
+})
