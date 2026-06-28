@@ -11,6 +11,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "server": "node server/index.mjs",
+    "bot": "node bot/index.mjs",
     "test": "vitest run"
   },
   "dependencies": {
