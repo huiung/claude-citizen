@@ -16,7 +16,7 @@ const CHAT_COOLDOWN_MS = Number(process.env.BOT_CHAT_COOLDOWN_MS ?? 6000)
 const TOKEN = process.env.BOT_TOKEN ?? `bot-claude-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 const SHIP = 'interceptor'
 const VISUAL = 'void-interceptor' // T3 holder hull skin (relay grants the cosmetic tier via BOT_COSMETIC_SECRET)
-const COSMETICS = 'aurum-trail-kit:legendary,nebula-hull-kit:legendary,void-runner-kit:legendary'
+const COSMETICS = 'comet-wake-kit:legendary,nebula-hull-kit:legendary,void-runner-kit:legendary'
 const BOT_COSMETIC_SECRET = process.env.BOT_COSMETIC_SECRET ?? ''
 
 // Start at the loiter area (refinery) so the camera drone, which spawns at the player start, is
