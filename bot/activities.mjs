@@ -126,7 +126,7 @@ export function stepActivity(a, botPos, dtSec, nowMs) {
         }
         return { target: a.target, speed: SPEEDS.APPROACH, done: false }
       }
-      return { target: a.escape, speed: SPEEDS.BOOST, done: botPos.distanceTo(BLACK_HOLE_CENTER) > BLACK_HOLE_INFLUENCE }
+      return { target: a.escape ?? a.target, speed: SPEEDS.BOOST, done: botPos.distanceTo(BLACK_HOLE_CENTER) > BLACK_HOLE_INFLUENCE }
     }
     case 'pvp-training': {
       if (a.phase === 'approach') {
