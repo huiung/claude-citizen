@@ -37,7 +37,7 @@ import { loadCraftingState, normalizeCraftingState, saveCraftingState, equipCosm
 import { createShipCosmetics, type ShipCosmetics } from './render/craftCosmetics'
 import { equippedStyles, encodeEquipped, decodeCosmetics } from './sim/cosmetics'
 import { stepMover } from '../bot/mover.mjs'
-import { buildActivity, pickActivity, stepActivity } from '../bot/activities.mjs'
+import { buildActivity, pickActivity, stepActivity, SPEEDS } from '../bot/activities.mjs'
 import { BOT_WORLD } from '../bot/landmarks.mjs'
 import { think } from '../bot/brain.mjs'
 import { buildBrainContext } from '../bot/brainContext.mjs'
@@ -3650,12 +3650,14 @@ function launch(): void {
   if (statsTimer) clearInterval(statsTimer)
   overlayEl.hidden = true
   overlayEl.style.display = 'none'
-  hudEl.hidden = (CAPTURE_OG || BOT)
-  statusEl.hidden = (CAPTURE_OG || BOT)
+  // BOT (stream view) shows the flight HUD — hull bar, status, minimap — but hides the wallet panel
+  // (it holds credits + rank, which the no-progression bot leaves empty), plus help and crosshair.
+  hudEl.hidden = CAPTURE_OG
+  statusEl.hidden = CAPTURE_OG
   helpEl.hidden = (CAPTURE_OG || BOT) || MOBILE_COMPANION
   crosshairEl.hidden = (CAPTURE_OG || BOT)
   walletEl.hidden = (CAPTURE_OG || BOT)
-  minimapWrapEl.hidden = (CAPTURE_OG || BOT)
+  minimapWrapEl.hidden = CAPTURE_OG
   if (MOBILE_COMPANION) {
     document.documentElement.classList.add('mobile-flight')
     mobileControlsEl.hidden = false
@@ -4049,8 +4051,10 @@ function frame(now: number): void {
       : { maxSpeed: effSpeed(), boostMultiplier: effBoost() }
     let input: ControlInput
     if (BOT && botActivity) {
-      input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
       const cmd = stepActivity(botActivity, ship.position, dt, now, BOT_WORLD)
+      // Flag boost at high activity speeds (cruise bursts / warp) so the camera FOV widen + engine
+      // bloom + boost-kick fire — otherwise fast travel reads as flat constant-speed gliding.
+      input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: cmd.speed >= SPEEDS.BOOST, brake: false, assist: true }
       _botPrevPos.copy(ship.position)
       const r = stepMover(ship.position, cmd.target, cmd.speed, dt)
       ship.position.copy(r.pos)
