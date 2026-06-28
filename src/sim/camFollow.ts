@@ -2,13 +2,9 @@ import { Matrix4, Quaternion, Vector3 } from 'three'
 
 const _up = new Vector3(0, 1, 0)
 
-interface NamedTarget {
-  name: string
-  position: Vector3
-}
-
-/** First target whose name matches, or null. `targets` is any list of { name, position }. */
-export function pickFollowTarget(targets: NamedTarget[], name: string): NamedTarget | null {
+/** First target whose name matches, or null. Generic so callers keep their full payload
+ *  (e.g. the followed pilot's mesh) on the returned object, not just `{ name }`. */
+export function pickFollowTarget<T extends { name: string }>(targets: T[], name: string): T | null {
   return targets.find((t) => t.name === name) ?? null
 }
 

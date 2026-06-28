@@ -93,7 +93,7 @@ import {
 } from './sim/trainingDrones'
 import { BLACK_HOLE_APPROACH_DESTINATION, BLACK_HOLE_CENTER, distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, tidalDamageRate, TIDAL_RADIUS, withinInfluence } from './sim/blackHole'
 import { createBlackHoleRun, enterRun, sampleRun, exitRunAlive, dieRun } from './sim/blackHoleRun'
-import { chaseSteer, pickFollowTarget } from './sim/camFollow'
+import { pickFollowTarget } from './sim/camFollow'
 import { type DailyState, type Objective, type ObjectiveKind, OBJECTIVE_REWARD, SET_BONUS, STREAK_REWARD_CAP, dailyObjectives, dayKey, emptyDaily, rollStreak } from './sim/daily'
 import { GameAudio } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
@@ -162,10 +162,8 @@ const URL_PARAMS = new URLSearchParams(location.search)
 const CAPTURE_OG = URL_PARAMS.get('capture') === 'og'
 const SHOWCASE_HOLDER = URL_PARAMS.get('showcase') === 'holder'
 const SHOWCASE_TIME_TRIAL = URL_PARAMS.get('showcase') === 'time-trial'
-const CAM_TARGET = URL_PARAMS.get('cam') // e.g. ?cam=CLAUDE — spectator camera that follows that pilot
+const CAM_TARGET = URL_PARAMS.get('cam') // e.g. ?cam=CLAUDE — first-person spectator from that pilot's seat
 const CAM = !!CAM_TARGET
-const CAM_SPEED = 2600   // faster than the bot (1200) so the drone stays glued in AOI
-const CAM_TRAIL = 90     // settle this far behind the followed pilot
 const MOBILE_COMPANION = document.documentElement.classList.contains('is-mobile')
 
 // --- DOM
@@ -3558,6 +3556,14 @@ function updateCamera(dt: number): void {
     return
   }
 
+  if (CAM) {
+    // First-person spectator: the camera IS the followed pilot's seat. `ship` was snapped to the
+    // (already-interpolated) remote pose this frame, so copy it directly — no chase boom, no lerp.
+    camera.position.copy(ship.position)
+    camera.quaternion.copy(ship.quaternion)
+    return
+  }
+
   // Acceleration this frame → a damped offset opposite to it (push back on boost, dip on brake).
   _accel.copy(ship.velocity).sub(prevCamVel).multiplyScalar(1 / Math.max(dt, 1e-4))
   prevCamVel.copy(ship.velocity)
@@ -4013,13 +4019,16 @@ function frame(now: number): void {
     let input: ControlInput
     if (CAM) {
       input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
-      const camTargets = [...remotes.values()].map((r) => ({ name: r.peer.name, position: r.mesh.position }))
+      // First-person: ride in the followed pilot's seat. The remote mesh is already smoothly
+      // interpolated by updateRemotes(), so copying its pose gives a steady cockpit view. Hide that
+      // mesh every frame so the followed ship's hull never blocks the camera.
+      const camTargets = [...remotes.values()].map((r) => ({ name: r.peer.name, mesh: r.mesh }))
       const followed = pickFollowTarget(camTargets, CAM_TARGET!)
       if (followed) {
-        const cr = chaseSteer(ship.position, followed.position, CAM_SPEED, dt, CAM_TRAIL)
-        ship.position.copy(cr.pos)
-        ship.quaternion.copy(cr.quat)
+        ship.position.copy(followed.mesh.position)
+        ship.quaternion.copy(followed.mesh.quaternion)
         ship.velocity.set(0, 0, 0)
+        followed.mesh.visible = false
       }
     } else {
       input = readInput(dt)

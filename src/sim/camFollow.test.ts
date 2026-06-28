@@ -14,6 +14,11 @@ describe('pickFollowTarget', () => {
     expect(pickFollowTarget(targets, 'NOBODY')).toBeNull()
     expect(pickFollowTarget([], 'CLAUDE')).toBeNull()
   })
+  it('preserves the full payload so callers keep their mesh reference', () => {
+    const mesh = { id: 'mesh-claude' }
+    const meshTargets = [{ name: 'CLAUDE', mesh }]
+    expect(pickFollowTarget(meshTargets, 'CLAUDE')?.mesh).toBe(mesh)
+  })
 })
 
 describe('chaseSteer', () => {
