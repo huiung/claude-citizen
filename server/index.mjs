@@ -65,6 +65,7 @@ const SESSION_FILE = process.env.SESSION_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY
 const HOLDER_MINT = '6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump'
 const TREASURY_WALLET = process.env.TREASURY_WALLET ?? '59vPXLdd9xvTcYAeQs3dZhbPVfFEiitP8btagF56NFj3'
+const BOT_COSMETIC_SECRET = process.env.BOT_COSMETIC_SECRET ?? '' // operator bot: cosmetic-only T3 grant
 const FEE_BPS = 500
 const heliusRpc = HELIUS_API_KEY ? new Connection(`https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`, 'finalized') : null
 let cachedMintInfo = null
@@ -408,6 +409,9 @@ wss.on('connection', (ws) => {
         resetPvpHull(client, normalizeShip(msg.ship))
         clients.set(ws, client)
       }
+      // Operator showcase bot: grant cosmetic-only tier 3 (unlocks T3 hull skins) when it presents the
+      // shared secret. Purely visual — ranked PvP still requires a verified wallet balance the bot lacks.
+      if (BOT_COSMETIC_SECRET && msg.botSecret === BOT_COSMETIC_SECRET) client.tier = 3
       if (!client.authed) applySession(client, msg.sessionId)
       client.name = resolveCallsign({ authed: client.authed, storedName: store[identityKey(client)]?.name, requestedName: client.name })
       if (client.authed && client.name && client.name.toLowerCase() !== 'pilot') send(ws, { t: 'callsign', name: client.name })
