@@ -2,10 +2,10 @@ export const MAX_SAY_LEN = 200
 const RECENT_CHAT_CAP = 6
 
 /** Compact, model-friendly snapshot of the bot's situation. Pure. */
-export function buildBrainContext({ location, destinationName, nearbyPilots = [], recentChat = [] }) {
+export function buildBrainContext({ location, currentActivity, nearbyPilots = [], recentChat = [] }) {
   return {
     location: location ?? 'deep space',
-    destination: destinationName ?? 'none',
+    currentActivity: currentActivity ?? 'idle',
     nearbyPilots: nearbyPilots.slice(0, 8),
     recentChat: recentChat.slice(-RECENT_CHAT_CAP).map((c) => ({ name: String(c.name), text: String(c.text) })),
   }

@@ -1,4 +1,5 @@
 import { parseBrainOutput } from './brainContext.mjs'
+import { GAME_KNOWLEDGE } from './gameKnowledge.mjs'
 
 export const PERSONA = [
   'You are CLAUDE, an AI pilot flying in Claude Citizen, a browser space MMO.',
@@ -27,7 +28,7 @@ export async function think(ctx, landmarkIds, cfg) {
       body: JSON.stringify({
         model: cfg.model,
         max_tokens: 200,
-        system: PERSONA,
+        system: `${PERSONA}\n\n${GAME_KNOWLEDGE}`,
         messages: [{ role: 'user', content: userMsg }],
       }),
     })

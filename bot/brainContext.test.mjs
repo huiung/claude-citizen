@@ -2,17 +2,25 @@ import { describe, expect, it } from 'vitest'
 import { buildBrainContext, parseBrainOutput, MAX_SAY_LEN } from './brainContext.mjs'
 
 describe('buildBrainContext', () => {
-  it('summarizes location, destination, nearby pilots, and recent chat (capped)', () => {
+  it('summarizes location, current activity, nearby pilots, and recent chat (capped)', () => {
     const chat = Array.from({ length: 10 }, (_, i) => ({ name: `P${i}`, text: `msg ${i}` }))
     const ctx = buildBrainContext({
-      location: 'near Earth', destinationName: 'Jupiter',
+      location: 'near Earth', currentActivity: 'cruise -> Jupiter',
       nearbyPilots: ['ACE', 'NOVA'], recentChat: chat,
     })
     expect(ctx.location).toBe('near Earth')
-    expect(ctx.destination).toBe('Jupiter')
+    expect(ctx.currentActivity).toBe('cruise -> Jupiter')
     expect(ctx.nearbyPilots).toEqual(['ACE', 'NOVA'])
     expect(ctx.recentChat.length).toBeLessThanOrEqual(6)
     expect(ctx.recentChat.at(-1)).toEqual({ name: 'P9', text: 'msg 9' })
+  })
+
+  it('includes the current activity when provided', () => {
+    const ctx = buildBrainContext({ location: 'near Meridian Refinery', currentActivity: 'cruise -> Mars', recentChat: [] })
+    expect(ctx.currentActivity).toBe('cruise -> Mars')
+  })
+  it('defaults current activity to idle', () => {
+    expect(buildBrainContext({}).currentActivity).toBe('idle')
   })
 })
 
