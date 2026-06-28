@@ -4,7 +4,7 @@ import WebSocket from 'ws'
  * Minimal relay pilot client. `handlers` may include onChat(name,text), onPeerState(id,p),
  * onPeerLeave(id), onOpen(). Auto-reconnects with backoff. The token is a stable anonymous id.
  */
-export function createRelayClient({ url, name, token, handlers = {} }) {
+export function createRelayClient({ url, name, token, ship = 'fighter', visual = 'standard', cosmetics = '', botSecret = '', handlers = {} }) {
   let ws = null
   let reconnectMs = 1000
   const peers = new Map() // id -> last position [x,y,z]
@@ -17,7 +17,7 @@ export function createRelayClient({ url, name, token, handlers = {} }) {
     ws = new WebSocket(url)
     ws.on('open', () => {
       reconnectMs = 1000
-      send({ t: 'join', name, token, ship: 'fighter', visual: 'standard', cosmetics: {} })
+      send({ t: 'join', name, token, ship, visual, cosmetics, ...(botSecret ? { botSecret } : {}) })
       handlers.onOpen?.()
     })
     ws.on('message', (data) => {
@@ -36,7 +36,7 @@ export function createRelayClient({ url, name, token, handlers = {} }) {
   return {
     connect,
     peers,
-    sendState: (pos, quat) => send({ t: 'state', p: [pos.x, pos.y, pos.z], q: [quat.x, quat.y, quat.z, quat.w], ship: 'fighter', visual: 'standard', cosmetics: {} }),
+    sendState: (pos, quat) => send({ t: 'state', p: [pos.x, pos.y, pos.z], q: [quat.x, quat.y, quat.z, quat.w], ship, visual, cosmetics }),
     sendChat: (text) => send({ t: 'chat', text: String(text).slice(0, 240) }),
   }
 }

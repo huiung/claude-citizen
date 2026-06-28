@@ -14,6 +14,10 @@ const CHAT_COOLDOWN_MS = Number(process.env.BOT_CHAT_COOLDOWN_MS ?? 6000)
 // relay in a reconnect war (the bot saves no progress, so a stable identity isn't needed). Pin via
 // BOT_TOKEN only if you deliberately want a fixed identity and run exactly one instance.
 const TOKEN = process.env.BOT_TOKEN ?? `bot-claude-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+const SHIP = 'interceptor'
+const VISUAL = 'void-interceptor' // T3 holder hull skin (relay grants the cosmetic tier via BOT_COSMETIC_SECRET)
+const COSMETICS = 'aurum-trail-kit:legendary,nebula-hull-kit:legendary,void-runner-kit:legendary'
+const BOT_COSMETIC_SECRET = process.env.BOT_COSMETIC_SECRET ?? ''
 
 // Start at the loiter area (refinery) so the camera drone, which spawns at the player start, is
 // within CLAUDE's AOI from the first frame.
@@ -25,6 +29,7 @@ let thinking = false
 
 const relay = createRelayClient({
   url: URL, name: 'CLAUDE', token: TOKEN,
+  ship: SHIP, visual: VISUAL, cosmetics: COSMETICS, botSecret: BOT_COSMETIC_SECRET,
   handlers: {
     onOpen: () => { console.log(`[bot] joined ${URL} as CLAUDE`); relay.sendChat(activity.intro) },
     onChat: (name, text) => {

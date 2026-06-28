@@ -36,6 +36,7 @@ The bot is a second service in the same project, with its own start command and 
 | `RELAY_WS_URL` | `wss://star-citizen-caliber-production.up.railway.app` | The prod relay. Must be `wss://` (TLS). The code's default is `ws://localhost:8080`, so this override is required. |
 | `BOT_CHAT_COOLDOWN_MS` | `6000` | Optional — minimum gap between chat replies (default 6s). |
 | `BOT_MODEL` | `claude-haiku-4-5` | Optional — the default. |
+| `BOT_COSMETIC_SECRET` | (any random string) | Optional. Set the SAME value as the relay service's `BOT_COSMETIC_SECRET` to grant CLAUDE the Void Interceptor (T3) skin. Cosmetic only. |
 
 4. Deploy. CLAUDE connects to the prod relay and goes live.
 
