@@ -36,6 +36,9 @@ import { createAsteroidField, mineStep } from './sim/mining'
 import { loadCraftingState, normalizeCraftingState, saveCraftingState, equipCosmetic, unequipCosmetic } from './sim/crafting'
 import { createShipCosmetics, type ShipCosmetics } from './render/craftCosmetics'
 import { equippedStyles, encodeEquipped, decodeCosmetics } from './sim/cosmetics'
+import { stepMover } from '../bot/mover.mjs'
+import { buildActivity, stepActivity } from '../bot/activities.mjs'
+import { BOT_WORLD } from '../bot/landmarks.mjs'
 import { think } from '../bot/brain.mjs'
 import { buildBrainContext } from '../bot/brainContext.mjs'
 import { createMarket, step as marketStep } from './sim/market'
@@ -1630,33 +1633,26 @@ function toggleQuantumTravel(): void {
 }
 
 // --- Browser autopilot (?bot=1): drive the quantum drive like a touring player
-function pickBotDestination(): void {
-  const nCycle = quantumDestinationCount() // planets + arenas + season hub
-  const total = nCycle + 1                 // + the black hole approach (a custom destination)
-  let choice = botLastDestIdx
-  while (total > 1 && choice === botLastDestIdx) choice = Math.floor(Math.random() * total)
-  botLastDestIdx = choice
-  if (choice >= nCycle) {
-    customJumpDestination = {
-      id: BLACK_HOLE_APPROACH_DESTINATION.id, name: BLACK_HOLE_APPROACH_DESTINATION.name,
-      kind: BLACK_HOLE_APPROACH_DESTINATION.kind, position: BLACK_HOLE_APPROACH_DESTINATION.position.clone(),
-      radius: BLACK_HOLE_APPROACH_DESTINATION.radius, approachDistance: BLACK_HOLE_APPROACH_DESTINATION.approachDistance,
-    }
+// Begin the TRANSIT phase: pick a new kind of stop, set the quantum destination to its region, and
+// jump there. PERFORM begins automatically on drop-out (see the BOT branch in the frame loop).
+function startBotTransit(): void {
+  let kind = botLastStop
+  while (BOT_STOP_KINDS.length > 1 && kind === botLastStop) kind = BOT_STOP_KINDS[Math.floor(Math.random() * BOT_STOP_KINDS.length)]
+  botLastStop = kind
+  botStopKind = kind
+  customJumpDestination = null
+  if (kind === 'black-hole-dive') {
+    customJumpDestination = { id: 'black-hole-approach', name: 'the black hole', kind: 'Singularity', position: BLACK_HOLE_APPROACH_DESTINATION.position.clone() }
+  } else if (kind === 'race') {
+    customJumpDestination = { id: 'season-hub', name: 'the Season Hub', kind: 'Hub', position: CITIZEN_SEASON_HUB_DESTINATION.position.clone() }
+  } else if (kind === 'pvp-training') {
+    customJumpDestination = { id: 'practice-arena', name: 'the arena', kind: 'Arena', position: BOT_WORLD.pvpArenaCenter.clone() }
   } else {
-    customJumpDestination = null
-    selectedJumpIdx = choice
+    selectedJumpIdx = Math.floor(Math.random() * PLANETS.length) // a planet to fly by
   }
-}
-
-function botTourStep(now: number): void {
-  const traveling = quantum.phase !== 'idle'
-  if (botWasTraveling && !traveling) botDwellUntil = now + BOT_DWELL_MS // just dropped out — linger
-  botWasTraveling = traveling
-  if (traveling || now < botDwellUntil) return // mid-jump or taking in the view
-  pickBotDestination()
-  const dest = destinationArrival()
-  net.sendChat(`Quantum jump to ${dest.name}.`)
+  net.sendChat(`Quantum jump to ${destinationArrival().name}.`)
   toggleQuantumTravel() // spool + warp, exactly as a player pressing J
+  botPhase = 'transit'
 }
 
 function setQuantumDestinationFromAtlas(target: SolarMapNavigationTarget): SolarMapDestinationResult {
@@ -2479,13 +2475,22 @@ interface RemoteShip {
 let selfTier = 0 // token-holder tier, cosmetic identity
 let selfHolderBalance = 0 // exact token balance from the relay; used only for holder-gated ranked PvP
 let selectedHolderShipVisual = loadHolderShipVisual(localStorage)
-// Browser autopilot (?bot=1) tours the system via the game's real quantum drive: it picks a
-// destination, jumps (warp visual + flies through the system, no straight-line collision), dwells to
-// take in the view, then jumps again. `botWasTraveling` detects the jump→arrival edge.
-let botDwellUntil = 0
+// Browser autopilot (?bot=1) is a two-phase loop: TRANSIT (quantum-jump to a destination — warp
+// visual, flies through the system, no straight-line collision) then PERFORM (do the thing there —
+// dive the black hole, run the race gates, weave the arena, or just loiter at a planet) slowly and
+// boost-free so the ship stays visible. Then transit to the next.
+let botPhase: 'transit' | 'perform' = 'transit'
+let botStopKind = 'planet'
+let botLastStop = ''
+let botActivity: ReturnType<typeof buildActivity> | null = null
 let botWasTraveling = false
-let botLastDestIdx = -1
-const BOT_DWELL_MS = 4500
+let botDwellUntil = 0      // planet-loiter timer
+let botPerformUntil = 0    // hard cap so a maneuver can't run forever
+const _botPrevPos = new THREE.Vector3()
+const BOT_LOCAL_SPEED = 1800      // visible cruising maneuver speed — no boost FOV-warp, but brisk enough to finish
+const BOT_PLANET_DWELL_MS = 6000
+const BOT_PERFORM_CAP_MS = 45000  // safety cap; black-hole dive's long in-and-out needs room
+const BOT_STOP_KINDS = ['planet', 'race', 'pvp-training', 'black-hole-dive']
 let botChatRecent: { name: string; text: string }[] = []
 let botLastReplyAt = 0
 let botThinking = false
@@ -3294,7 +3299,8 @@ function maybeBotReply(name: string, text: string): void {
   if (botThinking || now - botLastReplyAt < BOT_CHAT_COOLDOWN_MS) return
   botLastReplyAt = now
   botThinking = true
-  const activityLabel = quantum.phase !== 'idle' ? `quantum-jumping to ${jumpTargetName}` : 'touring the system'
+  const activityLabel = quantum.phase !== 'idle' ? `quantum-jumping to ${jumpTargetName}`
+    : botActivity ? botActivity.kind : `exploring ${botStopKind}`
   const ctx = buildBrainContext({ location: 'in flight', currentActivity: activityLabel, recentChat: botChatRecent })
   void think(ctx, { apiKey, model: 'claude-haiku-4-5' })
     .then((action) => { if (action.say) net.sendChat(action.say) })
@@ -3676,7 +3682,9 @@ function launch(): void {
     setPlayerCraft('interceptor')                  // sets selectedShipType; the final setPlayerCraft + applyPlayerCosmetics render the loadout
     selectedHolderShipVisual = 'void-interceptor' // T3 skin (shows once the relay grants tier 3)
     net.setBotSecret(localStorage.getItem('scc.botSecret') ?? '')
-    botDwellUntil = performance.now() + 2000       // settle a beat after spawn, then start the quantum tour
+    // Start in a brief planet-style "perform" dwell at spawn, then the loop transits to the first stop.
+    botPhase = 'perform'; botActivity = null; botStopKind = 'planet'; botWasTraveling = false
+    botDwellUntil = performance.now() + 2000
   }
   net.enterGame(callsign, selectedShipType, activeHolderShipVisual()) // promote from viewer (presence) to an active pilot
   if (statsTimer) clearInterval(statsTimer)
@@ -4083,11 +4091,36 @@ function frame(now: number): void {
       : { maxSpeed: effSpeed(), boostMultiplier: effBoost() }
     let input: ControlInput
     if (BOT) {
-      botTourStep(now) // travel happens via real quantum jumps (warp visual, flies through the system)
-      // Between jumps: a gentle, boost-free forward cruise so the ship reads as alive and stays clearly
-      // visible (no fast boosting). During a jump the quantum drive owns movement — don't fight it.
-      input = { thrust: new THREE.Vector3(0, 0, -0.35), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
-      if (quantum.phase === 'idle') stepShip(ship, input, dt, flightTuning)
+      input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
+      const traveling = quantum.phase !== 'idle'
+      const arrived = botPhase === 'transit' && botWasTraveling && !traveling
+      botWasTraveling = traveling
+      if (arrived) {
+        // Dropped out of the jump — begin PERFORM: do the thing here (or just loiter at a planet).
+        if (botStopKind === 'planet') { botActivity = null; botDwellUntil = now + BOT_PLANET_DWELL_MS }
+        else { botActivity = buildActivity(botStopKind, ship.position, Math.random, now, BOT_WORLD); botPerformUntil = now + BOT_PERFORM_CAP_MS; net.sendChat(botActivity.intro) }
+        botPhase = 'perform'
+      }
+      if (botPhase === 'perform' && !traveling) {
+        if (botActivity) {
+          // Run the local maneuver on-rails, but slow + boost-free so it's clearly visible.
+          const cmd = stepActivity(botActivity, ship.position, dt, now, BOT_WORLD)
+          if (cmd.done || now >= botPerformUntil) { startBotTransit() }
+          else {
+            _botPrevPos.copy(ship.position)
+            const r = stepMover(ship.position, cmd.target, Math.min(cmd.speed, BOT_LOCAL_SPEED), dt)
+            ship.position.copy(r.pos)
+            ship.quaternion.copy(r.quat)
+            ship.velocity.copy(r.pos).sub(_botPrevPos).multiplyScalar(1 / Math.max(dt, 1e-4))
+          }
+        } else if (now >= botDwellUntil) {
+          startBotTransit() // planet loiter done — move on
+        } else {
+          input.thrust.set(0, 0, -0.3) // gentle, boost-free drift while loitering at the planet
+          stepShip(ship, input, dt, flightTuning)
+        }
+      }
+      // during TRANSIT the quantum drive (above) owns movement — don't fight it
     } else {
       input = readInput(dt)
       stepShip(ship, input, dt, flightTuning)
