@@ -34,3 +34,31 @@ export function pickDestination(landmarks, currentId, rng) {
   for (const l of pool) { r -= l.weight ?? 1; if (r <= 0) return l }
   return pool[pool.length - 1]
 }
+
+// --- Activity destinations (mirror src/sim values; the bot can't import the TS) ---
+export const BLACK_HOLE_CENTER = new Vector3(118000, 9000, 118000)
+export const BLACK_HOLE_TIDAL = 18000      // hull-damage radius in-game; the bot skims just outside it
+export const BLACK_HOLE_INFLUENCE = 50000  // gravity/lensing visual begins here
+
+export const PVP_ARENA_CENTER = new Vector3(92000, 26000, -210000)   // PVP_PRACTICE_ZONE_CENTER in src/sim/pvp.ts
+export const SEASON_HUB_CENTER = new Vector3(93000, 26300, -218800)  // race time-trial origin
+
+// Offsets from src/main.ts hubRoutePoint calls (hub time-trial gates); no sim-level source file.
+const RACE_GATE_OFFSETS = [
+  [0, 210, 1620], [-760, 280, 1240], [-1380, 320, 360], [-1180, 230, -720],
+  [-250, 390, -1450], [760, 280, -1220], [1440, 250, -240], [1120, 340, 850],
+  [380, 300, 1450], [0, 240, 2120],
+]
+export const RACE_GATES = RACE_GATE_OFFSETS.map(
+  ([x, y, z]) => new Vector3(SEASON_HUB_CENTER.x + x, SEASON_HUB_CENTER.y + y, SEASON_HUB_CENTER.z + z),
+)
+
+// Stations the bot can tour. Refinery/colony reuse the existing LANDMARKS entries.
+const REFINERY = LANDMARKS.find((l) => l.id === 'refinery')
+const COLONY = LANDMARKS.find((l) => l.id === 'colony')
+if (!REFINERY || !COLONY) throw new Error('landmarks.mjs: refinery/colony entries missing from LANDMARKS')
+export const STATIONS = [
+  REFINERY,
+  COLONY,
+  { id: 'season-hub', name: 'Citizen Season Hub', position: SEASON_HUB_CENTER },
+]

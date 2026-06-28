@@ -47,3 +47,29 @@ describe('pickDestination weighting', () => {
     expect(outpostPicks).toBeGreaterThan(planetPicks) // bot loiters where players spawn
   })
 })
+
+import {
+  BLACK_HOLE_CENTER, BLACK_HOLE_TIDAL, BLACK_HOLE_INFLUENCE,
+  PVP_ARENA_CENTER, SEASON_HUB_CENTER, RACE_GATES, STATIONS,
+} from './landmarks.mjs'
+
+describe('activity landmarks', () => {
+  it('exposes the deep-space points the activities target', () => {
+    expect(BLACK_HOLE_CENTER.toArray()).toEqual([118000, 9000, 118000])
+    expect(PVP_ARENA_CENTER.toArray()).toEqual([92000, 26000, -210000])
+    expect(SEASON_HUB_CENTER.toArray()).toEqual([93000, 26300, -218800])
+    expect(BLACK_HOLE_TIDAL).toBe(18000)
+    expect(BLACK_HOLE_INFLUENCE).toBe(50000)
+  })
+  it('builds 10 race gates relative to the season hub', () => {
+    expect(RACE_GATES).toHaveLength(10)
+    // first gate = hub + (0,210,1620)
+    expect(RACE_GATES[0].toArray()).toEqual([93000, 26510, -217180])
+  })
+  it('lists the dockable stations for hub-visit', () => {
+    expect(STATIONS).toHaveLength(3)
+    expect(STATIONS.every(Boolean)).toBe(true)
+    expect(STATIONS.map((s) => s.name)).toContain('Meridian Refinery')
+    expect(STATIONS.map((s) => s.name)).toContain('Citizen Season Hub')
+  })
+})
