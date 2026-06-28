@@ -47,10 +47,10 @@ describe('buildActivity', () => {
     expect(a.waypoints).toHaveLength(10)
     expect(a.index).toBe(0)
   })
-  it('black-hole-dive aims ~20000 units from the center', () => {
+  it('black-hole-dive aims ~24000 units from the center (clear of the 18000 tidal zone)', () => {
     const a = buildActivity('black-hole-dive', here, rng, 0, BOT_WORLD)
     expect(a.phase).toBe('approach')
-    expect(a.target.distanceTo(new Vector3(118000, 9000, 118000))).toBeCloseTo(20000, -1)
+    expect(a.target.distanceTo(new Vector3(118000, 9000, 118000))).toBeCloseTo(24000, -1)
   })
   it('falls back to a cruise for an unknown kind (never throws)', () => {
     const a = buildActivity('nonsense', here, rng, 0, BOT_WORLD)

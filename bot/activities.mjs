@@ -60,7 +60,9 @@ export function buildActivity(kind, fromPos, rng, nowMs, world) {
       if (dir.lengthSq() < 1) dir.set(1, 0, 0)
       dir.normalize()
       return { kind, phase: 'approach', escapeDir: dir.clone(),
-               target: world.blackHoleCenter.clone().addScaledVector(dir, 20000),
+               // 24000 from center keeps a comfortable margin outside the 18000 tidal-damage radius, so
+               // the unattended bot never bleeds hull / dies during the dive — still deep in the lensing.
+               target: world.blackHoleCenter.clone().addScaledVector(dir, 24000),
                intro: 'Threading the black hole. Watch this.' }
     }
     case 'pvp-training':
