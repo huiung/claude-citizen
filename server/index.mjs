@@ -338,7 +338,7 @@ function flushMarketplace() {
 
 function kickDuplicatePeers(ws, client) {
   for (const removed of kickDuplicateActiveClients(clients, ws, client)) {
-    broadcast(ws, { t: 'peer-leave', id: removed.client.id })
+    if (!removed.client.invisible) broadcast(ws, { t: 'peer-leave', id: removed.client.id })
   }
 }
 
@@ -395,6 +395,7 @@ wss.on('connection', (ws) => {
         if (token) client.token = token
         client.visual = normalizeHolderShipVisual(msg.visual)
         client.cosmetics = normalizeCosmetics(msg.cosmetics)
+        client.invisible = msg.invisible === true
         resetPvpHull(client, normalizeShip(msg.ship))
       } else {
         client = {
@@ -402,6 +403,7 @@ wss.on('connection', (ws) => {
           name: String(msg.name ?? 'PILOT').slice(0, 16),
           color: nextColor++, p: [0, 0, 0], q: [0, 0, 0, 1], token,
           active: true, authed: false, pubkey: null, tier: 0, holderBalance: 0, lastPvpCombatAt: null, visual: normalizeHolderShipVisual(msg.visual), cosmetics: normalizeCosmetics(msg.cosmetics),
+          invisible: msg.invisible === true,
         }
         resetPvpHull(client, normalizeShip(msg.ship))
         clients.set(ws, client)
@@ -413,7 +415,7 @@ wss.on('connection', (ws) => {
       // Single live session per identity — kick any other live pilot on the same key.
       kickDuplicatePeers(ws, client)
       // Only active pilots are peers (have ships).
-      const peers = [...clients.values()].filter((c) => c.active && c !== client).map(({ token: _t, active: _a, authed: _au, pubkey: _pk, holderBalance: _hb, ...rest }) => rest)
+      const peers = [...clients.values()].filter((c) => c.active && !c.invisible && c !== client).map(({ token: _t, active: _a, authed: _au, pubkey: _pk, holderBalance: _hb, invisible: _iv, ...rest }) => rest)
       ws.send(JSON.stringify({ t: 'welcome', id: client.id, peers }))
       if (key && anonymousProgressAllowed(client)) {
         // Always answer with a 'progress' message — data is the saved blob, or null when this
@@ -422,7 +424,7 @@ wss.on('connection', (ws) => {
         ws.send(JSON.stringify({ t: 'progress', data: store[key] ?? null }))
         if (!(key in store)) { store[key] = null; flush() }
       }
-      broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q, tier: client.tier ?? 0, ship: client.ship, visual: client.visual, cosmetics: client.cosmetics, hull: client.hull, maxHull: client.maxHull })
+      if (!client.invisible) broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q, tier: client.tier ?? 0, ship: client.ship, visual: client.visual, cosmetics: client.cosmetics, hull: client.hull, maxHull: client.maxHull })
       void refreshHolder(ws, client) // (re)check holder flair now that we're an active, visible pilot
       console.log(`[join] ${client.name} (${client.id})${client.token ? ' +token' : ''} — ${clients.size} online`)
       return
@@ -478,10 +480,12 @@ wss.on('connection', (ws) => {
       // Relay only to active pilots within AOI_RADIUS (distant pilots aren't visible anyway).
       const out = JSON.stringify({ t: 'peer-state', id: client.id, p: client.p, q: client.q, ship: client.ship, visual: client.visual, cosmetics: client.cosmetics, hull: client.hull, maxHull: client.maxHull })
       const [px, py, pz] = client.p
-      for (const [ws2, c2] of clients) {
-        if (ws2 === ws || !c2.active || ws2.readyState !== ws2.OPEN) continue
-        const dx = c2.p[0] - px, dy = c2.p[1] - py, dz = c2.p[2] - pz
-        if (dx * dx + dy * dy + dz * dz <= AOI_RADIUS2) ws2.send(out)
+      if (!client.invisible) {
+        for (const [ws2, c2] of clients) {
+          if (ws2 === ws || !c2.active || ws2.readyState !== ws2.OPEN) continue
+          const dx = c2.p[0] - px, dy = c2.p[1] - py, dz = c2.p[2] - pz
+          if (dx * dx + dy * dy + dz * dz <= AOI_RADIUS2) ws2.send(out)
+        }
       }
       return
     }
@@ -759,7 +763,7 @@ wss.on('connection', (ws) => {
     const client = clients.get(ws)
     if (!client) return
     clients.delete(ws)
-    broadcast(ws, { t: 'peer-leave', id: client.id })
+    if (!client.invisible) broadcast(ws, { t: 'peer-leave', id: client.id })
     console.log(`[leave] ${client.name} — ${clients.size} online`)
   })
 })
