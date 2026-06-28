@@ -6,7 +6,7 @@ import {
 } from './landmarks.mjs'
 
 // World units/sec. Tuned so the bot reads as a lively pilot, not a crawler.
-export const SPEEDS = { CRUISE_BASE: 900, BOOST: 3200, APPROACH: 1500, RACE: 2500, WARP: 40000 }
+export const SPEEDS = { CRUISE_BASE: 900, BOOST: 3200, APPROACH: 1500, RACE: 2500, WARP: 12000 }
 
 // Weighted activity mix. Tune freely; weights are relative. All weights must be > 0 — a zero weight
 // would never be picked by the loop and would silently bias the kinds[last] fallback instead.
