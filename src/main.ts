@@ -3584,13 +3584,15 @@ function updateCamera(dt: number): void {
     camOffset.applyQuaternion(ship.quaternion)
   }
   camTarget.copy(ship.position).add(camOffset).add(gSway)
-  camera.position.lerp(camTarget, 1 - Math.exp(-8 * dt))
+  // CAM (spectator) snaps rigidly to the chase pose so the bot stays centered even at boost/warp
+  // speeds the smoothed follow can't keep up with; normal play keeps the eased follow.
+  camera.position.lerp(camTarget, CAM ? 1 : 1 - Math.exp(-8 * dt))
   if (!SHOWCASE_HOLDER && cameraMode === 'orbit') {
     _cameraLookAtOffset.set(0, 0.18, 0).applyQuaternion(ship.quaternion)
     _cameraLookAt.copy(ship.position).add(_cameraLookAtOffset)
     camera.lookAt(_cameraLookAt)
   } else {
-    camera.quaternion.slerp(ship.quaternion, 1 - Math.exp(-10 * dt))
+    camera.quaternion.slerp(ship.quaternion, CAM ? 1 : 1 - Math.exp(-10 * dt))
   }
   // FOV gives a gentle sense of speed: a touch wider under boost / quantum travel. No hard punches.
   // Near the black hole it stretches hard (up to +20°) — a cheap "space is warping / lensing" feel.
@@ -4011,9 +4013,11 @@ function frame(now: number): void {
     let input: ControlInput
     if (CAM) {
       input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
-      // Spectate the followed pilot with the normal gameplay camera: snap our (hidden) ship to the
-      // followed pilot's interpolated pose, then let updateCamera() frame it from behind exactly as
-      // it frames the player's own ship. The followed ship stays visible — it's what we're watching.
+      // Keep our own drone hull hidden every frame: the async holder-model load rebuilds shipMesh
+      // (visible=true) after launch, so a one-time hide isn't enough — it would reappear and overlap
+      // the followed bot. Spectate the followed pilot with the normal gameplay camera: snap our
+      // (hidden) ship to its interpolated pose; updateCamera() then frames it from behind.
+      shipMesh.visible = false
       const camTargets = [...remotes.values()].map((r) => ({ name: r.peer.name, mesh: r.mesh }))
       const followed = pickFollowTarget(camTargets, CAM_TARGET!)
       if (followed) {
@@ -4251,7 +4255,9 @@ function frame(now: number): void {
       clearPirates()
     }
 
-    if (!safe && pveHostilesAllowed && now >= nextSpawnAt) {
+    // No pirates for the CAM spectator drone — it can't fight back, so it would just be shot down and
+    // respawn, breaking the follow. Suppressing spawns keeps the cinematic view stable.
+    if (!safe && pveHostilesAllowed && !CAM && now >= nextSpawnAt) {
       spawnPirateWave(now)
       nextSpawnAt = now + 19000
     }
@@ -4411,8 +4417,9 @@ function frame(now: number): void {
   updateWarpField(warpField, warpIntensity, dt, warpInward)
   if (running) updateDustField(dustField, camera.position)
 
-  // Combat HUD — target brackets, threat arrows, lead pip (hidden while docked/in menu).
-  if (running && !docked) drawCombatHud(now)
+  // Combat HUD — target brackets, threat arrows, lead pip (hidden while docked/in menu, and in CAM
+  // spectator mode where there are no hostiles and the markers would just clutter the view).
+  if (running && !docked && !CAM) drawCombatHud(now)
   else cctx.clearRect(0, 0, combatCanvas.width, combatCanvas.height)
 
   if (running && !docked) updateLootCrates(now, dt) // spin / magnet / collect loot crates
