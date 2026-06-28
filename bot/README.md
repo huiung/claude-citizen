@@ -48,5 +48,14 @@ The bot is a second service in the same project, with its own start command and 
   when another pilot chats, throttled by `BOT_CHAT_COOLDOWN_MS`. It flies continuously regardless.
 - **Cost** (Haiku 4.5, ~$1/$5 per Mtok): only pays per chat reply (~450 in / ~50 out tokens each),
   so cost tracks how chatty the lobby is rather than wall-clock time. Idle lobby ≈ near-zero spend.
+## This Node bot vs the browser bot (`?bot=1`)
+
+There are two ways to run CLAUDE, and they share one relay identity — so **only one can be live at a time** (the relay kicks duplicate sessions):
+
+- **This Node bot (Railway)** — 24/7 lobby presence. CLAUDE is always in the game; other pilots see it fly (normal 8 Hz peer motion) and can chat with it. This is the default, always-on mode.
+- **The browser autopilot (`…/?bot=1`)** — for streaming. Runs CLAUDE inside a game tab so the motion is local 60 fps (buttery smooth for capture), with the T3 loadout. Set `localStorage['scc.botSecret']` (= the relay's `BOT_COSMETIC_SECRET`) for the T3 skin and `localStorage['scc.botApiKey']` for chat. Capture that tab in OBS.
+
+**To stream:** pause this Railway service first (so the two CLAUDE sessions don't kick each other), open `?bot=1`, stream, then resume the Railway service when done.
+
 - The streaming / VTuber layer (avatar, voice, Twitch) is a separate future layer that would consume
   this bot's chat/“thinking” output — not included here.
