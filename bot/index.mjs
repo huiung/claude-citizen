@@ -12,7 +12,10 @@ const TICK_MS = 125                                    // ~8 state updates/sec
 const BRAIN_MS = Number(process.env.BOT_BRAIN_MS ?? 15000)
 const CHAT_COOLDOWN_MS = Number(process.env.BOT_CHAT_COOLDOWN_MS ?? 6000)
 const SPEED = 1200                                     // world units/sec
-const TOKEN = process.env.BOT_TOKEN ?? `bot-claude-${Math.floor(Date.now() / 86400000)}`
+// Unique per process by default: two bot instances sharing one token would kick each other off the
+// relay in a reconnect war (the bot saves no progress, so a stable identity isn't needed). Pin via
+// BOT_TOKEN only if you deliberately want a fixed identity and run exactly one instance.
+const TOKEN = process.env.BOT_TOKEN ?? `bot-claude-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 const landmarkIds = new Set(LANDMARKS.map((l) => l.id))
 
 let pos = LANDMARKS[0].position.clone()
