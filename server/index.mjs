@@ -65,6 +65,9 @@ const SESSION_FILE = process.env.SESSION_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 
 // Token-holder status. Verified pubkeys are checked against the mint via Helius; a missing
 // key just means no flair and no holder-gated ranked PvP access.
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY
+// Local-dev only: skip the holder launch gate so you can fly without HELIUS + a funded wallet.
+// Unset in production → gate stays enforced. Set DEV_SKIP_LAUNCH_GATE=1 when running the relay locally.
+const DEV_SKIP_LAUNCH_GATE = process.env.DEV_SKIP_LAUNCH_GATE === '1'
 const HOLDER_MINT = '6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump'
 const TREASURY_WALLET = process.env.TREASURY_WALLET ?? '59vPXLdd9xvTcYAeQs3dZhbPVfFEiitP8btagF56NFj3'
 const BOT_COSMETIC_SECRET = process.env.BOT_COSMETIC_SECRET ?? '' // operator bot: cosmetic-only T3 grant
@@ -416,7 +419,7 @@ wss.on('connection', (ws) => {
       if (!client.authed) applySession(client, msg.sessionId)
       await refreshHolder(ws, client)               // resolve verified holder balance (cached) before gating
       if (!clients.has(ws)) return                  // disconnected during the async lookup
-      const gate = launchGate(client, LAUNCH_MIN_TOKEN_BALANCE)
+      const gate = DEV_SKIP_LAUNCH_GATE ? { ok: true, reason: null } : launchGate(client, LAUNCH_MIN_TOKEN_BALANCE)
       if (!gate.ok) { send(ws, { t: 'join-error', reason: gate.reason }); return } // refused → stays a viewer (Browse)
       // --- gate passed: activate (original logic) ---
       client.active = true

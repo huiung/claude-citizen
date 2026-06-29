@@ -358,8 +358,12 @@ function setLaunchStatus(text: string): void {
 
 async function beginLaunch(): Promise<void> {
   if (launchStarted) return
-  if (!walletSession) { pendingLaunch = true; startWalletConnect(); return }   // connect → onHolder auto-launches at ≥1
-  if (holderBalance < 1) { refreshLaunchGateUI(); return }                      // connected but 0 → show buy warning, don't launch
+  // Holder gate — production only. `import.meta.env.DEV` is true under `npm run dev`, false in the
+  // `vite build` output, so local dev flies freely (no wallet/HELIUS) while prod stays gated.
+  if (!import.meta.env.DEV) {
+    if (!walletSession) { pendingLaunch = true; startWalletConnect(); return }   // connect → onHolder auto-launches at ≥1
+    if (holderBalance < 1) { refreshLaunchGateUI(); return }                      // connected but 0 → show buy warning, don't launch
+  }
   launchStarted = true
   landingMusic.start()
   const callsign = nicknameEl.value.trim() || 'PILOT'
