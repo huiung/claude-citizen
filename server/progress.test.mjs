@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CAREER_SCRUB_CEILING, guardEconomyGrowth, MAX_EARN_RATE, MAX_EARN_WINDOW_SEC,
+  CAREER_SCRUB_CEILING, guardEconomyGrowth, guardPilotGrowth, MAX_EARN_RATE, MAX_EARN_WINDOW_SEC,
+  MAX_PILOT_LEVEL, MAX_XP_RATE, MAX_XP_WINDOW_SEC,
+  cumulativeXp, levelForTotal,
   sanitizeCrafting, sanitizeProgress, scrubCareerOutliers,
 } from './progress.mjs'
-import { MAX_PILOT_LEVEL, cumulativeXp, levelForTotal } from './progress.mjs'
 
 describe('server XP curve (mirror of src/sim/pilotLevel.ts)', () => {
   it('matches the client cumulative-XP totals', () => {
@@ -234,5 +235,43 @@ describe('sanitizeCrafting equipped', () => {
     expect(sanitizeCrafting({ cores: 0, items: [], pityCount: -4 }).pityCount).toBe(0)   // clamp low
     expect(sanitizeCrafting({ cores: 0, items: [], pityCount: 999 }).pityCount).toBe(20) // clamp to guarantee
     expect(sanitizeCrafting({ cores: 0, items: [], pityCount: 7.9 }).pityCount).toBe(7)  // floored
+  })
+})
+
+const NOW = 1_000_000_000_000 // fixed server clock for deterministic tests
+
+describe('guardPilotGrowth', () => {
+  it('passes a null pilot through untouched', () => {
+    const r = guardPilotGrowth(undefined, null, NOW)
+    expect(r.pilot).toBeUndefined()
+    expect(r.pilotAt).toBe(NOW)
+  })
+
+  it('first save grants one window of budget and caps an instant level-20 claim', () => {
+    // No prev / no _pilotAt → budget = MAX_XP_RATE * MAX_XP_WINDOW_SEC = 6000 XP.
+    // 6000 XP cannot reach level 20 (cumulative to 20 is tens of thousands), so it is bounded down.
+    const r = guardPilotGrowth({ level: 20, xp: 0 }, null, NOW)
+    expect(r.pilot.level).toBeLessThan(20)
+    expect(r.pilotAt).toBe(NOW)
+  })
+
+  it('accepts a legitimate small claim within budget', () => {
+    const r = guardPilotGrowth({ level: 5, xp: 0 }, null, NOW) // 1200 total, under 6000 budget
+    expect(r.pilot).toEqual({ level: 5, xp: 0 })
+  })
+
+  it('bounds the per-save rise against elapsed time', () => {
+    // prev level 5 (1200 total), stamped 10s ago → budget = MAX_XP_RATE*10 = 1000 XP.
+    // acceptedTotal = 1200 + 1000 = 2200; cumulative to level 6 is 2000, to level 7 is 3080,
+    // so 2200 → { level: 6, xp: 200 }.
+    const prev = { pilot: { level: 5, xp: 0 }, _pilotAt: NOW - 10_000 }
+    const r = guardPilotGrowth({ level: 20, xp: 0 }, prev, NOW)
+    expect(r.pilot).toEqual({ level: 6, xp: 200 })
+  })
+
+  it('never lets total XP fall below the stored value (monotonic)', () => {
+    const prev = { pilot: { level: 8, xp: 100 }, _pilotAt: NOW - 1000 }
+    const r = guardPilotGrowth({ level: 2, xp: 0 }, prev, NOW) // client claims LOWER
+    expect(r.pilot).toEqual({ level: 8, xp: 100 }) // floored to the stored total
   })
 })

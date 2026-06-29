@@ -199,6 +199,28 @@ export function guardEconomyGrowth(clean, prev, nowMs) {
   return { ...clean, earned, credits, _careerAt: nowMs }
 }
 
+export const MAX_XP_RATE = 100        // XP/sec accepted increase (starting value, tuned live)
+export const MAX_XP_WINDOW_SEC = 60   // elapsed cap → at most +6000 XP accepted per save
+
+/**
+ * Bound the per-save rise of cumulative pilot XP against a server-measured time budget, mirroring
+ * guardEconomyGrowth. `prev` is the previously stored row (or null on first save); `nowMs` is the
+ * server clock. Missing/legacy `_pilotAt` grants one full window of budget. Returns the bounded
+ * { level, xp } pilot and the refreshed `pilotAt`. A null/absent pilot is returned untouched. Pure.
+ */
+export function guardPilotGrowth(pilot, prev, nowMs) {
+  if (!pilot) return { pilot, pilotAt: Number(prev?._pilotAt) || nowMs }
+  const prevPilot = prev?.pilot
+  const prevTotal = prevPilot ? cumulativeXp(prevPilot.level, prevPilot.xp) : 0
+  const prevAt = Number(prev?._pilotAt)
+  const lastAt = Number.isFinite(prevAt) ? prevAt : nowMs - MAX_XP_WINDOW_SEC * 1000
+  const elapsedSec = Math.min(MAX_XP_WINDOW_SEC, Math.max(0, (nowMs - lastAt) / 1000))
+  const budget = MAX_XP_RATE * elapsedSec
+  const claimedTotal = cumulativeXp(pilot.level, pilot.xp)
+  const acceptedTotal = Math.min(Math.max(claimedTotal, prevTotal), prevTotal + budget)
+  return { pilot: levelForTotal(acceptedTotal), pilotAt: nowMs }
+}
+
 /**
  * One-time boot hygiene: clamp pre-guard rows (no `_careerAt`) whose earned/credits exceed `ceiling`
  * down to it and stamp them, so an exploit that landed before the guard existed drops off the
