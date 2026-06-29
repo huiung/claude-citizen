@@ -22,6 +22,7 @@ import {
   type CraftingCosmeticId,
   type CraftedCosmeticItem,
 } from '../sim/crafting'
+import { type BetType, clampBet, MAX_BET, MIN_BET, payoutMultiplier, spinRoulette } from '../sim/roulette'
 import { groupCraftedItems } from './inventory'
 import type { GameAudio } from '../audio/sound'
 import { HOLDER_SHIP_VISUALS, resolveHolderShipVisual, type HolderShipVisualId } from './holderShipVisual'
@@ -30,7 +31,7 @@ import { sortFilterListings, type CurrencyFilter, type MarketSort } from './mark
 import { cosmeticSlotUi } from './cosmeticSlotUi'
 
 const COMMODITY_ORDER: CommodityId[] = ['ORE', 'ALLOY']
-type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard' | 'hangar' | 'crafting' | 'market'
+type Tab = 'trade' | 'upgrades' | 'contracts' | 'shipyard' | 'hangar' | 'crafting' | 'market' | 'casino'
 
 function isCraftingCosmeticId(id: string): id is CraftingCosmeticId {
   return CRAFTING_RECIPES.some((recipe) => recipe.id === id)
@@ -45,6 +46,7 @@ export const STATION_TABS: readonly { id: Tab; label: string }[] = [
   { id: 'trade', label: 'TRADE' },
   { id: 'crafting', label: 'CRAFTING' },
   { id: 'market', label: 'MARKET' },
+  { id: 'casino', label: 'CASINO' },
   { id: 'upgrades', label: 'UPGRADES' },
   { id: 'shipyard', label: 'SHIPYARD' },
   { id: 'hangar', label: 'HANGAR' },
@@ -115,6 +117,10 @@ export class StationMenu {
   private flash: ReturnType<typeof setTimeout> | null = null
   private forging: { item: CraftedCosmeticItem; stage: number } | null = null
   private forgeTimers: ReturnType<typeof setTimeout>[] = []
+  private casinoBet: BetType = 'red'
+  private casinoStake = MIN_BET
+  private casinoSpinning = false
+  private casinoLast: { text: string; win: boolean } | null = null
 
   constructor(opts: { onChange: () => void; onUndock: () => void; onForgeChange?: (forgingItemId: string | null) => void; onContractDelivered?: () => void }) {
     this.onChange = opts.onChange
@@ -203,6 +209,7 @@ export class StationMenu {
       case 'trade': return 'Buy low here, sell high at the other outpost. Mine ORE from asteroids for free.'
       case 'crafting': return 'Spend credits, refine Craft Cores, then craft cosmetic kits with rarity rolls.'
       case 'market': return 'Buy and sell crafted cosmetics with credits or the $CITIZEN token. Token sales settle on-chain.'
+      case 'casino': return 'Wager credits on roulette. Even-money bets pay 2×; green 0 takes the house edge. Credits only — no rank or career impact.'
       case 'upgrades': return 'Spend credits to fly faster and haul more.'
       case 'shipyard': return 'Buy a hull and switch to it. Each trades cargo, speed, and toughness differently.'
       case 'hangar': return 'Holder ship visuals are cosmetic only: no speed, combat, or economy advantage.'
@@ -297,6 +304,7 @@ export class StationMenu {
     if (this.tab === 'trade') this.renderTrade()
     else if (this.tab === 'crafting') this.renderCrafting()
     else if (this.tab === 'market') this.renderMarket()
+    else if (this.tab === 'casino') this.renderCasino()
     else if (this.tab === 'upgrades') this.renderUpgrades()
     else if (this.tab === 'shipyard') this.renderShipyard()
     else if (this.tab === 'hangar') this.renderHangar()
@@ -528,6 +536,93 @@ export class StationMenu {
       }
       this.bodyEl.appendChild(row)
     }
+  }
+
+  private renderCasino(): void {
+    // Re-clamp the standing stake against the live balance so a prior loss can never leave a
+    // stake larger than we can afford. clampBet returns 0 when the balance is below MIN_BET.
+    this.casinoStake = clampBet(this.casinoStake, this.ctx.econ.credits)
+    const credits = Math.floor(this.ctx.econ.credits)
+
+    const note = document.createElement('div')
+    note.className = 'station-empty'
+    note.textContent = 'Wager credits on European roulette. Even-money bets pay 2×; the green 0 loses. Credits only — never affects rank or career.'
+    this.bodyEl.appendChild(note)
+
+    const balanceRow = this.rowEl('Balance', 'Spendable credits at the wheel', `Credits: ${credits}`)
+    this.bodyEl.appendChild(balanceRow)
+
+    // Stake control: preset chips + the live stake readout.
+    const stakeRow = this.rowEl('Stake', `Min ${MIN_BET} · Max ${MAX_BET}`, `${this.casinoStake} cr`)
+    const stakeActions = stakeRow.querySelector('.s-actions')!
+    const presets: [string, number][] = [
+      ['-100', this.casinoStake - 100], ['+100', this.casinoStake + 100],
+      ['1k', 1000], ['5k', 5000], ['MAX', MAX_BET],
+    ]
+    for (const [label, value] of presets) {
+      stakeActions.appendChild(this.btn(label, 'buy', this.casinoSpinning || credits < MIN_BET, () => {
+        this.casinoStake = clampBet(value, this.ctx.econ.credits)
+        this.render()
+      }))
+    }
+    this.bodyEl.appendChild(stakeRow)
+
+    // Bet-type selector. Highlight the active bet like the tab buttons.
+    const betRow = this.rowEl('Bet', 'Pick an even-money outcome', '')
+    const betActions = betRow.querySelector('.s-actions')!
+    const bets: [BetType, string][] = [
+      ['red', 'RED'], ['black', 'BLACK'], ['even', 'EVEN'],
+      ['odd', 'ODD'], ['low', 'LOW 1-18'], ['high', 'HIGH 19-36'],
+    ]
+    for (const [bet, label] of bets) {
+      const b = this.btn(label, 'buy', this.casinoSpinning, () => {
+        this.casinoBet = bet
+        this.render()
+      })
+      b.classList.add('casino-bet', `casino-bet-${bet}`)
+      if (this.casinoBet === bet) b.classList.add('active')
+      betActions.appendChild(b)
+    }
+    this.bodyEl.appendChild(betRow)
+
+    // Spin + result line.
+    const spinRow = this.rowEl('Roulette', 'Spend the stake, spin the wheel', '')
+    const resultEl = spinRow.querySelector('.s-held')!
+    if (this.casinoSpinning) {
+      resultEl.textContent = 'spinning…'
+      resultEl.className = 's-held casino-result casino-spinning'
+    } else if (this.casinoLast) {
+      resultEl.textContent = this.casinoLast.text
+      resultEl.className = `s-held casino-result ${this.casinoLast.win ? 'casino-win' : 'casino-loss'}`
+    }
+    spinRow.querySelector('.s-actions')!.appendChild(
+      this.btn('Spin', 'buy', this.casinoSpinning || credits < MIN_BET, () => this.spin()),
+    )
+    this.bodyEl.appendChild(spinRow)
+  }
+
+  private spin(): void {
+    if (this.casinoSpinning) return // ignore re-entry while a spin is revealing
+    const stake = clampBet(this.casinoStake, this.ctx.econ.credits)
+    if (stake <= 0) {
+      this.casinoLast = { text: 'Not enough credits', win: false }
+      this.ctx.audio.blip('error')
+      this.render()
+      return
+    }
+    this.ctx.econ.credits -= stake                       // spend the clamped stake first
+    const result = spinRoulette()                         // client RNG, like the gacha forge
+    const mult = payoutMultiplier(this.casinoBet, result)
+    if (mult > 0) this.ctx.econ.credits += stake * mult   // DIRECT add — NOT gainCredits (no earned/rank)
+    this.casinoLast = {
+      win: mult > 0,
+      text: `${result.number} ${result.color.toUpperCase()} — ${mult > 0 ? `WIN +${stake}` : `LOSE -${stake}`}`,
+    }
+    this.ctx.audio.blip(mult > 0 ? 'trade' : 'error')
+    this.onChange()                                       // commit spend + payout before the reveal (mirror craft())
+    this.casinoSpinning = true
+    this.render()
+    setTimeout(() => { this.casinoSpinning = false; this.render() }, 1800) // brief reveal, like startForge
   }
 
   private renderUpgrades(): void {
