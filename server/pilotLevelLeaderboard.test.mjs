@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { pilotLevelLeaderboardPage, mergePilotStats } from './pilotLevelLeaderboard.mjs'
+import { pilotLevelLeaderboardPage, mergePilotStats, mergeCampaignStats } from './pilotLevelLeaderboard.mjs'
+import { sanitizeProgress } from './progress.mjs'
 
 const WALLET_A = '7GgB2mDWpD6nA3xJ9sS6e5zqZTa3YL6hFLaeL5Qz6QnU'
 const WALLET_B = '9AbC123456789ABCDEFGHJKLMNPQRSTUVWXYZ2XyZ'
@@ -100,5 +101,27 @@ describe('pilot level leaderboard', () => {
       name: 'ACE',
       pilot: { level: 0, xp: 0 },
     })
+  })
+})
+
+describe('mergeCampaignStats', () => {
+  it('reattaches client-reported campaign that sanitizeProgress drops', () => {
+    const raw = { credits: 0, earned: 0, campaign: { step: 2, progress: 40, sectorUnlocked: 2 } }
+    const clean = sanitizeProgress(raw)
+    expect(clean.campaign).toBeUndefined()
+    const merged = mergeCampaignStats(clean, raw)
+    expect(merged.campaign).toEqual({ step: 2, progress: 40, sectorUnlocked: 2 })
+  })
+
+  it('clamps bad campaign data (lower bounds)', () => {
+    const merged = mergeCampaignStats({}, { campaign: { step: -3, progress: -9, sectorUnlocked: 0 } })
+    expect(merged.campaign.step).toBe(0)
+    expect(merged.campaign.progress).toBe(0)
+    expect(merged.campaign.sectorUnlocked).toBe(1)
+  })
+
+  it('omits campaign when the source has none', () => {
+    const merged = mergeCampaignStats({ credits: 5 }, { credits: 5 })
+    expect(merged.campaign).toBeUndefined()
   })
 })

@@ -31,6 +31,25 @@ export function mergePilotStats(progress, source) {
   return { ...progress, pilot: cleanPilotStats(source.pilot) }
 }
 
+// Reattach the client-reported campaign that sanitizeProgress strips. Like pilot, campaign is
+// client-reported (not server-owned), so it is read from the raw save `source`, not from `prev`.
+// Lower-bound clamps only (step >= 0, progress >= 0, sectorUnlocked >= 1); the upper bound on `step`
+// is enforced client-side by loadCampaign (src/sim/campaign.ts) — the server can't import that TS
+// module, so it avoids duplicating the SECTOR1_CAMPAIGN step-count constant. Returns a fresh object
+// (mirrors mergePilotStats). NOTE: client-reported, not yet server-validated — a follow-up may guard it.
+export function mergeCampaignStats(progress, source) {
+  const c = source?.campaign
+  if (!c || typeof c.step !== 'number') return progress
+  return {
+    ...progress,
+    campaign: {
+      step: Math.max(0, Math.floor(c.step)),
+      progress: Math.max(0, Math.floor(c.progress ?? 0)),
+      sectorUnlocked: Math.max(1, Math.floor(c.sectorUnlocked ?? 1)),
+    },
+  }
+}
+
 function pilotScore(entry) {
   return cleanPilotStats(entry?.pilot)
 }

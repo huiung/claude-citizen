@@ -13,7 +13,7 @@ import { leaderboardPage, parseLeaderboardParams } from './leaderboard.mjs'
 import { createPvpKillAuditLog, pvpLeaderboardPage, mergePvpStats, recordRankedPvpKill } from './pvpLeaderboard.mjs'
 import { raceLeaderboardPage, mergeRaceStats, recordRankedRaceFinish } from './raceLeaderboard.mjs'
 import { blackHoleLeaderboardPage, mergeBlackHoleStats, recordBlackHoleRun } from './blackHoleLeaderboard.mjs'
-import { pilotLevelLeaderboardPage, mergePilotStats } from './pilotLevelLeaderboard.mjs'
+import { pilotLevelLeaderboardPage, mergePilotStats, mergeCampaignStats } from './pilotLevelLeaderboard.mjs'
 import { applyPvpHit, applyPvpRespawn, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
 import { resolveCallsign, identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
 import { guardEconomyGrowth, sanitizeProgress, scrubCareerOutliers } from './progress.mjs'
@@ -587,9 +587,10 @@ wss.on('connection', (ws) => {
       if (clean) {
         clean.name = client.name
         const prev = store[key]
-        // pilot level/XP is client-reported on the save itself (sanitizeProgress drops it), so
-        // merge it from the raw msg.progress — not from prev like the server-owned stat blocks.
-        const merged = mergePilotStats(mergeBlackHoleStats(mergeRaceStats(mergePvpStats(clean, prev), prev), prev), msg.progress)
+        // pilot level/XP and campaign are client-reported on the save itself (sanitizeProgress
+        // drops them), so merge them from the raw msg.progress — not from prev like the
+        // server-owned stat blocks.
+        const merged = mergeCampaignStats(mergePilotStats(mergeBlackHoleStats(mergeRaceStats(mergePvpStats(clean, prev), prev), prev), msg.progress), msg.progress)
         // Server owns earned/credits growth — reject implausible per-save jumps (Career + wallet anti-cheat).
         store[key] = guardEconomyGrowth(merged, prev, Date.now())
         flush()
