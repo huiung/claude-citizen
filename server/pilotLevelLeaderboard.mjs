@@ -1,10 +1,10 @@
 import { isOperatorBotEntry, LEADERBOARD_MAX_RANK, LEADERBOARD_PAGE_SIZE } from './leaderboard.mjs'
 
-// NOTE: pilot level/XP is CLIENT-REPORTED via the ordinary 'save' sync and is NOT yet
-// server-validated (unlike Career's `earned`, which `guardEconomyGrowth` bounds). A
-// fabricated save could inflate level/xp here. A follow-up should add a server-authoritative
-// XP guard (e.g. bound per-save XP gain against server-recorded kills/quests). Scope boundary
-// for this slice: read what the client reports, mirror the existing leaderboard pattern.
+// NOTE: pilot level/XP is CLIENT-REPORTED via the ordinary 'save' sync, but the save handler now
+// bounds its per-save growth with `guardPilotGrowth` (server/progress.mjs) — a rate cap mirroring
+// Career's `guardEconomyGrowth` — so a fabricated save can't instantly inflate level/xp here. This
+// is a rate cap, not full authority: the server doesn't observe individual PvE kills, so sustained
+// cheating is merely slowed and made conspicuous rather than impossible.
 
 function isWalletKey(key) {
   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(key ?? ''))
