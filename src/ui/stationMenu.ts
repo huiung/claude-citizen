@@ -121,6 +121,7 @@ export class StationMenu {
   private casinoStake = MIN_BET
   private casinoSpinning = false
   private casinoLast: { text: string; win: boolean } | null = null
+  private casinoTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(opts: { onChange: () => void; onUndock: () => void; onForgeChange?: (forgingItemId: string | null) => void; onContractDelivered?: () => void }) {
     this.onChange = opts.onChange
@@ -183,6 +184,10 @@ export class StationMenu {
       this.forging = null
       this.onForgeChange?.(null) // un-hide the (already committed) item in other views
     }
+    // Drop any pending casino reveal too, so its stale render()/blip can't fire on a hidden
+    // menu or against a freshly re-docked ctx. Spend+payout are already committed via onChange.
+    if (this.casinoTimer) { clearTimeout(this.casinoTimer); this.casinoTimer = null }
+    this.casinoSpinning = false
   }
 
   get isOpen(): boolean {
@@ -613,16 +618,23 @@ export class StationMenu {
     this.ctx.econ.credits -= stake                       // spend the clamped stake first
     const result = spinRoulette()                         // client RNG, like the gacha forge
     const mult = payoutMultiplier(this.casinoBet, result)
-    if (mult > 0) this.ctx.econ.credits += stake * mult   // DIRECT add — NOT gainCredits (no earned/rank)
+    const win = mult > 0
+    if (win) this.ctx.econ.credits += stake * mult        // DIRECT add — NOT gainCredits (no earned/rank)
     this.casinoLast = {
-      win: mult > 0,
-      text: `${result.number} ${result.color.toUpperCase()} — ${mult > 0 ? `WIN +${stake}` : `LOSE -${stake}`}`,
+      win,
+      text: `${result.number} ${result.color.toUpperCase()} — ${win ? `WIN +${stake}` : `LOSE -${stake}`}`,
     }
-    this.ctx.audio.blip(mult > 0 ? 'trade' : 'error')
     this.onChange()                                       // commit spend + payout before the reveal (mirror craft())
     this.casinoSpinning = true
     this.render()
-    setTimeout(() => { this.casinoSpinning = false; this.render() }, 1800) // brief reveal, like startForge
+    // Defer the win/loss sfx to the reveal so audio + the revealed result land together; tracked
+    // like forgeTimers so cancelForge() (open/close) can drop it before it fires on a stale ctx.
+    this.casinoTimer = setTimeout(() => {
+      this.casinoSpinning = false
+      this.casinoTimer = null
+      this.ctx.audio.blip(win ? 'trade' : 'error')
+      this.render()
+    }, 1800)
   }
 
   private renderUpgrades(): void {
