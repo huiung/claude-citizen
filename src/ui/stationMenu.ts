@@ -22,7 +22,7 @@ import {
   type CraftingCosmeticId,
   type CraftedCosmeticItem,
 } from '../sim/crafting'
-import { type BetType, clampBet, colorOf, MAX_BET, MIN_BET, payoutMultiplier, spinRoulette, WHEEL_SIZE } from '../sim/roulette'
+import { type BetType, clampBet, colorOf, MAX_BET, MIN_BET, payoutMultiplier, type SpinResult, spinRoulette, WHEEL_SIZE } from '../sim/roulette'
 import { groupCraftedItems } from './inventory'
 import type { GameAudio } from '../audio/sound'
 import { HOLDER_SHIP_VISUALS, resolveHolderShipVisual, type HolderShipVisualId } from './holderShipVisual'
@@ -122,6 +122,8 @@ export class StationMenu {
   private casinoSpinning = false
   private casinoLast: { text: string; win: boolean } | null = null
   private casinoTimer: ReturnType<typeof setTimeout> | null = null
+  // Decided at spin time, settled (credits + persist + HUD) at the reveal (or on cancel mid-spin).
+  private casinoPending: { stake: number; mult: number; result: SpinResult } | null = null
   // The number the reel must land on this spin (decided up front by spinRoulette in spin()).
   // Drives the deterministic reel render; null when idle.
   private casinoReelTarget: number | null = null
@@ -187,6 +189,9 @@ export class StationMenu {
       this.forging = null
       this.onForgeChange?.(null) // un-hide the (already committed) item in other views
     }
+    // Settle any spun-but-unrevealed bet WITHOUT the reveal so it commits exactly once on undock
+    // mid-spin (settleSpin nulls casinoPending, so the reveal timer becomes a no-op afterward).
+    if (this.casinoPending) this.settleSpin(false)
     // Drop any pending casino reveal too, so its stale render()/blip can't fire on a hidden
     // menu or against a freshly re-docked ctx. Spend+payout are already committed via onChange.
     if (this.casinoTimer) { clearTimeout(this.casinoTimer); this.casinoTimer = null }
@@ -714,27 +719,41 @@ export class StationMenu {
       this.render()
       return
     }
-    this.ctx.econ.credits -= stake                       // spend the clamped stake first
     const result = spinRoulette()                         // client RNG, like the gacha forge
     const mult = payoutMultiplier(this.casinoBet, result)
-    const win = mult > 0
-    if (win) this.ctx.econ.credits += stake * mult        // DIRECT add — NOT gainCredits (no earned/rank)
-    this.casinoLast = {
-      win,
-      text: `${result.number} ${result.color.toUpperCase()} — ${win ? `WIN +${stake}` : `LOSE -${stake}`}`,
-    }
+    // Outcome is DECIDED now (so the reel lands deterministically), but the economy effects
+    // (spend + payout + persist + HUD) are deferred to settleSpin() at the reveal — do NOT touch
+    // econ.credits or call onChange() here, or the HUD balance would jump before the reel lands.
+    this.casinoPending = { stake, mult, result }
     this.casinoReelTarget = result.number                 // reel lands deterministically on this number
-    this.onChange()                                       // commit spend + payout before the reveal (mirror craft())
     this.casinoSpinning = true
     this.render()                                         // renders the reel + kicks off the landing transition
-    // Defer the win/loss sfx to the reveal so audio + the revealed result land together; tracked
-    // like forgeTimers so cancelForge() (open/close) can drop it before it fires on a stale ctx.
-    this.casinoTimer = setTimeout(() => {
-      this.casinoSpinning = false
-      this.casinoTimer = null
+    // Settle (credits + persist + HUD + sfx) when the reel lands; tracked like forgeTimers so
+    // cancelForge() (open/close) can drop it before it fires on a stale ctx.
+    this.casinoTimer = setTimeout(() => this.settleSpin(true), StationMenu.CASINO_SPIN_MS)
+  }
+
+  // Apply the pending bet's economy effects (spend + payout + persist + HUD). Runs at the reel
+  // reveal, or WITHOUT a reveal from cancelForge() when undocking mid-spin. Nulls casinoPending
+  // first, so reveal-after-cancel (or vice versa) is a no-op — the bet settles exactly once.
+  private settleSpin(reveal: boolean): void {
+    const p = this.casinoPending
+    if (!p) return
+    this.casinoPending = null
+    this.casinoTimer = null
+    this.ctx.econ.credits -= p.stake                       // spend the clamped stake
+    const win = p.mult > 0
+    if (win) this.ctx.econ.credits += p.stake * p.mult     // DIRECT add — NOT gainCredits (no earned/rank)
+    this.casinoLast = {
+      win,
+      text: `${p.result.number} ${p.result.color.toUpperCase()} — ${win ? `WIN +${p.stake}` : `LOSE -${p.stake}`}`,
+    }
+    this.casinoSpinning = false
+    this.onChange()                                        // commit spend + payout + refresh HUD, now at reveal
+    if (reveal) {
       this.ctx.audio.blip(win ? 'trade' : 'error')
       this.render()
-    }, StationMenu.CASINO_SPIN_MS)
+    }
   }
 
   private renderUpgrades(): void {
