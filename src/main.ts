@@ -99,7 +99,8 @@ import {
 import { BLACK_HOLE_APPROACH_DESTINATION, BLACK_HOLE_CENTER, distanceToCenter, gravityAccel, HORIZON_RADIUS, INFLUENCE_RADIUS, isPastHorizon, tidalDamageRate, TIDAL_RADIUS, withinInfluence } from './sim/blackHole'
 import { createBlackHoleRun, enterRun, sampleRun, exitRunAlive, dieRun } from './sim/blackHoleRun'
 import { type DailyState, type Objective, type ObjectiveKind, OBJECTIVE_REWARD, SET_BONUS, STREAK_REWARD_CAP, dailyObjectives, dayKey, emptyDaily, rollStreak } from './sim/daily'
-import { GameAudio } from './audio/sound'
+import { nextJourneyGoal } from './sim/journey'
+import { GameAudio, type RegionalAmbienceKind } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { InventoryPanel } from './ui/inventory'
 import { SolarSystemMap, type SolarMapDestinationResult, type SolarMapNavigationTarget } from './ui/solarSystemMap'
@@ -141,9 +142,12 @@ import {
   type CameraMode,
 } from './ui/cameraView'
 import {
+  DEFAULT_AMBIENT_VOLUME,
   DEFAULT_MOUSE_SENSITIVITY,
   applyMouseSensitivity,
+  clampAmbientVolume,
   clampMouseSensitivity,
+  formatAmbientVolume,
   formatMouseSensitivity,
   loadGameSettings,
   saveGameSettings,
@@ -248,6 +252,8 @@ let flightPlanObjectiveUntil = 0
 // even without a relay connection.
 let minedEver = localStorage.getItem('scc.ob.mined') === '1'
 let dockedEver = localStorage.getItem('scc.ob.docked') === '1'
+let raceFinishedEver = localStorage.getItem('scc.journey.race') === '1'
+let blackHoleRecordedEver = localStorage.getItem('scc.journey.blackhole') === '1'
 function markOnboard(key: string, set: (v: true) => void): void {
   set(true)
   try { localStorage.setItem(key, '1') } catch { /* storage blocked */ }
@@ -256,19 +262,24 @@ function finishOnboarding(): void {
   onboardingActive = false
   try { localStorage.setItem('scc.onboarded', '1') } catch { /* storage blocked */ }
 }
-/** Action-gated steps — just *show* each system, no forced grind:
- *  mine once → open the station (Space) → kill a pirate → done. */
+/** Career journey: the center HUD always shows the next useful thing to try.
+ *  Early steps teach the core loop; later steps point pilots toward daily, craft, race, and void goals. */
 function currentObjective(): string | null {
   if (flightPlanObjective && performance.now() < flightPlanObjectiveUntil) return flightPlanObjective
-  if (onboardingActive) {
-    if (!minedEver) return 'Mine ORE — fly to a cyan-veined asteroid and hold Left-click'
-    if (!dockedEver) return 'Dock at an outpost (Space) — trade, upgrade & buy ships here'
-    return 'Hunt a pirate — hold Right-click to fire (watch your hull)' // killing one calls finishOnboarding()
-  }
-  // Post-onboarding objective chain — always surfaces the next thing to chase.
-  const goal = GOALS.find((g) => !g.done())
-  if (!goal) return null // everything done — veteran pilot
-  return goal.track ? `${goal.label}  ·  ${goal.track()}` : goal.label
+  const goal = nextJourneyGoal({
+    minedEver,
+    dockedEver,
+    pirateDestroyed: !onboardingActive,
+    upgradeCount: upgradeTotal(),
+    earnedCredits: econ.earned,
+    ownedShips: ownedShips.size,
+    dailyClaimed: dailyState.claimed.length,
+    craftedItems: crafting.items.length,
+    raceFinished: raceFinishedEver,
+    blackHoleRecorded: blackHoleRecordedEver,
+  })
+  if (!goal) return null
+  return goal.progress ? `${goal.label} - ${goal.progress}` : goal.label
 }
 const safeEl = document.getElementById('safe-zone')!
 const pvpEl = document.getElementById('pvp-zone')!
@@ -412,6 +423,8 @@ const settingsCloseEl = document.getElementById('settings-close') as HTMLButtonE
 const settingsResetEl = document.getElementById('settings-reset') as HTMLButtonElement
 const mouseSensitivityEl = document.getElementById('mouse-sensitivity') as HTMLInputElement
 const mouseSensitivityValueEl = document.getElementById('mouse-sensitivity-value')!
+const ambientVolumeEl = document.getElementById('ambient-volume') as HTMLInputElement
+const ambientVolumeValueEl = document.getElementById('ambient-volume-value')!
 let statsTimer: ReturnType<typeof setInterval> | undefined
 let landingLeaderboardOffset = 0
 let hudLeaderboardOffset = 0
@@ -2036,20 +2049,38 @@ let dailyObjs: Objective[] = []
 const dailyProgress = new Map<string, number>() // ephemeral per-session progress, keyed by objective id
 let lastEarnedForDaily = 0                       // econ.earned watermark for the earn_credits objective
 const upgrades = loadUpgrades()
-// Objective chain (post-onboarding): conditions read live progress — no extra tracking or saving.
+// Career journey reads live progress only; persistence stays in existing economy, daily, crafting, and local flags.
 const upgradeTotal = (): number => upgrades.tiers.cargo + upgrades.tiers.speed + upgrades.tiers.boost + upgrades.tiers.mining
-interface Goal { label: string; done: () => boolean; track?: () => string }
-const earnedTrack = (target: number) => () => `${Math.floor(econ.earned).toLocaleString()} / ${target.toLocaleString()} cr`
-const GOALS: Goal[] = [
-  { label: 'Buy your first upgrade at a station (cargo / speed / boost / mining)', done: () => upgradeTotal() > 0 },
-  { label: 'Reach Ensign rank — 1,000 cr earned', done: () => econ.earned >= 1000, track: earnedTrack(1000) },
-  { label: 'Buy a second ship at a station', done: () => ownedShips.size >= 2, track: () => `${ownedShips.size} / 2 ships` },
-  { label: 'Reach Pilot rank — 5,000 cr earned', done: () => econ.earned >= 5000, track: earnedTrack(5000) },
-  // Beyond Pilot, the rank bar + leaderboard carry the long game — no need to duplicate it here.
-]
 const market = createMarket()
 const contracts = generateContracts(20260614, OUTPOSTS)
 const audio = new GameAudio()
+
+interface RegionalAmbienceSelection {
+  kind: RegionalAmbienceKind
+  intensity: number
+}
+
+function proximityIntensity(distance: number, radius: number, floor = 0): number {
+  return Math.max(floor, Math.min(1, 1 - distance / radius))
+}
+
+function currentRegionalAmbience(): RegionalAmbienceSelection {
+  if (bhPressure > 0.02) return { kind: 'blackHole', intensity: Math.max(0.25, bhPressure) }
+  const raceDist = ship.position.distanceTo(timeTrialOrigin)
+  if (hubTimeTrial.active || raceDist < 4200) return { kind: 'race', intensity: hubTimeTrial.active ? 1 : proximityIntensity(raceDist, 4200, 0.22) }
+  const pvpZone = pvpZoneAt(ship.position)
+  if (pvpZone) return { kind: 'pvp', intensity: proximityIntensity(ship.position.distanceTo(pvpZone.center), pvpZone.radius, 0.45) }
+  const hubDist = ship.position.distanceTo(CITIZEN_SEASON_HUB_DESTINATION.position)
+  if (hubDist < 7200) return { kind: 'seasonHub', intensity: proximityIntensity(hubDist, 7200, 0.2) }
+  if (miningActive) return { kind: 'mining', intensity: 0.55 }
+  const spawnDist = Math.min(ship.position.distanceTo(REFINERY_POS), ship.position.distanceTo(COLONY_POS))
+  if (spawnDist < 5200) return { kind: 'spawn', intensity: proximityIntensity(spawnDist, 5200, 0.18) }
+  return { kind: 'deepSpace', intensity: 0.35 }
+}
+
+function applyAmbientVolume(selection: RegionalAmbienceSelection): RegionalAmbienceSelection {
+  return { ...selection, intensity: selection.intensity * gameSettings.ambientVolume }
+}
 
 const dockTargets: DockTarget[] = [
   { id: 'refinery', position: REFINERY_POS },
@@ -2189,10 +2220,10 @@ function updateWalletHUD(): void {
   shipVisualEl.parentElement!.hidden = identity.visual === null
   // Rank: name + progress to next, with a one-shot promotion banner when it climbs.
   const rank = rankForCredits(econ.earned)
-  rankNameEl.textContent = rank.bonus > 0 ? `${rank.name} +${Math.round(rank.bonus * 100)}%` : rank.name
+  rankNameEl.textContent = rank.bonus > 0 ? `Career ${rank.name} +${Math.round(rank.bonus * 100)}%` : `Career ${rank.name}`
   rankBarEl.style.width = `${Math.round(rankProgress(econ.earned) * 100)}%`
   const nxt = nextRank(rank)
-  rankNextEl.textContent = nxt ? `→ ${nxt.name} (${nxt.min.toLocaleString()})` : 'MAX'
+  rankNextEl.textContent = nxt ? `NEXT ${nxt.name} (${nxt.min.toLocaleString()})` : 'MAX'
   if (lastRankIndex >= 0 && rank.index > lastRankIndex) showPromotion(rank.name)
   lastRankIndex = rank.index
 }
@@ -2739,10 +2770,24 @@ function undock(): void {
 function renderSettingsPanel(): void {
   mouseSensitivityEl.value = String(gameSettings.mouseSensitivity)
   mouseSensitivityValueEl.textContent = formatMouseSensitivity(gameSettings.mouseSensitivity)
+  ambientVolumeEl.value = String(gameSettings.ambientVolume)
+  ambientVolumeValueEl.textContent = formatAmbientVolume(gameSettings.ambientVolume)
 }
 
 function setMouseSensitivity(value: number): void {
   gameSettings = { ...gameSettings, mouseSensitivity: clampMouseSensitivity(value) }
+  saveGameSettings(localStorage, gameSettings)
+  renderSettingsPanel()
+}
+
+function setAmbientVolume(value: number): void {
+  gameSettings = { ...gameSettings, ambientVolume: clampAmbientVolume(value) }
+  saveGameSettings(localStorage, gameSettings)
+  renderSettingsPanel()
+}
+
+function resetGameSettings(): void {
+  gameSettings = { mouseSensitivity: DEFAULT_MOUSE_SENSITIVITY, ambientVolume: DEFAULT_AMBIENT_VOLUME }
   saveGameSettings(localStorage, gameSettings)
   renderSettingsPanel()
 }
@@ -2806,8 +2851,9 @@ function closeInventoryPanel(): void {
 }
 
 settingsCloseEl.addEventListener('click', closeSettingsPanel)
-settingsResetEl.addEventListener('click', () => setMouseSensitivity(DEFAULT_MOUSE_SENSITIVITY))
+settingsResetEl.addEventListener('click', resetGameSettings)
 mouseSensitivityEl.addEventListener('input', () => setMouseSensitivity(Number(mouseSensitivityEl.value)))
+ambientVolumeEl.addEventListener('input', () => setAmbientVolume(Number(ambientVolumeEl.value)))
 renderSettingsPanel()
 
 // --- Input
@@ -3223,10 +3269,12 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   },
   onRaceRecorded(timeMs) {
     addChatLine('RACE', `Ranked time recorded: ${formatTrialTime(timeMs / 1000)}`, selfTier)
+    if (!raceFinishedEver) markOnboard('scc.journey.race', (v) => { raceFinishedEver = v })
     if (!leaderboardPanelEl.hidden && hudLeaderboardMode === 'race') fetchLeaderboard('hud')
   },
   onBlackHoleRecorded(distance) {
     addChatLine('BLACK HOLE', `Closest approach ${distance.toLocaleString()} m recorded.`, 3)
+    if (!blackHoleRecordedEver) markOnboard('scc.journey.blackhole', (v) => { blackHoleRecordedEver = v })
   },
   onMarketList(rows) {
     marketplaceRows = rows
@@ -4077,6 +4125,7 @@ function frame(now: number): void {
       quantum: qr.phase === 'spooling' ? 0.55 : 1,
       speedFrac: qr.phase === 'traveling' ? 1.2 : 0.25,
     })
+    audio.setRegionalAmbience(applyAmbientVolume({ kind: 'deepSpace', intensity: 0.2 }))
     net.sendState(
       [ship.position.x, ship.position.y, ship.position.z],
       [ship.quaternion.x, ship.quaternion.y, ship.quaternion.z, ship.quaternion.w],
@@ -4487,8 +4536,9 @@ function frame(now: number): void {
     updateAltitudeHUD()
     const atmosphere = updateAtmoVeil()
     if (quantum.phase === 'idle') {
-      // Black-hole proximity adds a low rumble (reusing the quantum-pressure ambience channel).
+      // Black-hole proximity adds a low rumble; regional ambience gives each landmark its own air.
       audio.setAmbience({ atmosphere, quantum: bhPressure, speedFrac: ship.velocity.length() / (hubTimeTrial.active ? baseSpeed : effSpeed()) })
+      audio.setRegionalAmbience(applyAmbientVolume(currentRegionalAmbience()))
     }
     if (!dailyPanelEl.hidden) renderDailyPanel(now)
   } else {
@@ -4546,7 +4596,7 @@ function frame(now: number): void {
   if (!sessionKicked) {
     const obj = running && !docked ? currentObjective() : null
     objectiveEl.hidden = !obj
-    if (obj) objectiveEl.textContent = `▸ ${obj}`
+    if (obj) objectiveEl.textContent = `PILOT JOURNEY - ${obj}`
   }
 
   pfMark('logic')

@@ -22,6 +22,9 @@ export const MINING_FREQ = 520
 export const SPACE_AMBIENCE_GAIN = 0.0032
 export const ATMO_AMBIENCE_GAIN_MAX = 0.026
 export const QUANTUM_AMBIENCE_GAIN_MAX = 0.012
+export const REGIONAL_AMBIENCE_GAIN_MAX = 0.0065
+export const REGIONAL_AMBIENCE_PULSE_MAX = 0.0048
+export const REGIONAL_AMBIENCE_NOISE_MAX = 0.004
 
 /** Clamp `x` into [min, max]. NaN collapses to `min` so audio params never go NaN. */
 export function clamp(x: number, min: number, max: number): number {
@@ -73,6 +76,22 @@ export interface AmbienceParams {
   quantumFilterFreq: number
 }
 
+export type RegionalAmbienceKind = 'deepSpace' | 'spawn' | 'seasonHub' | 'pvp' | 'race' | 'blackHole' | 'mining'
+
+export interface RegionalAmbienceState {
+  kind: RegionalAmbienceKind
+  intensity: number
+}
+
+export interface RegionalAmbienceParams {
+  bedGain: number
+  bedFreq: number
+  pulseGain: number
+  pulseFreq: number
+  noiseGain: number
+  noiseFilterFreq: number
+}
+
 /** Shape the living-space ambience layers from game state. Pure and unit-tested. */
 export function ambienceToParams(state: AmbienceState): AmbienceParams {
   const atmosphere = clamp(state.atmosphere, 0, 1)
@@ -88,6 +107,29 @@ export function ambienceToParams(state: AmbienceState): AmbienceParams {
     atmoFilterFreq: 340 + atmo * 980 + Math.min(speed, 1) * 420,
     quantumGain: QUANTUM_AMBIENCE_GAIN_MAX * q,
     quantumFilterFreq: 1200 + q * 1800,
+  }
+}
+
+/** Region ambience is intentionally quiet: a faint identity layer, not background music. */
+export function regionalAmbienceToParams(state: RegionalAmbienceState): RegionalAmbienceParams {
+  const intensity = clamp(state.intensity, 0, 1)
+  const i = intensity * intensity
+  switch (state.kind) {
+    case 'spawn':
+      return { bedGain: REGIONAL_AMBIENCE_GAIN_MAX * 0.48 * i, bedFreq: 72, pulseGain: REGIONAL_AMBIENCE_PULSE_MAX * 0.18 * i, pulseFreq: 0.16, noiseGain: REGIONAL_AMBIENCE_NOISE_MAX * 0.16 * i, noiseFilterFreq: 420 }
+    case 'seasonHub':
+      return { bedGain: REGIONAL_AMBIENCE_GAIN_MAX * 0.72 * i, bedFreq: 92, pulseGain: REGIONAL_AMBIENCE_PULSE_MAX * 0.38 * i, pulseFreq: 0.23, noiseGain: REGIONAL_AMBIENCE_NOISE_MAX * 0.2 * i, noiseFilterFreq: 620 }
+    case 'pvp':
+      return { bedGain: REGIONAL_AMBIENCE_GAIN_MAX * 0.5 * i, bedFreq: 48, pulseGain: REGIONAL_AMBIENCE_PULSE_MAX * 0.68 * i, pulseFreq: 0.72, noiseGain: REGIONAL_AMBIENCE_NOISE_MAX * 0.32 * i, noiseFilterFreq: 780 }
+    case 'race':
+      return { bedGain: REGIONAL_AMBIENCE_GAIN_MAX * 0.42 * i, bedFreq: 110, pulseGain: REGIONAL_AMBIENCE_PULSE_MAX * 0.82 * i, pulseFreq: 1.18, noiseGain: REGIONAL_AMBIENCE_NOISE_MAX * 0.18 * i, noiseFilterFreq: 1050 }
+    case 'blackHole':
+      return { bedGain: REGIONAL_AMBIENCE_GAIN_MAX * 0.9 * i, bedFreq: 31, pulseGain: REGIONAL_AMBIENCE_PULSE_MAX * 0.2 * i, pulseFreq: 0.09, noiseGain: REGIONAL_AMBIENCE_NOISE_MAX * 0.88 * i, noiseFilterFreq: 180 + 380 * intensity }
+    case 'mining':
+      return { bedGain: REGIONAL_AMBIENCE_GAIN_MAX * 0.36 * i, bedFreq: 63, pulseGain: REGIONAL_AMBIENCE_PULSE_MAX * 0.3 * i, pulseFreq: 0.31, noiseGain: REGIONAL_AMBIENCE_NOISE_MAX * 0.26 * i, noiseFilterFreq: 520 }
+    case 'deepSpace':
+    default:
+      return { bedGain: REGIONAL_AMBIENCE_GAIN_MAX * 0.12 * i, bedFreq: 40, pulseGain: 0, pulseFreq: 0.1, noiseGain: 0, noiseFilterFreq: 300 }
   }
 }
 
@@ -229,6 +271,12 @@ export class GameAudio {
   private atmoAmbienceFilter: BiquadFilterNode | null = null
   private quantumAmbienceGain: GainNode | null = null
   private quantumAmbienceFilter: BiquadFilterNode | null = null
+  private regionalBedOsc: OscillatorNode | null = null
+  private regionalBedGain: GainNode | null = null
+  private regionalPulseOsc: OscillatorNode | null = null
+  private regionalPulseGain: GainNode | null = null
+  private regionalNoiseGain: GainNode | null = null
+  private regionalNoiseFilter: BiquadFilterNode | null = null
   private miningOsc: OscillatorNode | null = null
   private miningGain: GainNode | null = null
   private assetBuffers = new Map<BlipKind, AudioBuffer[]>()
@@ -307,6 +355,29 @@ export class GameAudio {
       this.spaceAmbienceFilter = spaceAmbienceFilter
 
       // Filtered noise layer — quiet hiss that scales with the engine.
+      // Regional ambience: very quiet identity layer for landmarks/zones.
+      const regionalBedGain = ctx.createGain()
+      regionalBedGain.gain.value = 0
+      const regionalBedOsc = ctx.createOscillator()
+      regionalBedOsc.type = 'sine'
+      regionalBedOsc.frequency.value = 40
+      regionalBedOsc.connect(regionalBedGain)
+      regionalBedGain.connect(master)
+      regionalBedOsc.start()
+      this.regionalBedGain = regionalBedGain
+      this.regionalBedOsc = regionalBedOsc
+
+      const regionalPulseGain = ctx.createGain()
+      regionalPulseGain.gain.value = 0
+      const regionalPulseOsc = ctx.createOscillator()
+      regionalPulseOsc.type = 'triangle'
+      regionalPulseOsc.frequency.value = 0.1
+      regionalPulseOsc.connect(regionalPulseGain)
+      regionalPulseGain.connect(master)
+      regionalPulseOsc.start()
+      this.regionalPulseGain = regionalPulseGain
+      this.regionalPulseOsc = regionalPulseOsc
+
       const noiseGain = ctx.createGain()
       noiseGain.gain.value = 0
       const lp = ctx.createBiquadFilter()
@@ -341,6 +412,23 @@ export class GameAudio {
         wind.start()
         this.windGain = windGain
         this.windFilter = windFilter
+
+        // Region noise: pressure/static for black hole, PvP, hubs, and industrial spaces.
+        const regionalNoiseGain = ctx.createGain()
+        regionalNoiseGain.gain.value = 0
+        const regionalNoiseFilter = ctx.createBiquadFilter()
+        regionalNoiseFilter.type = 'lowpass'
+        regionalNoiseFilter.frequency.value = 300
+        regionalNoiseFilter.Q.value = 0.55
+        const regionalNoise = ctx.createBufferSource()
+        regionalNoise.buffer = buf
+        regionalNoise.loop = true
+        regionalNoise.connect(regionalNoiseFilter)
+        regionalNoiseFilter.connect(regionalNoiseGain)
+        regionalNoiseGain.connect(master)
+        regionalNoise.start()
+        this.regionalNoiseGain = regionalNoiseGain
+        this.regionalNoiseFilter = regionalNoiseFilter
 
         // Atmosphere: soft, wide noise that appears with the visual entry veil.
         const atmoAmbienceGain = ctx.createGain()
@@ -530,6 +618,25 @@ export class GameAudio {
       /* ignore transient audio errors */
     }
   }
+
+  /** Update the current place identity layer. Call every frame; values crossfade slowly. */
+  setRegionalAmbience(state: RegionalAmbienceState): void {
+    const ctx = this.ctx
+    if (!ctx) return
+    try {
+      const now = ctx.currentTime
+      const params = regionalAmbienceToParams(state)
+      this.regionalBedGain?.gain.setTargetAtTime(params.bedGain, now, 1.2)
+      this.regionalBedOsc?.frequency.setTargetAtTime(params.bedFreq, now, 1.4)
+      this.regionalPulseGain?.gain.setTargetAtTime(params.pulseGain, now, 1.0)
+      this.regionalPulseOsc?.frequency.setTargetAtTime(params.pulseFreq, now, 1.2)
+      this.regionalNoiseGain?.gain.setTargetAtTime(params.noiseGain, now, 1.1)
+      this.regionalNoiseFilter?.frequency.setTargetAtTime(params.noiseFilterFreq, now, 1.2)
+    } catch {
+      /* ignore transient audio errors */
+    }
+  }
+
 
   /**
    * Engage/disengage boost without changing the commanded thrust level. This is a

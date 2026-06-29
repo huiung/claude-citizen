@@ -47,6 +47,7 @@ const pcStatusEl = document.getElementById('pc-status')!
 const connectWalletBtn = document.getElementById('connect-wallet') as HTMLButtonElement
 const disconnectWalletBtn = document.getElementById('disconnect-wallet') as HTMLButtonElement
 const walletStatusEl = document.getElementById('wallet-status')!
+const landingMusicToggleEl = document.getElementById('landing-music-toggle') as HTMLButtonElement
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:8080`
 const STATS_URL = WS_URL.replace(/^ws/, 'http') + '/stats'
@@ -76,12 +77,34 @@ let launchStarted = false
 let leaderboardOffset = 0
 let leaderboardMode: LeaderboardMode = defaultLandingLeaderboardMode(MOBILE_COMPANION)
 const landingMusic = new LandingMusic()
+const LANDING_MUSIC_MUTED_KEY = 'scc.landingMusicMuted'
+let landingMusicMuted = localStorage.getItem(LANDING_MUSIC_MUTED_KEY) === '1'
+landingMusic.setMuted(landingMusicMuted, 0)
 
 myCodeEl.textContent = playerToken
 
+function renderLandingMusicToggle(): void {
+  landingMusicToggleEl.textContent = landingMusicMuted ? 'Sound Off' : 'Sound On'
+  landingMusicToggleEl.setAttribute('aria-pressed', String(!landingMusicMuted))
+}
+
+function saveLandingMusicPreference(): void {
+  try { localStorage.setItem(LANDING_MUSIC_MUTED_KEY, landingMusicMuted ? '1' : '0') } catch { /* storage blocked */ }
+}
+
 function startLandingMusic(): void {
+  if (landingMusicMuted) return
   landingMusic.start()
 }
+
+landingMusicToggleEl.addEventListener('click', () => {
+  landingMusicMuted = !landingMusicMuted
+  saveLandingMusicPreference()
+  landingMusic.setMuted(landingMusicMuted)
+  if (!landingMusicMuted) landingMusic.start()
+  renderLandingMusicToggle()
+})
+renderLandingMusicToggle()
 
 window.addEventListener('pointerdown', startLandingMusic, { once: true })
 window.addEventListener('keydown', startLandingMusic, { once: true })

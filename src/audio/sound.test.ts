@@ -12,6 +12,7 @@ import {
   ambienceToParams,
   boostPunchToParams,
   miningToGain,
+  regionalAmbienceToParams,
   thrustToFrequency,
   thrustToGain,
 } from './sound'
@@ -207,5 +208,34 @@ describe('forge + dock cue tuning', () => {
   it('softens the dock cue to a single quiet variant', () => {
     expect(ASSET_BLIP_SPECS.dock!.gain).toBe(0.1)
     expect(ASSET_BLIP_SPECS.dock!.variants).toEqual(['/audio/kenney-sci-fi/doorClose_001.ogg'])
+  })
+})
+
+
+describe('regional ambience shaping', () => {
+  it('keeps regional layers quieter than the idle engine', () => {
+    for (const kind of ['deepSpace', 'spawn', 'seasonHub', 'pvp', 'race', 'blackHole', 'mining'] as const) {
+      const params = regionalAmbienceToParams({ kind, intensity: 1 })
+      expect(params.bedGain).toBeLessThan(ENGINE_GAIN_IDLE)
+      expect(params.pulseGain).toBeLessThan(ENGINE_GAIN_IDLE)
+      expect(params.noiseGain).toBeLessThanOrEqual(0.004)
+    }
+  })
+
+  it('gives black hole and race different identities', () => {
+    const voidTone = regionalAmbienceToParams({ kind: 'blackHole', intensity: 1 })
+    const raceTone = regionalAmbienceToParams({ kind: 'race', intensity: 1 })
+
+    expect(voidTone.bedFreq).toBeLessThan(raceTone.bedFreq)
+    expect(voidTone.noiseGain).toBeGreaterThan(raceTone.noiseGain)
+    expect(raceTone.pulseFreq).toBeGreaterThan(voidTone.pulseFreq)
+  })
+
+  it('crossfades to silence as intensity approaches zero', () => {
+    const params = regionalAmbienceToParams({ kind: 'seasonHub', intensity: 0 })
+
+    expect(params.bedGain).toBe(0)
+    expect(params.pulseGain).toBe(0)
+    expect(params.noiseGain).toBe(0)
   })
 })

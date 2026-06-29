@@ -26,6 +26,22 @@ export class LandingMusic {
   private arpIdx = 0
   private started = false
   private stopping = false
+  private muted = false
+
+  isMuted(): boolean {
+    return this.muted
+  }
+
+  setMuted(muted: boolean, fadeSeconds = 0.35): void {
+    this.muted = muted
+    const ctx = this.ctx
+    const master = this.master
+    if (!ctx || !master || this.stopping) return
+    const now = ctx.currentTime
+    master.gain.cancelScheduledValues(now)
+    master.gain.setValueAtTime(master.gain.value, now)
+    master.gain.linearRampToValueAtTime(muted ? 0 : MASTER_GAIN, now + fadeSeconds)
+  }
 
   start(): void {
     if (this.stopping) return
@@ -46,7 +62,7 @@ export class LandingMusic {
       const master = ctx.createGain()
       master.gain.value = 0
       master.connect(ctx.destination)
-      master.gain.linearRampToValueAtTime(MASTER_GAIN, ctx.currentTime + 2.4)
+      master.gain.linearRampToValueAtTime(this.muted ? 0 : MASTER_GAIN, ctx.currentTime + 2.4)
       this.master = master
 
       const filter = ctx.createBiquadFilter()
