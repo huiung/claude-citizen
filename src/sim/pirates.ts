@@ -20,6 +20,12 @@ export const PIRATE_REWARD = 250 // credits for a kill
 // fresh near spawn. Sits well beyond WEAPON_RANGE so an active dogfight never culls a pirate.
 export const PIRATE_LEASH_RANGE = 5000
 
+export type PirateTier = 'grunt' | 'elite' | 'named'
+
+// Per-tier toughness + payout (starting values, tuned live). Named is a sector miniboss.
+export const PIRATE_TIER_HULL_MUL: Record<PirateTier, number> = { grunt: 1, elite: 2.5, named: 8 }
+export const PIRATE_TIER_REWARD: Record<PirateTier, number> = { grunt: PIRATE_REWARD, elite: 700, named: 4000 }
+
 export interface Pirate {
   id: string
   position: Vector3
@@ -28,17 +34,32 @@ export interface Pirate {
   weapon: Weapon
   /** Credits paid for killing this pirate (richer the deeper it spawned). */
   reward: number
+  /** Threat tier: grunt (default), elite, or a named sector miniboss. */
+  tier: PirateTier
+  /** Display name — set only for named minibosses. */
+  name?: string
 }
 
-/** `hullMul` toughens deep-space pirates; `reward` overrides the kill payout. */
-export function spawnPirate(id: string, position: Vector3, hullMul = 1, reward = PIRATE_REWARD): Pirate {
+export interface SpawnPirateOpts {
+  hullMul?: number
+  reward?: number
+  tier?: PirateTier
+  name?: string
+}
+
+/** Spawn a pirate. `opts.hullMul` toughens it, `opts.reward` overrides payout, `opts.tier`/`opts.name`
+ *  mark elites and named minibosses. Defaults reproduce the original base grunt. */
+export function spawnPirate(id: string, position: Vector3, opts: SpawnPirateOpts = {}): Pirate {
+  const tier = opts.tier ?? 'grunt'
   return {
     id,
     position: position.clone(),
     velocity: new Vector3(),
-    health: createHealth(Math.round(PIRATE_HULL * hullMul)),
+    health: createHealth(Math.round(PIRATE_HULL * (opts.hullMul ?? 1))),
     weapon: createWeapon(PIRATE_FIRE_INTERVAL),
-    reward,
+    reward: opts.reward ?? PIRATE_REWARD,
+    tier,
+    name: opts.name,
   }
 }
 

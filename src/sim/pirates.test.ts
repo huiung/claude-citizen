@@ -21,9 +21,22 @@ describe('spawnPirate', () => {
   })
 
   it('scales hull and reward for deep-space spawns', () => {
-    const deep = spawnPirate('p2', new Vector3(), 2, 600)
+    const deep = spawnPirate('p2', new Vector3(), { hullMul: 2, reward: 600 })
     expect(deep.health.hull).toBe(Math.round(PIRATE_HULL * 2))
     expect(deep.reward).toBe(600)
+  })
+
+  it('defaults to the grunt tier with no name', () => {
+    const p = spawnPirate('p1', new Vector3())
+    expect(p.tier).toBe('grunt')
+    expect(p.name).toBeUndefined()
+  })
+
+  it('carries an explicit tier and name', () => {
+    const named = spawnPirate('boss', new Vector3(), { tier: 'named', name: 'Vex Marrow', hullMul: 8, reward: 4000 })
+    expect(named.tier).toBe('named')
+    expect(named.name).toBe('Vex Marrow')
+    expect(named.health.hull).toBe(Math.round(PIRATE_HULL * 8))
   })
 })
 
