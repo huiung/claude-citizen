@@ -89,7 +89,7 @@ import {
   shouldClearPveHostiles,
   trainingDronesActive,
 } from './sim/pvp'
-import { type Pirate, PIRATE_REWARD, PIRATE_TIER_HULL_MUL, PIRATE_TIER_REWARD, shouldDespawnPirate, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
+import { type Pirate, type PirateTier, PIRATE_REWARD, PIRATE_TIER_HULL_MUL, PIRATE_TIER_REWARD, shouldDespawnPirate, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
 import { addXp, loadPilot, MAX_LEVEL, savePilot, unlocksForLevel, xpForKill, xpForLevel } from './sim/pilotLevel'
 import { type CampaignAdvance, currentCampaignStep, loadCampaign, recordCampaignEvent, saveCampaign, SECTOR1_CAMPAIGN } from './sim/campaign'
 import {
@@ -1982,13 +1982,40 @@ function applyBlackHoleShake(dt: number): void {
   bhShake = Math.max(0, bhShake - dt * 1.6)
 }
 
+// Per-tier visual identity: elites read as a bigger, charged threat; named (minibosses) bigger still
+// and hotter. Applied to BOTH the placeholder hull and the swapped-in GLB so the tier stays readable
+// after the async model load (the GLB has no inherent tier colour of its own).
+const TIER_SCALE: Record<PirateTier, number> = { grunt: 1, elite: 1.25, named: 1.8 }
+const TIER_EMISSIVE: Record<PirateTier, number | null> = { grunt: null, elite: 0xff7a1a, named: 0xff3b2f }
+
+// Tint every MeshStandardMaterial in `obj` with a "charged/dangerous" emissive glow. loadPirateModel
+// returns a fresh clone with per-instance materials (cloneCraftModelInstance in shipyard clones every
+// mesh's material), so tinting in place affects ONLY this pirate — no cross-instance/player bleed.
+function tintModel(obj: THREE.Object3D, hex: number): void {
+  obj.traverse((o) => {
+    const m = (o as THREE.Mesh).material
+    if (!m) return
+    const mats = Array.isArray(m) ? m : [m]
+    for (const mat of mats) {
+      if ('emissive' in mat) {
+        const std = mat as THREE.MeshStandardMaterial
+        std.emissive.setHex(hex)
+        std.emissiveIntensity = 0.6
+      }
+    }
+  })
+}
+
 // Register a freshly-spawned pirate: track it, add its placeholder mesh, then swap in the GLB model.
 // Shared by the wave spawner and the campaign's named-raider spawner. (Mesh code lifted verbatim from
-// the old spawnPirateWave body, with tier-based color/scale so elites and minibosses read distinct.)
+// the old spawnPirateWave body, with tier-based color/scale/emissive so elites and minibosses read distinct.)
 function addPirate(pirate: Pirate, pos: THREE.Vector3): void {
   pirates.push(pirate)
+  const scale = TIER_SCALE[pirate.tier]
+  const emissive = TIER_EMISSIVE[pirate.tier]
   const mesh = buildCraft('interceptor', pirate.tier === 'grunt' ? 0xc0392b : 0xff7a1a)
-  if (pirate.tier === 'named') mesh.scale.multiplyScalar(1.8) // minibosses read bigger
+  mesh.scale.multiplyScalar(scale) // elites bigger, minibosses biggest
+  if (emissive !== null) tintModel(mesh, emissive)
   mesh.position.copy(pos)
   scene.add(mesh)
   pirateMeshes.set(pirate.id, mesh)
@@ -1997,7 +2024,8 @@ function addPirate(pirate: Pirate, pos: THREE.Vector3): void {
     if (pirateMeshes.get(pirate.id) !== mesh) { disposeObject(model); return }
     model.position.copy(mesh.position)
     model.quaternion.copy(mesh.quaternion)
-    if (pirate.tier === 'named') model.scale.multiplyScalar(1.8)
+    model.scale.multiplyScalar(scale)
+    if (emissive !== null) tintModel(model, emissive) // re-apply on the swapped GLB so the tier persists
     scene.remove(mesh)
     disposeObject(mesh)
     scene.add(model)
