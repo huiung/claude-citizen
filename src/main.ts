@@ -183,6 +183,9 @@ const overlayEl = document.getElementById('overlay')!
 const nicknameEl = document.getElementById('nickname') as HTMLInputElement
 const launchEl = document.getElementById('launch') as HTMLButtonElement
 const buyCitizenEl = document.getElementById('buy-citizen') as HTMLAnchorElement
+const browseBtnEl = document.getElementById('browse-btn')!
+const browseBannerEl = document.getElementById('browse-banner')!
+const browseBackEl = document.getElementById('browse-back')!
 const gateMsgEl = document.getElementById('gate-msg')!
 const hudEl = document.getElementById('hud')!
 const statusEl = document.getElementById('status')!
@@ -623,6 +626,7 @@ appEl.appendChild(renderer.domElement)
 
 function requestFlightPointerLock(): void {
   if (MOBILE_COMPANION) return
+  if (spectating) return // Browse is a cursor-free viewer — never grab flight pointer lock
   if (document.pointerLockElement === renderer.domElement) return
   if (typeof renderer.domElement.requestPointerLock !== 'function') return
   const lockRequest = renderer.domElement.requestPointerLock()
@@ -3202,7 +3206,7 @@ addEventListener('keydown', (e) => {
     openSettingsPanel()
     return
   }
-  if (e.code === 'KeyI' && running) {
+  if (e.code === 'KeyI' && running && !spectating) {
     e.preventDefault()
     openInventoryPanel()
     return
@@ -3212,15 +3216,15 @@ addEventListener('keydown', (e) => {
     assist = !assist
     assistEl.textContent = assist ? 'COUPLED' : 'DECOUPLED'
   }
-  if (e.code === 'KeyC' && running && !docked) {
+  if (e.code === 'KeyC' && running && !docked && !spectating) {
     cycleCameraView()
     audio.blip('nav')
   }
-  if (e.code === 'Space' && running && !docked && dockable) dock(dockable)
-  if (e.code === 'KeyN' && running && !docked && quantum.phase === 'idle') {
+  if (e.code === 'Space' && running && !docked && !spectating && dockable) dock(dockable)
+  if (e.code === 'KeyN' && running && !docked && !spectating && quantum.phase === 'idle') {
     cycleQuantumDestination()
   }
-  if (e.code === 'KeyB' && running && !docked && quantum.phase === 'idle') {
+  if (e.code === 'KeyB' && running && !docked && !spectating && quantum.phase === 'idle') {
     cycleQuantumDestination(-1)
   }
   if (!leaderboardPanelEl.hidden && running && !docked && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
@@ -3251,7 +3255,7 @@ addEventListener('keydown', (e) => {
     e.preventDefault()
     return
   }
-  if (e.code === 'KeyJ' && running && !docked) {
+  if (e.code === 'KeyJ' && running && !docked && !spectating) {
     toggleQuantumTravel()
   }
 })
@@ -3275,7 +3279,7 @@ renderer.domElement.addEventListener('wheel', (e) => {
 // Left mouse = mining laser, right mouse = weapon (only while flying, mouse captured).
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault())
 renderer.domElement.addEventListener('mousedown', (e) => {
-  if (!(running && !docked && document.pointerLockElement === renderer.domElement)) return
+  if (!(running && !docked && !spectating && document.pointerLockElement === renderer.domElement)) return
   if (e.button === 0) miningActive = true
   if (e.button === 2) weaponActive = true
 })
@@ -3879,7 +3883,16 @@ const _timeTrialShowcaseLookAt = new THREE.Vector3()
 const G_SWAY_K = 0.03   // accel (m/s²) → offset (m)
 const G_SWAY_MAX = 2.6  // clamp so it never gets nauseating
 const G_SWAY_RESP = 6   // spring stiffness
+// Fixed point the Browse camera orbits — the origin, which the spawn scatter (r=200–600)
+// and visible peers cluster around. No player ship exists in Browse, so we never read ship.*.
+const SPECTATE_ANCHOR = new THREE.Vector3(0, 0, 0)
 function updateCamera(dt: number): void {
+  if (spectating) {
+    cameraOrbitElapsed += dt
+    camera.position.copy(SPECTATE_ANCHOR).add(orbitCameraOffset(cameraOrbitElapsed, 0, 800))
+    camera.lookAt(SPECTATE_ANCHOR)
+    return
+  }
   if (SHOWCASE_TIME_TRIAL) {
     const startGate = hubTimeTrialGates[0].position
     _timeTrialShowcaseCamera.copy(timeTrialShowcaseApproachPoint(650, 112))
@@ -3936,8 +3949,26 @@ function updateCamera(dt: number): void {
 }
 
 // --- Launch flow
+// Free Browse spectator mode for non-holders. Reveals the live sector (running=true so the frame
+// loop renders and peers interpolate) WITHOUT promoting to a pilot. Replicates launch()'s overlay
+// reveal but intentionally SKIPS: net.enterGame (stays a viewer), setPlayerCraft + shipMesh (no
+// player ship), pointer lock + flight HUD reveal, audio init, daily/economy init, spawn scheduling.
+function enterBrowseMode(): void {
+  if (running) return // already in-world
+  spectating = true
+  running = true // needed so the frame loop renders + peers interpolate
+  scene.remove(shipMesh) // no player ship in Browse
+  if (statsTimer) clearInterval(statsTimer) // stop the landing-stats poll like launch() does
+  overlayEl.hidden = true
+  overlayEl.style.display = 'none'
+  if (document.pointerLockElement) document.exitPointerLock()
+  browseBannerEl.hidden = false // persistent "connect to fly" banner
+}
+
 function launch(): void {
   if (running) return
+  spectating = false // clear any prior Browse state so a real launch flies normally
+  browseBannerEl.hidden = true
   const callsign = nicknameEl.value.trim() || 'PILOT'
   localStorage.setItem('callsign', callsign)
   if (BOT) {
@@ -3985,6 +4016,15 @@ function launch(): void {
 }
 launchEl.addEventListener('click', launch)
 nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') launch() })
+browseBtnEl.addEventListener('click', () => enterBrowseMode())
+browseBackEl.addEventListener('click', () => {
+  spectating = false
+  running = false
+  browseBannerEl.hidden = true
+  overlayEl.hidden = false
+  overlayEl.style.display = '' // launch()/enterBrowseMode set 'none'; '' restores the stylesheet default
+  scene.add(shipMesh) // restore for a later real launch
+})
 export function launchGame(callsign?: string): void {
   if (callsign) nicknameEl.value = callsign
   launch()
@@ -4096,6 +4136,9 @@ addEventListener('resize', () => {
 
 // --- Main loop
 let running = false
+// Free spectator (Browse) mode for non-holders: the world renders and peers interpolate
+// (running=true), but there is no player ship and all flight/combat/dock input is inert.
+let spectating = false
 let last = performance.now()
 let hiddenQuantumAt: number | null = null
 
@@ -4343,7 +4386,7 @@ function frame(now: number): void {
       selectedShipType,
       activeHolderShipVisual(),
     )
-  } else if (running && !docked) {
+  } else if (running && !docked && !spectating) {
     // Idle: small nav hint under the minimap (no big banner).
     quantumEl.hidden = true
     const dest = destinationArrival()

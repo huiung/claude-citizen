@@ -76,6 +76,20 @@
       position: fixed; right: 16px; bottom: 16px; pointer-events: none;
       font-size: 11px; line-height: 1.6; opacity: .55; text-align: right;
     }
+    #browse-banner {
+      position: fixed; left: 50%; top: 16px; transform: translateX(-50%);
+      z-index: 20; padding: 8px 16px; border-radius: 6px;
+      background: rgba(0, 16, 8, .82); border: 1px solid rgba(159, 255, 176, .45);
+      color: #9fffb0; font-size: 12px; letter-spacing: 1px; white-space: nowrap;
+      text-shadow: 0 0 6px rgba(80, 255, 120, .5);
+    }
+    #browse-banner[hidden] { display: none; }
+    #browse-banner a { color: #ffe08a; text-decoration: none; border-bottom: 1px solid rgba(255,224,138,.5); }
+    #browse-banner button {
+      background: transparent; color: #9fffb0; border: 1px solid rgba(159,255,176,.5);
+      border-radius: 4px; padding: 2px 10px; font: inherit; letter-spacing: 1px; cursor: pointer;
+    }
+    #browse-banner button:hover { background: rgba(159,255,176,.12); }
     #minimap-wrap {
       position: fixed; right: 16px; top: 92px; pointer-events: none; text-align: center;
     }
@@ -873,6 +887,7 @@
     <div id="black-hole" hidden></div>
     <div id="time-trial" hidden>HUB TIME TRIAL</div>
   </div>
+  <div id="browse-banner" hidden>Browsing — connect a wallet holding ≥1 $CITIZEN to fly. <a id="browse-buy" href="https://pump.fun/coin/6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump" target="_blank" rel="noopener">Buy $CITIZEN</a> · <button id="browse-back" type="button">Back</button></div>
   <div id="damage-flash"></div>
   <div id="singularity-flash"></div>
   <div id="time-trial-banner" hidden>RACE STARTED</div>
