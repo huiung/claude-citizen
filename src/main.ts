@@ -377,40 +377,50 @@ disconnectWalletBtn.addEventListener('click', () => {
   setTimeout(() => location.reload(), 200)
 })
 
-connectWalletBtn.addEventListener('click', () => {
+// Reusable wallet-connect flow. Used by the (now hidden) Connect button AND by smart LAUNCH:
+// LAUNCH absorbs Connect, so it calls this when no wallet is linked. Early-returns clear
+// pendingLaunch so a failed start never leaves a stuck auto-launch armed.
+function startWalletConnect(): void {
   if (!hasWallet()) {
+    pendingLaunch = false
     if (isMobileBrowser()) { setWalletStatus('Opening in Phantom — tap Connect there…'); location.href = phantomBrowseUrl(); return }
     setWalletStatus('No Solana wallet found — install the Phantom extension.'); return
   }
-  if (!netConnected) { setWalletStatus('Not connected to server — try again in a moment.'); return }
+  if (!netConnected) { pendingLaunch = false; setWalletStatus('Not connected to server — try again in a moment.'); return }
   setWalletStatus('Connecting…')
   connectWallet().then((pubkey) => {
     pendingPubkey = pubkey
     setWalletStatus('Approve the signature in your wallet…')
     net?.requestChallenge(pubkey)
   }).catch((e) => {
+    pendingLaunch = false // cancelled/failed connect must never auto-launch later
     setWalletStatus(e instanceof WalletError && e.message === NO_WALLET
       ? 'No Solana wallet found — install Phantom.'
       : 'Connection cancelled.')
   })
-})
+}
+connectWalletBtn.hidden = true // LAUNCH absorbs Connect; keep the element for lockWalletButton's ✓ label
+connectWalletBtn.addEventListener('click', () => startWalletConnect())
 
 // Holder gate (landing): LAUNCH unlocks only for a connected wallet holding ≥1 $CITIZEN.
 // Non-holders can still BROWSE (wired in a later task). Drives launch.disabled + buy link + message.
 // Own var (not selfHolderBalance, which is declared far below) so the initial render is TDZ-safe.
 let holderBalance = 0
+// Set when LAUNCH is pressed without a linked wallet: it kicks off connect and, once the holder
+// balance arrives (onHolder), auto-enters the game if ≥1 $CITIZEN. Reset on any connect failure.
+let pendingLaunch = false
 function walletConnected(): boolean { return Boolean(walletSession) }
 function refreshLaunchGateUI(): void {
   const connected = walletConnected()
   const canFly = connected && holderBalance >= 1
-  launchEl.disabled = !canFly
+  // LAUNCH is always enabled now — it's the single smart entry CTA that routes by wallet state.
   buyCitizenEl.hidden = !(connected && holderBalance < 1)
   gateMsgEl.hidden = canFly
   gateMsgEl.textContent = !connected
-    ? 'Connect a wallet holding ≥1 $CITIZEN to fly — or Browse.'
+    ? 'Press LAUNCH to connect your wallet and fly — or Browse.'
     : holderBalance < 1 ? '⚠ This wallet holds no $CITIZEN. You need ≥1 to fly — grab some, or Browse.' : ''
 }
-refreshLaunchGateUI() // LAUNCH starts disabled until connected + ≥1 $CITIZEN
+refreshLaunchGateUI() // LAUNCH always clickable; the gate message guides connect/buy
 
 // Landing stats (online / registered pilots) from the relay's /stats endpoint.
 const WS_URL = import.meta.env.VITE_WS_URL ?? `ws://${location.hostname}:8080`
@@ -3319,7 +3329,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   onChallenge: (message) => {
     signMessage(message).then((sig) => {
       if (pendingPubkey) net.submitAuth(pendingPubkey, sig)
-    }).catch(() => { setWalletStatus('Signature cancelled.'); pendingPubkey = null })
+    }).catch(() => { setWalletStatus('Signature cancelled.'); pendingPubkey = null; pendingLaunch = false })
   },
   onAuthOk: (pubkey, sessionId, name) => {
     walletSession = { pubkey, sessionId, connectedAt: Date.now() }
@@ -3336,6 +3346,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   },
   onAuthError: () => {
     pendingPubkey = null
+    pendingLaunch = false // a failed link must never auto-launch later
     setWalletStatus('Wallet not linked — already has a pilot, or signing failed.')
   },
   onProgress(p) {
@@ -3384,7 +3395,8 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     selfTier = tier
     selfHolderBalance = balance
     holderBalance = balance
-    refreshLaunchGateUI() // a non-holder can't even attempt LAUNCH; a holder unlocks it
+    refreshLaunchGateUI() // refresh the gate message + buy link for the new balance
+    if (pendingLaunch) { pendingLaunch = false; if (balance >= 1) launch() } // connect→holder≥1 auto-enters; <1 leaves the buy warning showing
     applyLocalDevHolderOverride()
     setPlayerCraft(selectedShipType)
   },
@@ -3399,6 +3411,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
       // launch() optimistically set running=true and revealed the world; the server refused
       // the join. Roll back to the landing so local state matches the server verdict.
       running = false
+      overlayEl.classList.remove('hidden')
       overlayEl.hidden = false
       overlayEl.style.display = '' // mirror browse-back: restore stylesheet default
       // Hide everything launch() revealed so the rollback is clean.
@@ -3980,24 +3993,31 @@ function updateCamera(dt: number): void {
 // player ship), pointer lock + flight HUD reveal, audio init, daily/economy init, spawn scheduling.
 function enterBrowseMode(): void {
   if (running) return // already in-world
+  // Hide the landing FIRST so a later throw (e.g. a missing world symbol) can never leave the
+  // overlay stuck up with "nothing happening". `#overlay { display:flex }` beats the UA [hidden]
+  // rule, so both .hidden (with the !important CSS rule) and inline display:none are set.
+  overlayEl.classList.add('hidden')
+  overlayEl.hidden = true
+  overlayEl.style.display = 'none'
   spectating = true
   running = true // needed so the frame loop renders + peers interpolate
+  // station is a module-level Group (buildStation) created at load, so .position is always present.
   SPECTATE_ANCHOR.copy(station.position) // orbit the refinery hub — visible content + where pilots spawn/cluster
   cameraOrbitElapsed = 0 // start the orbit fresh so the first Browse frame faces the hub
   scene.remove(shipMesh) // no player ship in Browse
   if (statsTimer) clearInterval(statsTimer) // stop the landing-stats poll like launch() does
-  overlayEl.hidden = true
-  overlayEl.style.display = 'none'
   if (document.pointerLockElement) document.exitPointerLock()
   browseBannerEl.hidden = false // persistent "connect to fly" banner
 }
 
 function launch(): void {
   if (running) return
-  // Holder gate (client UX; the relay enforces the real boundary). Exempt the showcase/bot auto-launch.
-  if (!BOT && !CAPTURE_OG && !SHOWCASE_HOLDER && !SHOWCASE_TIME_TRIAL && !(walletConnected() && holderBalance >= 1)) {
-    refreshLaunchGateUI() // re-assert the disabled state + show the gate message
-    return
+  // Smart LAUNCH routing (client UX; the relay enforces the real boundary). Exempt showcase/bot auto-launch.
+  if (!BOT && !CAPTURE_OG && !SHOWCASE_HOLDER && !SHOWCASE_TIME_TRIAL) {
+    // Not connected → kick off connect; onHolder auto-enters once a ≥1 balance arrives.
+    if (!walletConnected()) { pendingLaunch = true; setWalletStatus('Connect your wallet to fly…'); startWalletConnect(); return }
+    // Connected but holds 0 → show the buy warning; don't enter.
+    if (holderBalance < 1) { refreshLaunchGateUI(); return }
   }
   spectating = false // clear any prior Browse state so a real launch flies normally
   browseBannerEl.hidden = true
@@ -4014,6 +4034,7 @@ function launch(): void {
   }
   net.enterGame(callsign, selectedShipType, activeHolderShipVisual()) // promote from viewer (presence) to an active pilot
   if (statsTimer) clearInterval(statsTimer)
+  overlayEl.classList.add('hidden')
   overlayEl.hidden = true
   overlayEl.style.display = 'none'
   // BOT (stream view) shows the flight HUD — hull bar, status, minimap — but hides the wallet panel
@@ -4053,6 +4074,7 @@ browseBackEl.addEventListener('click', () => {
   spectating = false
   running = false
   browseBannerEl.hidden = true
+  overlayEl.classList.remove('hidden')
   overlayEl.hidden = false
   overlayEl.style.display = '' // launch()/enterBrowseMode set 'none'; '' restores the stylesheet default
   scene.add(shipMesh) // restore for a later real launch

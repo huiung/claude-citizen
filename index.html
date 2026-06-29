@@ -417,6 +417,9 @@
       background: radial-gradient(ellipse at center, rgba(2, 12, 6, .88), rgba(0, 0, 0, .96));
       z-index: 10;
     }
+    /* `#overlay { display:flex }` beats the UA `[hidden]` rule, so the HTML hidden attribute alone
+       is a no-op. This explicit rule makes both `.hidden` and the `hidden` attribute actually hide it. */
+    #overlay.hidden, #overlay[hidden] { display: none !important; }
     #overlay h1 { font-family: "Orbitron", "Share Tech Mono", sans-serif; font-size: 30px; letter-spacing: 5px; font-weight: 700; }
     #overlay h1 span { opacity: .5; }
     #overlay p { font-size: 13px; opacity: .7; max-width: 440px; text-align: center; line-height: 1.7; }
@@ -979,7 +982,7 @@
       <a href="/wiki.html">📖 Wiki &amp; Guide</a>
     </div>
     <div id="wallet-box">
-      <button id="connect-wallet">Connect Wallet</button>
+      <button id="connect-wallet" hidden>Connect Wallet</button>
       <button id="disconnect-wallet" hidden>Disconnect</button>
       <span id="wallet-status"></span>
     </div>
