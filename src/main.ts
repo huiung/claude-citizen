@@ -90,7 +90,7 @@ import {
   trainingDronesActive,
 } from './sim/pvp'
 import { type Pirate, PIRATE_REWARD, PIRATE_TIER_HULL_MUL, PIRATE_TIER_REWARD, shouldDespawnPirate, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
-import { addXp, loadPilot, savePilot, xpForKill, xpForLevel } from './sim/pilotLevel'
+import { addXp, loadPilot, MAX_LEVEL, savePilot, xpForKill, xpForLevel } from './sim/pilotLevel'
 import { currentCampaignStep, loadCampaign, recordCampaignEvent, saveCampaign, SECTOR1_CAMPAIGN } from './sim/campaign'
 import {
   createTrainingDrones,
@@ -1993,6 +1993,8 @@ function maybeSpawnNamedRaider(now: number): void {
   if (namedRaiderActive) return
   const step = currentCampaignStep(campaign)
   if (!step || step.counter !== 'kill_named') return
+  if (inSafeZone(ship.position)) return
+  if (withinInfluence(ship.position)) return // no pirates near the black hole — keep the solo dive clean
   const captain = step.id === 's1-captain'
   const name = captain ? 'Raider Captain' : 'Vex Marrow'
   // Intentionally bypasses the MAX_PIRATES count cap — the campaign miniboss must always appear.
@@ -2361,7 +2363,7 @@ function applyServerProgress(p: PlayerProgress): void {
   crafting.items.splice(0, crafting.items.length, ...nextCrafting.items)
   crafting.equipped = nextCrafting.equipped
   crafting.pityCount = nextCrafting.pityCount
-  if (p.pilot) { pilot.level = Math.max(1, p.pilot.level); pilot.xp = Math.max(0, p.pilot.xp) }
+  if (p.pilot) { pilot.level = Math.min(MAX_LEVEL, Math.max(1, Math.floor(p.pilot.level))); pilot.xp = Math.max(0, p.pilot.xp) }
   if (p.campaign) {
     campaign.step = Math.min(SECTOR1_CAMPAIGN.length, Math.max(0, p.campaign.step))
     campaign.progress = Math.max(0, p.campaign.progress)
