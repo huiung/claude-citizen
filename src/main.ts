@@ -2711,6 +2711,8 @@ function applyLocalDevHolderOverride(): void {
   if (!override) return
   selfTier = override.tier
   selfHolderBalance = override.balance
+  holderBalance = selfHolderBalance // keep the landing gate in sync so the dev override can unlock LAUNCH
+  refreshLaunchGateUI()
 }
 applyLocalDevHolderOverride()
 function activeHolderShipVisual(): HolderShipVisualId {
