@@ -3393,6 +3393,25 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
       : reason === 'insufficient-tokens'
         ? "Couldn't confirm ≥1 $CITIZEN — make sure you hold the token and retry."
         : 'Unable to launch right now — retry.'
+    if (running && !spectating) {
+      // launch() optimistically set running=true and revealed the world; the server refused
+      // the join. Roll back to the landing so local state matches the server verdict.
+      running = false
+      overlayEl.hidden = false
+      overlayEl.style.display = '' // mirror browse-back: restore stylesheet default
+      // Hide everything launch() revealed so the rollback is clean.
+      hudEl.hidden = true
+      statusEl.hidden = true
+      helpEl.hidden = true
+      crosshairEl.hidden = true
+      walletEl.hidden = true
+      minimapWrapEl.hidden = true
+      if (MOBILE_COMPANION) {
+        document.documentElement.classList.remove('mobile-flight')
+        mobileControlsEl.hidden = true
+      }
+      if (document.pointerLockElement) document.exitPointerLock()
+    }
   },
   onPeerLeave(id) {
     const remote = remotes.get(id)
@@ -4025,6 +4044,10 @@ browseBackEl.addEventListener('click', () => {
   overlayEl.hidden = false
   overlayEl.style.display = '' // launch()/enterBrowseMode set 'none'; '' restores the stylesheet default
   scene.add(shipMesh) // restore for a later real launch
+  // enterBrowseMode cleared the landing-stats poll — restart it (guard against double-intervals).
+  if (statsTimer) clearInterval(statsTimer)
+  refreshLandingStats()
+  statsTimer = setInterval(refreshLandingStats, 6000)
 })
 export function launchGame(callsign?: string): void {
   if (callsign) nicknameEl.value = callsign

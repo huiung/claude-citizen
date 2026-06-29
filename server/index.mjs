@@ -585,6 +585,7 @@ wss.on('connection', (ws) => {
     }
 
     if (msg.t === 'save') {
+      if (!client || !client.active) return // only activated (gate-passed) pilots persist progress
       if (client.isBot) return
       const key = identityKey(client)
       if (!key) return
