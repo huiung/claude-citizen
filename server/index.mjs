@@ -13,6 +13,7 @@ import { leaderboardPage, parseLeaderboardParams } from './leaderboard.mjs'
 import { createPvpKillAuditLog, pvpLeaderboardPage, mergePvpStats, recordRankedPvpKill } from './pvpLeaderboard.mjs'
 import { raceLeaderboardPage, mergeRaceStats, recordRankedRaceFinish } from './raceLeaderboard.mjs'
 import { blackHoleLeaderboardPage, mergeBlackHoleStats, recordBlackHoleRun } from './blackHoleLeaderboard.mjs'
+import { pilotLevelLeaderboardPage, mergePilotStats } from './pilotLevelLeaderboard.mjs'
 import { applyPvpHit, applyPvpRespawn, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
 import { resolveCallsign, identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
 import { guardEconomyGrowth, sanitizeProgress, scrubCareerOutliers } from './progress.mjs'
@@ -220,6 +221,12 @@ const httpServer = createServer((req, res) => {
   }
   if (req.url?.startsWith('/black-hole-leaderboard')) {
     const top = blackHoleLeaderboardPage(store, parseLeaderboardParams(req.url))
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
+    res.end(JSON.stringify(req.url.includes('?') ? top : top.rows))
+    return
+  }
+  if (req.url?.startsWith('/pilot-level-leaderboard')) {
+    const top = pilotLevelLeaderboardPage(store, parseLeaderboardParams(req.url))
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
     res.end(JSON.stringify(req.url.includes('?') ? top : top.rows))
     return
@@ -580,7 +587,9 @@ wss.on('connection', (ws) => {
       if (clean) {
         clean.name = client.name
         const prev = store[key]
-        const merged = mergeBlackHoleStats(mergeRaceStats(mergePvpStats(clean, prev), prev), prev)
+        // pilot level/XP is client-reported on the save itself (sanitizeProgress drops it), so
+        // merge it from the raw msg.progress — not from prev like the server-owned stat blocks.
+        const merged = mergePilotStats(mergeBlackHoleStats(mergeRaceStats(mergePvpStats(clean, prev), prev), prev), msg.progress)
         // Server owns earned/credits growth — reject implausible per-save jumps (Career + wallet anti-cheat).
         store[key] = guardEconomyGrowth(merged, prev, Date.now())
         flush()

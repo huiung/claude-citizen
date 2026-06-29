@@ -392,6 +392,7 @@ const LEADERBOARD_URLS: Record<LeaderboardMode, string> = {
   pvp: leaderboardEndpointUrl(WS_URL, 'pvp'),
   race: leaderboardEndpointUrl(WS_URL, 'race'),
   blackhole: leaderboardEndpointUrl(WS_URL, 'blackhole'),
+  pilotlevel: leaderboardEndpointUrl(WS_URL, 'pilotlevel'),
 }
 const lbListLandingEl = document.getElementById('lb-list-landing')!
 const lbListHudEl = document.getElementById('lb-list-hud')!
@@ -417,6 +418,8 @@ const lbModePvpHudEl = document.getElementById('lb-mode-pvp-hud') as HTMLButtonE
 const lbModeRaceHudEl = document.getElementById('lb-mode-race-hud') as HTMLButtonElement
 const lbModeBlackholeLandingEl = document.getElementById('lb-mode-blackhole-landing') as HTMLButtonElement
 const lbModeBlackholeHudEl = document.getElementById('lb-mode-blackhole-hud') as HTMLButtonElement
+const lbModePilotlevelLandingEl = document.getElementById('lb-mode-pilotlevel-landing') as HTMLButtonElement
+const lbModePilotlevelHudEl = document.getElementById('lb-mode-pilotlevel-hud') as HTMLButtonElement
 const lbSeasonLandingEl = document.getElementById('lb-season-landing')!
 const lbSeasonHudEl = document.getElementById('lb-season-hud')!
 const lbPrevLandingEl = document.getElementById('lb-prev-landing') as HTMLButtonElement
@@ -454,6 +457,7 @@ function leaderboardMetric(row: LeaderboardRow, mode: LeaderboardMode): string {
   if (mode === 'pvp') return leaderboardMetricText(row, 'pvp')
   if (mode === 'race') return leaderboardMetricText(row, 'race')
   if (mode === 'blackhole') return leaderboardMetricText(row, 'blackhole')
+  if (mode === 'pilotlevel') return leaderboardMetricText(row, 'pilotlevel')
   const cr = Number(row.earned) || 0
   return `[${rankForCredits(cr).name}] ${leaderboardMetricText(row, 'career')}`
 }
@@ -486,6 +490,7 @@ function syncLeaderboardModeButtons(slot: 'landing' | 'hud'): void {
   const pvpBtn = slot === 'landing' ? lbModePvpLandingEl : lbModePvpHudEl
   const raceBtn = slot === 'landing' ? lbModeRaceLandingEl : lbModeRaceHudEl
   const blackholeBtn = slot === 'landing' ? lbModeBlackholeLandingEl : lbModeBlackholeHudEl
+  const pilotlevelBtn = slot === 'landing' ? lbModePilotlevelLandingEl : lbModePilotlevelHudEl
   const seasonEl = slot === 'landing' ? lbSeasonLandingEl : lbSeasonHudEl
   title.textContent = mode === 'pvp'
     ? (slot === 'landing' ? 'RANKED PVP' : 'RANKED PVP - kills')
@@ -493,16 +498,20 @@ function syncLeaderboardModeButtons(slot: 'landing' | 'hud'): void {
       ? (slot === 'landing' ? 'RANKED RACE' : 'RANKED RACE - best time')
       : mode === 'blackhole'
         ? (slot === 'landing' ? 'CLOSEST APPROACH' : 'CLOSEST APPROACH - to the singularity')
-        : (slot === 'landing' ? 'TOP PILOTS' : 'TOP PILOTS - credits')
+        : mode === 'pilotlevel'
+          ? (slot === 'landing' ? 'TOP PILOTS' : 'TOP PILOTS - level')
+          : (slot === 'landing' ? 'TOP PILOTS' : 'TOP PILOTS - credits')
   renderPvpSeasonPanel(seasonEl, mode)
   careerBtn.classList.toggle('active', mode === 'career')
   pvpBtn.classList.toggle('active', mode === 'pvp')
   raceBtn.classList.toggle('active', mode === 'race')
   blackholeBtn.classList.toggle('active', mode === 'blackhole')
+  pilotlevelBtn.classList.toggle('active', mode === 'pilotlevel')
   careerBtn.setAttribute('aria-pressed', String(mode === 'career'))
   pvpBtn.setAttribute('aria-pressed', String(mode === 'pvp'))
   raceBtn.setAttribute('aria-pressed', String(mode === 'race'))
   blackholeBtn.setAttribute('aria-pressed', String(mode === 'blackhole'))
+  pilotlevelBtn.setAttribute('aria-pressed', String(mode === 'pilotlevel'))
 }
 function renderLeaderboardPage(
   listEl: HTMLElement,
@@ -560,6 +569,8 @@ lbModePvpHudEl.addEventListener('click', () => setLeaderboardMode('hud', 'pvp'))
 lbModeRaceHudEl.addEventListener('click', () => setLeaderboardMode('hud', 'race'))
 lbModeBlackholeLandingEl.addEventListener('click', () => setLeaderboardMode('landing', 'blackhole'))
 lbModeBlackholeHudEl.addEventListener('click', () => setLeaderboardMode('hud', 'blackhole'))
+lbModePilotlevelLandingEl.addEventListener('click', () => setLeaderboardMode('landing', 'pilotlevel'))
+lbModePilotlevelHudEl.addEventListener('click', () => setLeaderboardMode('hud', 'pilotlevel'))
 syncLeaderboardModeButtons('landing')
 syncLeaderboardModeButtons('hud')
 function refreshLandingStats(): void {

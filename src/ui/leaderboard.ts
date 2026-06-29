@@ -1,6 +1,6 @@
 export const LEADERBOARD_PAGE_SIZE = 10
 export const LEADERBOARD_MAX_RANK = 100
-export type LeaderboardMode = 'career' | 'pvp' | 'race' | 'blackhole'
+export type LeaderboardMode = 'career' | 'pvp' | 'race' | 'blackhole' | 'pilotlevel'
 
 export function defaultLandingLeaderboardMode(isMobile: boolean): LeaderboardMode {
   return isMobile ? 'pvp' : 'career'
@@ -27,6 +27,8 @@ export interface LeaderboardRow {
   finishes?: number
   distance?: number
   dives?: number
+  level?: number
+  xp?: number
 }
 
 export interface LeaderboardPage {
@@ -53,7 +55,9 @@ export function leaderboardEndpointUrl(wsUrl: string, mode: LeaderboardMode): st
       ? '/race-leaderboard'
       : mode === 'blackhole'
         ? '/black-hole-leaderboard'
-        : '/leaderboard'
+        : mode === 'pilotlevel'
+          ? '/pilot-level-leaderboard'
+          : '/leaderboard'
   return wsUrl.replace(/^ws/, 'http') + path
 }
 
@@ -75,6 +79,11 @@ export function leaderboardMetricText(row: LeaderboardRow, mode: LeaderboardMode
     const distance = Math.max(0, Math.floor(Number(row.distance) || 0))
     const dives = Math.max(0, Math.floor(Number(row.dives) || 0))
     return `${distance.toLocaleString()} m${dives ? ` - ${dives.toLocaleString()} dives` : ''}`
+  }
+  if (mode === 'pilotlevel') {
+    const level = Math.max(0, Math.floor(Number(row.level) || 0))
+    const xp = Math.max(0, Math.floor(Number(row.xp) || 0))
+    return `Lv ${level.toLocaleString()} · ${xp.toLocaleString()} XP`
   }
   return `${(Number(row.earned) || 0).toLocaleString()} cr`
 }

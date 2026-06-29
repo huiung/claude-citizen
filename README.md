@@ -56,10 +56,11 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Combat HUD:** target brackets + range, off-screen threat arrows (know where you're being shot from), and a lead indicator so you can actually land hits on pirates
 - **Leaderboards:** Career ranks the top 100 pilots by *lifetime* credits earned; Ranked PvP tracks ranked arena kills. Wallet-connected pilots display as callsign (short wallet), while anonymous Career pilots keep their callsign only. Page through both on the landing screen and in-game (`[L]`)
 - **Pilot ranks:** six tiers (Cadet → Admiral) earned by *lifetime* credits, so spending never demotes you — each rank brings a growing **earnings bonus** (+0% → +50% on every payout) and **unlocks new ships**, so there's always a reason to keep flying. HUD progress track, promotion banner, and rank tags on the leaderboard
+- **Pilot Level & campaign:** a separate *active* growth spine alongside Career Rank — hunt raiders and run a **Sector 1 quest chain** to earn XP and **level up** (HUD shows your level + a gold XP bar; level-up banners fire). Pirates now come in tiers — **grunt → elite → named miniboss** — and the campaign hunts you toward named raiders (*Vex Marrow*, then the *Raider Captain*) before unlocking the next sector; named kills drop guaranteed crafting cores. Vertical slice: Sector 1, levels 1–5
 - Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
 - **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours. Grab a **Pilot Code** to restore your pilot on another device (one live session per code). Optional wallet linking can claim your anonymous progress to a verified wallet identity; claimed anonymous tokens are retired server-side so old localStorage saves cannot resurrect duplicate leaderboard rows
-- 287 tests, because "built with AI" shouldn't mean "built badly"
+- 586 tests, because "built with AI" shouldn't mean "built badly"
 
 ## Controls
 
@@ -98,7 +99,8 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | 8 | Game feel + 3D ship models + capital ship + combat HUD + leaderboard | ✅ shipped |
 | 9 | Detailed earth-type surfaces, day/night atmosphere, low-altitude terrain-following flight | ✅ shipped |
 | 10 | PvP combat — practice/ranked arenas, 1,000+ token Ranked gate, peer hull bars, kill feed, Ranked PvP leaderboard | phase 1 shipped |
-| 11 | Full planetary landings — touch down, walk the surface, take off | planned |
+| 11 | Pilot progression — active Pilot Level spine, Sector 1 campaign quest chain, enemy tiers (grunt/elite/named) | slice shipped (Lv 1–5) |
+| 12 | Full planetary landings — touch down, walk the surface, take off | planned |
 | … | … | … |
 | 42 | Getting out of bed animation *(took the original 6 years — we'll take a weekend)* | someday |
 | 1.0 | **Ship before Star Citizen ships** | the whole point |
