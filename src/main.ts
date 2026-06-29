@@ -91,7 +91,7 @@ import {
 } from './sim/pvp'
 import { type Pirate, PIRATE_REWARD, PIRATE_TIER_HULL_MUL, PIRATE_TIER_REWARD, shouldDespawnPirate, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
 import { addXp, loadPilot, MAX_LEVEL, savePilot, unlocksForLevel, xpForKill, xpForLevel } from './sim/pilotLevel'
-import { currentCampaignStep, loadCampaign, recordCampaignEvent, saveCampaign, SECTOR1_CAMPAIGN } from './sim/campaign'
+import { type CampaignAdvance, currentCampaignStep, loadCampaign, recordCampaignEvent, saveCampaign, SECTOR1_CAMPAIGN } from './sim/campaign'
 import {
   createTrainingDrones,
   stepTrainingDrone,
@@ -1475,6 +1475,17 @@ function awardPilotXp(amount: number): void {
   if (r.leveledUp.length) {
     showPromotion(`Pilot Level ${pilot.level}`)
     applyLevelHull()
+  }
+}
+
+// Grant a completed campaign step's rewards (XP + credits + the sector-unlock banner). Shared by the
+// kill hook AND the mining tick so EVERY step that completes pays out — not just combat steps.
+function applyCampaignAdvance(adv: CampaignAdvance, now: number): void {
+  if (!adv.completed) return
+  awardPilotXp(adv.completed.xpReward)
+  gainCredits(econ, adv.completed.creditReward)
+  if (adv.completed.unlockSector) {
+    registerKillBanner(combatFeedback, `SECTOR ${adv.completed.unlockSector} UNLOCKED`, 'new space charted', now)
   }
 }
 
@@ -4411,7 +4422,7 @@ function frame(now: number): void {
     const mineResult = mineStep(field, ship.position, econ, dt, miningActive, effCargo(), miningYield(upgrades))
     if (mineResult.mined > 0 && mineResult.asteroid) {
       recordDailyEvent('mine_ore', mineResult.mined, now)
-      recordCampaignEvent(campaign, 'mine_ore', mineResult.mined)
+      applyCampaignAdvance(recordCampaignEvent(campaign, 'mine_ore', mineResult.mined), now)
       if (!minedEver) markOnboard('scc.ob.mined', (v) => { minedEver = v }) // onboarding step 1
       const rm = rockMeshes.get(mineResult.asteroid.id)
       if (rm?.rare) gainCredits(econ, mineResult.mined * ORE_RARE_BONUS) // rare vein jackpot, on top of the ORE
@@ -4587,14 +4598,7 @@ function frame(now: number): void {
           namedRaiderActive = false
           crafting.cores += 1 // named minibosses guarantee a core
         }
-        const camp = recordCampaignEvent(campaign, p.tier === 'named' ? 'kill_named' : 'kill_pirates', 1)
-        if (camp.completed) {
-          awardPilotXp(camp.completed.xpReward) // step XP stacks on top of the kill XP
-          gainCredits(econ, camp.completed.creditReward)
-          if (camp.completed.unlockSector) {
-            registerKillBanner(combatFeedback, `SECTOR ${camp.completed.unlockSector} UNLOCKED`, 'new space charted', now)
-          }
-        }
+        applyCampaignAdvance(recordCampaignEvent(campaign, p.tier === 'named' ? 'kill_named' : 'kill_pirates', 1), now)
         finishOnboarding() // graduates the onboarding objective
         refreshWallet()
         spawnLoot(p.position) // drop a loot crate where it died
