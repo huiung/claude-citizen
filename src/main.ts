@@ -214,6 +214,7 @@ const rankBarEl = document.getElementById('rank-bar')!
 const rankNextEl = document.getElementById('rank-next')!
 const pilotLevelEl = document.getElementById('pilot-level')!
 const pilotXpBarEl = document.getElementById('pilot-xp-bar')!
+const pilotBonusEl = document.getElementById('pilot-bonus')!
 const promotionEl = document.getElementById('promotion')!
 const depthLabelEl = document.getElementById('depth-label')!
 const depthBarEl = document.getElementById('depth-bar')!
@@ -2301,6 +2302,8 @@ function updateWalletHUD(): void {
   pilotLevelEl.textContent = `Lv ${pilot.level}`
   const need = xpForLevel(pilot.level)
   pilotXpBarEl.style.width = `${need === Infinity ? 100 : Math.min(100, Math.round((pilot.xp / need) * 100))}%`
+  const u = unlocksForLevel(pilot.level)
+  pilotBonusEl.textContent = pilot.level > 1 ? `+${u.hullBonus} HULL · +${u.weaponDamageBonus} DMG` : ''
 }
 
 function currentProgress(): PlayerProgress {
