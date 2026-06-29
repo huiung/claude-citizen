@@ -174,6 +174,7 @@ export function sanitizeProgress(p) {
 // real-elapsed × rate, so spamming saves can't inflate it — fabricating 40M needs ~1.1h of real
 // time (no longer instant, and a score climbing at exactly max-rate is easy to spot).
 export const MAX_EARN_RATE = 10_000        // credits/sec accepted increase
+export const MAX_CREDIT_RISE_FLOOR = 250_000 // ≥ one max casino win (100k) + headroom; per-save flat allowance for credit rises (earned stays capped separately)
 export const MAX_EARN_WINDOW_SEC = 60      // elapsed cap → at most +600k accepted per save
 export const CAREER_SCRUB_CEILING = 10_000_000 // one-time boot clamp (just above the ~8M legit top)
 
@@ -194,8 +195,12 @@ export function guardEconomyGrowth(clean, prev, nowMs) {
   const claimedCredits = Number(clean.credits) || 0
   // earned is lifetime/monotonic: never below prev, never more than prev + budget.
   const earned = Math.min(Math.max(claimedEarned, prevEarned), prevEarned + budget)
-  // credits may fall freely (spending); only a RISE is bounded by the same budget.
-  const credits = claimedCredits <= prevCredits ? claimedCredits : Math.min(claimedCredits, prevCredits + budget)
+  // Credits churn faster than earned (roulette wins, spending) and DON'T feed the Career leaderboard,
+  // so they get a higher rise allowance with a flat floor covering one max casino win. `earned` keeps
+  // its tight cap above (Career anti-cheat).
+  const creditBudget = Math.max(MAX_EARN_RATE * elapsedSec, MAX_CREDIT_RISE_FLOOR)
+  // credits may fall freely (spending); only a RISE is bounded by the credit budget.
+  const credits = claimedCredits <= prevCredits ? claimedCredits : Math.min(claimedCredits, prevCredits + creditBudget)
   return { ...clean, earned, credits, _careerAt: nowMs }
 }
 

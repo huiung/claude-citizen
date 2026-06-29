@@ -614,7 +614,7 @@ export class StationMenu {
     const chips = document.createElement('div')
     chips.className = 'casino-chips'
     const chipVals: [string, number][] = [
-      ['100', 100], ['500', 500], ['1,000', 1000], ['5,000', 5000], ['MAX', MAX_BET],
+      ['1,000', 1000], ['10,000', 10_000], ['50,000', 50_000], ['MAX', MAX_BET],
     ]
     for (const [label, value] of chipVals) {
       const c = document.createElement('button')

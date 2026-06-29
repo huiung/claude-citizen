@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  CAREER_SCRUB_CEILING, guardEconomyGrowth, guardPilotGrowth, MAX_EARN_RATE, MAX_EARN_WINDOW_SEC,
+  CAREER_SCRUB_CEILING, guardEconomyGrowth, guardPilotGrowth, MAX_CREDIT_RISE_FLOOR, MAX_EARN_RATE, MAX_EARN_WINDOW_SEC,
   MAX_PILOT_LEVEL, MAX_XP_RATE, MAX_XP_WINDOW_SEC,
   cumulativeXp, levelForTotal,
   sanitizeCrafting, sanitizeProgress, scrubCareerOutliers,
@@ -35,13 +35,22 @@ describe('server XP curve (mirror of src/sim/pilotLevel.ts)', () => {
 describe('guardEconomyGrowth', () => {
   const row = (earned, credits, careerAt) => ({ earned, credits, ...(careerAt !== undefined ? { _careerAt: careerAt } : {}) })
 
-  it('clamps a 40M earned/credit jump over a short interval to the time budget', () => {
+  it('clamps a 40M earned jump over a short interval to the time budget; credits use the floor', () => {
     const now = 10_000_000
-    const prev = row(5000, 5000, now - 2000) // last save 2s ago → 2000 budget
+    const prev = row(5000, 5000, now - 2000) // last save 2s ago → 2000 earn budget
     const out = guardEconomyGrowth({ earned: 40_000_000, credits: 40_000_000 }, prev, now)
-    expect(out.earned).toBe(5000 + MAX_EARN_RATE * 2)
-    expect(out.credits).toBe(5000 + MAX_EARN_RATE * 2)
+    expect(out.earned).toBe(5000 + MAX_EARN_RATE * 2) // earned: tight rate×elapsed cap (Career anti-cheat)
+    expect(out.credits).toBe(5000 + MAX_CREDIT_RISE_FLOOR) // credits: flat floor allowance (>> earn budget)
     expect(out._careerAt).toBe(now)
+  })
+
+  it('accepts a +100k credit win on a near-zero-elapsed save, but clamps the same-size earned rise', () => {
+    const now = 10_000_000
+    const prev = row(50_000, 50_000, now - 1) // ~0s elapsed → ~0 earn budget
+    const out = guardEconomyGrowth({ earned: 150_000, credits: 150_000 }, prev, now)
+    expect(out.credits).toBe(150_000) // +100k credit rise fits under the 250k floor → not clamped
+    expect(out.earned).toBeLessThan(150_000) // same-size earned rise IS clamped to the earn budget
+    expect(out.earned).toBeCloseTo(50_000 + MAX_EARN_RATE * 0.001, 0)
   })
 
   it('allows a legit increase within the time budget', () => {

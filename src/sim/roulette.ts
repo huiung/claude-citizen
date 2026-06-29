@@ -8,8 +8,8 @@ export type BetType = 'red' | 'black' | 'even' | 'odd' | 'low' | 'high'
 
 export const WHEEL_SIZE = 37        // single zero: 0..36
 export const MIN_BET = 100
-export const MAX_BET = 10_000       // starting value (tuned live); a 2x win nets +stake ≤ MAX_BET,
-                                    // under the server guardEconomyGrowth per-save rise cap.
+export const MAX_BET = 100_000      // a 2x win nets +stake ≤ MAX_BET; the server credit-rise cap
+                                    // (guardEconomyGrowth MAX_CREDIT_RISE_FLOOR) was raised to match.
 
 // Standard European red numbers; everything else in 1..36 is black, 0 is green.
 export const RED_NUMBERS: ReadonlySet<number> = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36])
