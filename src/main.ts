@@ -2275,7 +2275,7 @@ function updateWalletHUD(): void {
   lastRankIndex = rank.index
   pilotLevelEl.textContent = `Lv ${pilot.level}`
   const need = xpForLevel(pilot.level)
-  pilotXpBarEl.style.width = `${need === Infinity ? 100 : Math.round((pilot.xp / need) * 100)}%`
+  pilotXpBarEl.style.width = `${need === Infinity ? 100 : Math.min(100, Math.round((pilot.xp / need) * 100))}%`
 }
 
 function currentProgress(): PlayerProgress {
