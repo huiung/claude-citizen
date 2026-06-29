@@ -8,6 +8,10 @@ describe('colorOf', () => {
     expect(colorOf(3)).toBe('red')
     expect(colorOf(2)).toBe('black')
     expect(colorOf(4)).toBe('black')
+    expect(colorOf(19)).toBe('red')
+    expect(colorOf(34)).toBe('red')
+    expect(colorOf(20)).toBe('black')
+    expect(colorOf(36)).toBe('red')
   })
 })
 
@@ -32,6 +36,10 @@ describe('payoutMultiplier', () => {
     expect(payoutMultiplier('low', { number: 5, color: 'red' })).toBe(2)
     expect(payoutMultiplier('high', { number: 5, color: 'red' })).toBe(0)
     expect(payoutMultiplier('high', { number: 36, color: 'red' })).toBe(2)
+    expect(payoutMultiplier('low', { number: 18, color: 'red' })).toBe(2)
+    expect(payoutMultiplier('high', { number: 18, color: 'red' })).toBe(0)
+    expect(payoutMultiplier('low', { number: 19, color: 'red' })).toBe(0)
+    expect(payoutMultiplier('high', { number: 19, color: 'red' })).toBe(2)
   })
   it('the green 0 loses ALL bet types (the house edge)', () => {
     const zero = { number: 0, color: 'green' as const }

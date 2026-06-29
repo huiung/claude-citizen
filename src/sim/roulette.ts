@@ -29,11 +29,11 @@ export function spinRoulette(rng: () => number = Math.random): SpinResult {
 export function payoutMultiplier(bet: BetType, r: SpinResult): number {
   if (r.number === 0) return 0
   const win =
-    bet === 'red' ? r.color === 'red'
-    : bet === 'black' ? r.color === 'black'
+    bet === 'red' ? colorOf(r.number) === 'red'
+    : bet === 'black' ? colorOf(r.number) === 'black'
     : bet === 'even' ? r.number % 2 === 0
     : bet === 'odd' ? r.number % 2 === 1
-    : bet === 'low' ? r.number >= 1 && r.number <= 18
+    : bet === 'low' ? r.number <= 18
     : r.number >= 19 && r.number <= 36 // high
   return win ? 2 : 0
 }
