@@ -91,7 +91,7 @@ import {
 } from './sim/pvp'
 import { type Pirate, PIRATE_REWARD, PIRATE_TIER_HULL_MUL, PIRATE_TIER_REWARD, shouldDespawnPirate, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
 import { addXp, loadPilot, savePilot, xpForKill } from './sim/pilotLevel'
-import { currentCampaignStep, loadCampaign, recordCampaignEvent, saveCampaign } from './sim/campaign'
+import { currentCampaignStep, loadCampaign, recordCampaignEvent, saveCampaign, SECTOR1_CAMPAIGN } from './sim/campaign'
 import {
   createTrainingDrones,
   stepTrainingDrone,
@@ -1443,6 +1443,14 @@ const pilot = loadPilot(localStorage)
 const campaign = loadCampaign(localStorage)
 let namedRaiderActive = false // guards against double-spawning the campaign's named miniboss
 
+// Apply Pilot-Level XP and announce any level-ups. (showPromotion is hoisted, so it's visible here.)
+function awardPilotXp(amount: number): void {
+  const r = addXp(pilot, amount)
+  pilot.level = r.progress.level
+  pilot.xp = r.progress.xp
+  if (r.leveledUp.length) showPromotion(`Pilot Level ${pilot.level}`)
+}
+
 let playerEngineGlows: CraftEngineGlow[] = collectCraftEngineGlows(shipMesh)
 let playerCosmetics: ShipCosmetics = createShipCosmetics(shipMesh, scene)
 function applyPlayerCosmetics(): void {
@@ -1983,6 +1991,7 @@ function maybeSpawnNamedRaider(now: number): void {
   if (!step || step.counter !== 'kill_named') return
   const captain = step.id === 's1-captain'
   const name = captain ? 'Raider Captain' : 'Vex Marrow'
+  // Intentionally bypasses the MAX_PIRATES count cap — the campaign miniboss must always appear.
   const pos = spawnPositionAround(ship.position, 700, pirateSpawnCount++)
   addPirate(spawnPirate(`named-${campaign.step}`, pos, {
     tier: 'named', name,
@@ -2175,6 +2184,7 @@ function clearPirates(): void {
     removePirateMesh(p.id)
   }
   pirates.splice(0)
+  namedRaiderActive = false // wiping all pirates includes any active miniboss — let it re-spawn
   for (let i = projectiles.length - 1; i >= 0; i--) {
     if (projectiles[i].faction === 'pirate') projectiles.splice(i, 1)
   }
@@ -2344,8 +2354,12 @@ function applyServerProgress(p: PlayerProgress): void {
   crafting.items.splice(0, crafting.items.length, ...nextCrafting.items)
   crafting.equipped = nextCrafting.equipped
   crafting.pityCount = nextCrafting.pityCount
-  if (p.pilot) { pilot.level = p.pilot.level; pilot.xp = p.pilot.xp }
-  if (p.campaign) { campaign.step = p.campaign.step; campaign.progress = p.campaign.progress; campaign.sectorUnlocked = p.campaign.sectorUnlocked }
+  if (p.pilot) { pilot.level = Math.max(1, p.pilot.level); pilot.xp = Math.max(0, p.pilot.xp) }
+  if (p.campaign) {
+    campaign.step = Math.min(SECTOR1_CAMPAIGN.length, Math.max(0, p.campaign.step))
+    campaign.progress = Math.max(0, p.campaign.progress)
+    campaign.sectorUnlocked = Math.max(1, p.campaign.sectorUnlocked)
+  }
   dailyState = p.daily ? { ...emptyDaily(), ...p.daily } : emptyDaily()
   initDaily(Date.now())
   ownedShips.clear()
@@ -4533,21 +4547,15 @@ function frame(now: number): void {
         gainCredits(econ, p.reward)
         recordDailyEvent('kill_pirates', 1, now)
         // Pilot Level XP for the kill (tier-scaled), then campaign progress.
-        const killXp = addXp(pilot, xpForKill(p.tier))
-        pilot.level = killXp.progress.level
-        pilot.xp = killXp.progress.xp
-        if (killXp.leveledUp.length) showPromotion(`Pilot Level ${pilot.level}`)
+        awardPilotXp(xpForKill(p.tier))
         if (p.tier === 'named') {
           namedRaiderActive = false
           crafting.cores += 1 // named minibosses guarantee a core
         }
         const camp = recordCampaignEvent(campaign, p.tier === 'named' ? 'kill_named' : 'kill_pirates', 1)
         if (camp.completed) {
-          const stepXp = addXp(pilot, camp.completed.xpReward)
-          pilot.level = stepXp.progress.level
-          pilot.xp = stepXp.progress.xp
+          awardPilotXp(camp.completed.xpReward) // step XP stacks on top of the kill XP
           gainCredits(econ, camp.completed.creditReward)
-          if (stepXp.leveledUp.length) showPromotion(`Pilot Level ${pilot.level}`)
           if (camp.completed.unlockSector) {
             registerKillBanner(combatFeedback, `SECTOR ${camp.completed.unlockSector} UNLOCKED`, 'new space charted', now)
           }
@@ -4560,6 +4568,7 @@ function frame(now: number): void {
       } else if (shouldDespawnPirate(ship.position.distanceTo(pirates[i].position))) {
         // Outran it (boost/quantum) — cull the orphaned chaser silently so the slot
         // frees up for a fresh near spawn. No bounty: it wasn't killed.
+        if (pirates[i].tier === 'named') namedRaiderActive = false // outran the miniboss — let it re-spawn
         removePirateMesh(pirates[i].id)
         pirates.splice(i, 1)
       }
