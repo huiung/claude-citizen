@@ -30,9 +30,10 @@ import {
 } from './render/world'
 import { PLANETS, planetDockPosition, SUN_COLOR, SUN_POSITION, SUN_RADIUS, type SurfaceKind } from './sim/solarSystem'
 import { NetClient, type MarketActionResult, type MarketIntentResult, type MarketListing, type PeerState, type PlayerProgress } from './net/client'
-import { dockableTarget, type DockTarget } from './sim/docking'
-import { cargoUsed, gainCredits, loadEconomy, OUTPOSTS, saveEconomy } from './sim/economy'
+import { dockableTarget, DOCK_RANGE, type DockTarget } from './sim/docking'
+import { cargoUsed, gainCredits, loadEconomy, OUTPOSTS, saveEconomy, sell } from './sim/economy'
 import { createAsteroidField, mineStep } from './sim/mining'
+import { spinRoulette, payoutMultiplier, clampBet, MIN_BET } from './sim/roulette'
 import { loadCraftingState, normalizeCraftingState, saveCraftingState, equipCosmetic, unequipCosmetic } from './sim/crafting'
 import { createShipCosmetics, type ShipCosmetics } from './render/craftCosmetics'
 import { equippedStyles, encodeEquipped, decodeCosmetics } from './sim/cosmetics'
@@ -1748,6 +1749,17 @@ function startBotTransit(): void {
   botLastStop = kind
   botStopKind = kind
   customJumpDestination = null
+  if (kind === 'mine-and-gamble') {
+    // The belt streams in around spawn, so no quantum jump — drop straight into the perform/idle
+    // state and let the mine-and-gamble sub-machine drive from there.
+    botPhase = 'perform'
+    botActivity = null
+    botMinePhase = 'mine'
+    botMineUntil = performance.now() + BOT_MINE_CAP_MS
+    botMineStationId = null
+    net.sendChat('Mining run: prospecting the belt, then a spin at the wheel.')
+    return
+  }
   if (kind === 'black-hole-dive') {
     customJumpDestination = { id: 'black-hole-approach', name: 'the black hole', kind: 'Singularity', position: BLACK_HOLE_APPROACH_DESTINATION.position.clone() }
   } else if (kind === 'race') {
@@ -2715,7 +2727,24 @@ const _botPrevPos = new THREE.Vector3()
 const BOT_ENGINE_REF_SPEED = 700  // bot engine-audio reference: the on-rails speed that reads as full-throttle hum
 const BOT_PLANET_DWELL_MS = 6000
 const BOT_PERFORM_CAP_MS = 45000  // safety cap; black-hole dive's long in-and-out needs room
-const BOT_STOP_KINDS = ['planet', 'race', 'pvp-training', 'black-hole-dive']
+const BOT_STOP_KINDS = ['planet', 'race', 'pvp-training', 'black-hole-dive', 'mine-and-gamble']
+// Bot mine→sell→gamble activity tuning (showcase; bot econ is local/ephemeral, never persisted).
+const BOT_MINE_TARGET_ORE = 60       // stop mining at ~this much cargo…
+const BOT_MINE_CAP_MS = 18_000       // …or after this long
+const BOT_HAUL_CAP_MS = 30_000       // safety cap flying to the station
+const BOT_GAMBLE_SPINS = 3
+const BOT_GAMBLE_FRACTION = 0.2      // stake ~20% of credits per spin
+const BOT_GAMBLE_INTERVAL_MS = 1500  // pace spins so chat is readable
+const BOT_MINE_CRUISE = 600          // on-rails cruise speed for the mine/haul legs
+const BOT_DOCK_CRAWL = 14            // crawl speed inside dock range (sub-DOCK_MAX_SPEED for the gate)
+const BOT_MINE_PROXIMITY = 120       // within this of an asteroid → fire the mining laser
+type BotMinePhase = 'mine' | 'haul' | 'sell' | 'gamble' | 'done'
+let botMinePhase: BotMinePhase | null = null  // non-null only while running the mine-and-gamble activity
+let botMineUntil = 0
+let botHaulUntil = 0
+let botGambleNextAt = 0
+let botGambleLeft = 0
+let botMineStationId: string | null = null
 let botChatRecent: { name: string; text: string }[] = []
 let botLastReplyAt = 0
 let botThinking = false
@@ -4456,14 +4485,93 @@ function frame(now: number): void {
       input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
       weaponActive = false
       const idle = quantum.phase === 'idle'
-      // We only enter 'transit' right after a jump starts (phase != idle), so transit + idle = arrived.
-      // (Robust against a missed traveling→idle edge, e.g. a backgrounded tab fast-forwarding the jump.)
-      if (botPhase === 'transit' && idle) {
+      // Mine→sell→gamble showcase leg owns the frame while active (botMinePhase non-null): it steers via
+      // stepMover, mines/sells/gambles on the LOCAL ephemeral econ, then rejoins the rotation. This branch
+      // short-circuits the normal transit/perform handling below; when botMinePhase is null nothing changes.
+      if (botMinePhase && idle) {
+        if (botMinePhase === 'mine') {
+          miningActive = false
+          // Nearest field asteroid that still has reserves.
+          let ast: { position: THREE.Vector3; reserves: number } | null = null
+          let bestSq = Infinity
+          for (const a of field.asteroids) {
+            if (a.reserves <= 0) continue
+            const d = a.position.distanceToSquared(ship.position)
+            if (d < bestSq) { bestSq = d; ast = a }
+          }
+          if (!ast || cargoUsed(econ) >= BOT_MINE_TARGET_ORE || now >= botMineUntil) {
+            miningActive = false
+            net.sendChat(`Hold's loaded — ${Math.floor(econ.cargo.ORE)} ORE. Hauling to sell.`)
+            botMinePhase = 'haul'; botHaulUntil = now + BOT_HAUL_CAP_MS
+          } else {
+            _botPrevPos.copy(ship.position)
+            const r = stepMover(ship.position, ast.position, BOT_MINE_CRUISE, dt)
+            ship.position.copy(r.pos)
+            ship.quaternion.copy(r.quat)
+            ship.velocity.copy(r.pos).sub(_botPrevPos).multiplyScalar(1 / Math.max(dt, 1e-4))
+            miningActive = ship.position.distanceTo(ast.position) < BOT_MINE_PROXIMITY
+            if (miningActive) mineStep(field, ship.position, econ, dt, true, effCargo(), miningYield(upgrades))
+          }
+        } else if (botMinePhase === 'haul') {
+          // Nearest dockable outpost from the dock-target set.
+          let stationPos = REFINERY_POS
+          let bestSq = Infinity
+          for (const t of dockTargets) {
+            const d = t.position.distanceToSquared(ship.position)
+            if (d < bestSq) { bestSq = d; stationPos = t.position }
+          }
+          // Slow to a docking crawl once inside range so dockableTarget's speed gate passes.
+          const near = ship.position.distanceTo(stationPos) < DOCK_RANGE
+          _botPrevPos.copy(ship.position)
+          const r = stepMover(ship.position, stationPos, near ? BOT_DOCK_CRAWL : BOT_MINE_CRUISE, dt)
+          ship.position.copy(r.pos)
+          ship.quaternion.copy(r.quat)
+          ship.velocity.copy(r.pos).sub(_botPrevPos).multiplyScalar(1 / Math.max(dt, 1e-4))
+          // Use dockableTarget purely to pick the station id + confirm proximity/speed — we do NOT call the
+          // player dock() (it sets the global `docked` flag, pops the station UI, and persists state). The
+          // bot sells/gambles on its local ephemeral econ with `docked` left false, so the outer
+          // `!docked` frame guard keeps letting this leg run.
+          const dockId = dockableTarget(ship.position, ship.velocity.length(), dockTargets)
+          if (dockId) { botMineStationId = dockId; botMinePhase = 'sell' }
+          else if (now >= botHaulUntil) { botMinePhase = 'gamble'; botGambleLeft = 0 } // couldn't reach → skip to wrap-up
+        } else if (botMinePhase === 'sell') {
+          if (botMineStationId && econ.cargo.ORE > 0) {
+            const ore = Math.floor(econ.cargo.ORE)
+            sell(econ, OUTPOSTS[botMineStationId], 'ORE', ore)
+            // Chat the raw proceeds (ore×price); sell() routes through gainCredits, whose rank bonus would
+            // inflate the credit delta past ore×price.
+            net.sendChat(`Sold ${ore} ORE for +${Math.round(OUTPOSTS[botMineStationId].prices.ORE * ore)} cr.`)
+            updateWalletHUD()
+          }
+          botMinePhase = 'gamble'; botGambleLeft = BOT_GAMBLE_SPINS; botGambleNextAt = now
+        } else if (botMinePhase === 'gamble') {
+          if (botGambleLeft <= 0 || econ.credits < MIN_BET) {
+            botMinePhase = 'done' // never docked → nothing to undock
+          } else if (now >= botGambleNextAt) {
+            const stake = clampBet(Math.round(econ.credits * BOT_GAMBLE_FRACTION), econ.credits)
+            if (stake <= 0) { botGambleLeft = 0 }
+            else {
+              const bet: 'red' | 'black' = Math.random() < 0.5 ? 'red' : 'black'
+              const result = spinRoulette()
+              const mult = payoutMultiplier(bet, result)
+              econ.credits -= stake
+              if (mult > 0) econ.credits += stake * mult // DIRECT — never gainCredits (credits-only, mirrors the casino)
+              net.sendChat(`Roulette — ${stake} on ${bet.toUpperCase()}: ${result.number} ${result.color} → ${mult > 0 ? 'WIN' : 'LOSE'}`)
+              updateWalletHUD()
+              botGambleLeft -= 1
+              botGambleNextAt = now + BOT_GAMBLE_INTERVAL_MS
+            }
+          }
+        } else { // 'done'
+          botMinePhase = null
+          startBotTransit() // back to the normal rotation
+        }
+      } else if (botPhase === 'transit' && idle) {
         if (botStopKind === 'planet') { botActivity = null; botDwellUntil = now + BOT_PLANET_DWELL_MS }
         else { botActivity = buildActivity(botStopKind, ship.position, Math.random, now, BOT_WORLD); botPerformUntil = now + BOT_PERFORM_CAP_MS; net.sendChat(botActivity.intro) }
         botPhase = 'perform'
       }
-      if (botPhase === 'perform' && idle) {
+      if (!botMinePhase && botPhase === 'perform' && idle) {
         if (botActivity) {
           // Run the local maneuver on-rails. Each activity carries its own speed (close-quarters content
           // flies near real flight speed; the black-hole dive boosts) — no global cap, so it reads naturally.
