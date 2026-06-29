@@ -15,6 +15,7 @@ import { raceLeaderboardPage, mergeRaceStats, recordRankedRaceFinish } from './r
 import { blackHoleLeaderboardPage, mergeBlackHoleStats, recordBlackHoleRun } from './blackHoleLeaderboard.mjs'
 import { pilotLevelLeaderboardPage, mergePilotStats, mergeCampaignStats } from './pilotLevelLeaderboard.mjs'
 import { applyPvpHit, applyPvpRespawn, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
+import { launchGate, LAUNCH_MIN_TOKEN_BALANCE } from './accessGate.mjs'
 import { resolveCallsign, identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
 import { guardEconomyGrowth, guardPilotGrowth, sanitizeProgress, scrubCareerOutliers } from './progress.mjs'
 import {
@@ -395,31 +396,37 @@ wss.on('connection', (ws) => {
     if (msg.t === 'join') {
       const token = typeof msg.token === 'string' ? msg.token.slice(0, 64) : null
       let client = clients.get(ws)
-      if (client) {
-        // Promote an existing viewer into an active pilot.
-        client.active = true
-        client.name = String(msg.name ?? 'PILOT').slice(0, 16)
-        client.color = nextColor++
-        if (token) client.token = token
-        client.visual = normalizeHolderShipVisual(msg.visual)
-        client.cosmetics = normalizeCosmetics(msg.cosmetics)
-        client.invisible = msg.invisible === true
-        resetPvpHull(client, normalizeShip(msg.ship))
-      } else {
+      // Operator showcase bot: grant cosmetic-only tier 3 (unlocks T3 hull skins) when it presents the
+      // shared secret. Purely visual — ranked PvP still requires a verified wallet balance the bot lacks.
+      const isBot = !!(BOT_COSMETIC_SECRET && msg.botSecret === BOT_COSMETIC_SECRET)
+      if (!client) {
+        // Build the connection WITHOUT activating — the launch gate decides below.
         client = {
           id: Math.random().toString(36).slice(2, 10),
           name: String(msg.name ?? 'PILOT').slice(0, 16),
-          color: nextColor++, p: [0, 0, 0], q: [0, 0, 0, 1], token,
-          active: true, authed: false, pubkey: null, tier: 0, holderBalance: 0, lastPvpCombatAt: null, visual: normalizeHolderShipVisual(msg.visual), cosmetics: normalizeCosmetics(msg.cosmetics),
+          color: -1, p: [0, 0, 0], q: [0, 0, 0, 1], token,
+          active: false, authed: false, pubkey: null, tier: 0, holderBalance: 0, lastPvpCombatAt: null,
+          visual: normalizeHolderShipVisual(msg.visual), cosmetics: normalizeCosmetics(msg.cosmetics),
           invisible: msg.invisible === true, isBot: false,
         }
         resetPvpHull(client, normalizeShip(msg.ship))
         clients.set(ws, client)
       }
-      // Operator showcase bot: grant cosmetic-only tier 3 (unlocks T3 hull skins) when it presents the
-      // shared secret. Purely visual — ranked PvP still requires a verified wallet balance the bot lacks.
-      if (BOT_COSMETIC_SECRET && msg.botSecret === BOT_COSMETIC_SECRET) { client.tier = 3; client.isBot = true }
+      if (isBot) { client.tier = 3; client.isBot = true }
       if (!client.authed) applySession(client, msg.sessionId)
+      await refreshHolder(ws, client)               // resolve verified holder balance (cached) before gating
+      if (!clients.has(ws)) return                  // disconnected during the async lookup
+      const gate = launchGate(client, LAUNCH_MIN_TOKEN_BALANCE)
+      if (!gate.ok) { send(ws, { t: 'join-error', reason: gate.reason }); return } // refused → stays a viewer (Browse)
+      // --- gate passed: activate (original logic) ---
+      client.active = true
+      client.name = String(msg.name ?? 'PILOT').slice(0, 16)
+      if (client.color < 0) client.color = nextColor++
+      if (token) client.token = token
+      client.visual = normalizeHolderShipVisual(msg.visual)
+      client.cosmetics = normalizeCosmetics(msg.cosmetics)
+      client.invisible = msg.invisible === true
+      resetPvpHull(client, normalizeShip(msg.ship))
       client.name = resolveCallsign({ authed: client.authed, storedName: store[identityKey(client)]?.name, requestedName: client.name })
       if (client.authed && client.name && client.name.toLowerCase() !== 'pilot') send(ws, { t: 'callsign', name: client.name })
       const key = identityKey(client)
@@ -436,7 +443,6 @@ wss.on('connection', (ws) => {
         if (!(key in store)) { store[key] = null; flush() }
       }
       if (!client.invisible) broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q, tier: client.tier ?? 0, ship: client.ship, visual: client.visual, cosmetics: client.cosmetics, hull: client.hull, maxHull: client.maxHull })
-      void refreshHolder(ws, client) // (re)check holder flair now that we're an active, visible pilot
       console.log(`[join] ${client.name} (${client.id})${client.token ? ' +token' : ''} — ${clients.size} online`)
       return
     }
