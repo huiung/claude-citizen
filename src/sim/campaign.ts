@@ -62,8 +62,8 @@ export function loadCampaign(storage: Storage): CampaignState {
     const p = JSON.parse(raw)
     if (typeof p?.step !== 'number') return emptyCampaign()
     return {
-      step: Math.max(0, Math.floor(p.step)),
-      progress: Math.max(0, p.progress ?? 0),
+      step: Math.min(SECTOR1_CAMPAIGN.length, Math.max(0, Math.floor(p.step))),
+      progress: Math.max(0, Math.floor(p.progress ?? 0)),
       sectorUnlocked: Math.max(1, p.sectorUnlocked ?? 1),
     }
   } catch {

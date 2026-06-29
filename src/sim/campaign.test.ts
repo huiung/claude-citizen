@@ -56,5 +56,7 @@ describe('campaign chain', () => {
     expect(loadCampaign(storage)).toEqual(s)
     storage.setItem('scc.campaign.v1', '{"step":-1}')
     expect(loadCampaign(storage).step).toBe(0)
+    storage.setItem('scc.campaign.v1', '{"step":9999}')
+    expect(loadCampaign(storage).step).toBe(SECTOR1_CAMPAIGN.length)
   })
 })
