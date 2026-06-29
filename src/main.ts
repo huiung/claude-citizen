@@ -90,7 +90,7 @@ import {
   trainingDronesActive,
 } from './sim/pvp'
 import { type Pirate, PIRATE_REWARD, PIRATE_TIER_HULL_MUL, PIRATE_TIER_REWARD, shouldDespawnPirate, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
-import { addXp, loadPilot, savePilot, xpForKill } from './sim/pilotLevel'
+import { addXp, loadPilot, savePilot, xpForKill, xpForLevel } from './sim/pilotLevel'
 import { currentCampaignStep, loadCampaign, recordCampaignEvent, saveCampaign, SECTOR1_CAMPAIGN } from './sim/campaign'
 import {
   createTrainingDrones,
@@ -212,6 +212,8 @@ const cargoEl = document.getElementById('cargo')!
 const rankNameEl = document.getElementById('rank-name')!
 const rankBarEl = document.getElementById('rank-bar')!
 const rankNextEl = document.getElementById('rank-next')!
+const pilotLevelEl = document.getElementById('pilot-level')!
+const pilotXpBarEl = document.getElementById('pilot-xp-bar')!
 const promotionEl = document.getElementById('promotion')!
 const depthLabelEl = document.getElementById('depth-label')!
 const depthBarEl = document.getElementById('depth-bar')!
@@ -269,6 +271,8 @@ function finishOnboarding(): void {
  *  Early steps teach the core loop; later steps point pilots toward daily, craft, race, and void goals. */
 function currentObjective(): string | null {
   if (flightPlanObjective && performance.now() < flightPlanObjectiveUntil) return flightPlanObjective
+  const camp = currentCampaignStep(campaign)
+  if (camp) return `${camp.label} — ${Math.floor(campaign.progress)}/${camp.target}`
   const goal = nextJourneyGoal({
     minedEver,
     dockedEver,
@@ -2269,6 +2273,9 @@ function updateWalletHUD(): void {
   rankNextEl.textContent = nxt ? `NEXT ${nxt.name} (${nxt.min.toLocaleString()})` : 'MAX'
   if (lastRankIndex >= 0 && rank.index > lastRankIndex) showPromotion(rank.name)
   lastRankIndex = rank.index
+  pilotLevelEl.textContent = `Lv ${pilot.level}`
+  const need = xpForLevel(pilot.level)
+  pilotXpBarEl.style.width = `${need === Infinity ? 100 : Math.round((pilot.xp / need) * 100)}%`
 }
 
 function currentProgress(): PlayerProgress {
