@@ -2303,7 +2303,7 @@ function updateWalletHUD(): void {
   const need = xpForLevel(pilot.level)
   pilotXpBarEl.style.width = `${need === Infinity ? 100 : Math.min(100, Math.round((pilot.xp / need) * 100))}%`
   const u = unlocksForLevel(pilot.level)
-  pilotBonusEl.textContent = pilot.level > 1 ? `+${u.hullBonus} HULL · +${u.weaponDamageBonus} DMG` : ''
+  pilotBonusEl.textContent = (u.hullBonus > 0 || u.weaponDamageBonus > 0) ? `+${u.hullBonus} HULL · +${u.weaponDamageBonus} DMG` : ''
 }
 
 function currentProgress(): PlayerProgress {
