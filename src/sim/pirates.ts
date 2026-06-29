@@ -40,6 +40,8 @@ export interface Pirate {
   name?: string
 }
 
+/** Spawn overrides. NOTE: `tier`/`name` are labels only — they do NOT auto-apply
+ *  PIRATE_TIER_HULL_MUL / PIRATE_TIER_REWARD; pass `hullMul`/`reward` explicitly for tier-scaled stats. */
 export interface SpawnPirateOpts {
   hullMul?: number
   reward?: number

@@ -32,6 +32,12 @@ describe('spawnPirate', () => {
     expect(p.name).toBeUndefined()
   })
 
+  it('carries the elite tier', () => {
+    const e = spawnPirate('e1', new Vector3(), { tier: 'elite' })
+    expect(e.tier).toBe('elite')
+    expect(e.name).toBeUndefined()
+  })
+
   it('carries an explicit tier and name', () => {
     const named = spawnPirate('boss', new Vector3(), { tier: 'named', name: 'Vex Marrow', hullMul: 8, reward: 4000 })
     expect(named.tier).toBe('named')
