@@ -672,7 +672,10 @@ export class StationMenu {
     // Drive the reel. When idle, rest with the last (or 0) pocket under the pointer. When a spin
     // is in flight, snap to the start offset, then on the next frame set the landing transform so
     // the CSS ease-out transition decelerates the strip onto the decided target.
-    const center = StationMenu.CASINO_CELL_W / 2
+    // Center the target pocket under the centered pointer (#casino-pointer is at left:50%).
+    // Must be the VIEWPORT half-width, not the cell half-width — otherwise the target lands at the
+    // left edge. The panel is already in the DOM (appended above) so clientWidth is laid out.
+    const center = reel.clientWidth / 2
     if (this.casinoSpinning && this.casinoReelTarget !== null) {
       const startIdx = this.casinoReelTarget // first cycle copy of the target
       const endIdx = (StationMenu.CASINO_CYCLES - 1) * WHEEL_SIZE + this.casinoReelTarget
