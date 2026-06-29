@@ -152,6 +152,7 @@ import {
   loadGameSettings,
   saveGameSettings,
 } from './ui/settings'
+import { shouldShowCombatHud } from './ui/combatHudVisibility'
 import { mobileFlightInput, type MobileFlightState } from './ui/mobileFlight'
 import {
   combatFeedbackAlpha,
@@ -4592,7 +4593,7 @@ function frame(now: number): void {
   if (running) updateDustField(dustField, camera.position)
 
   // Combat HUD — target brackets, threat arrows, lead pip (hidden while docked/in menu).
-  if (running && !docked && !BOT) drawCombatHud(now)
+  if (shouldShowCombatHud({ running, docked, bot: BOT, botActivityKind: botActivity?.kind })) drawCombatHud(now)
   else cctx.clearRect(0, 0, combatCanvas.width, combatCanvas.height)
 
   if (running && !docked) updateLootCrates(now, dt) // spin / magnet / collect loot crates

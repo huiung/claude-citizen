@@ -112,6 +112,10 @@ describe('ASSET_BLIP_SPECS', () => {
     }
   })
 
+  it('keeps weapon fire audible over engine and arena ambience', () => {
+    expect(ASSET_BLIP_SPECS.fire!.gain).toBeGreaterThanOrEqual(0.32)
+  })
+
   it('keeps an oscillator fallback for every asset-backed cue', () => {
     for (const kind of Object.keys(ASSET_BLIP_SPECS)) {
       expect(BLIP_SPECS).toHaveProperty(kind)

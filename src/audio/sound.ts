@@ -211,7 +211,7 @@ export const ASSET_BLIP_SPECS: Partial<Record<BlipKind, AssetBlipSpec>> = {
       '/audio/kenney-sci-fi/laserSmall_001.ogg',
       '/audio/kenney-sci-fi/laserSmall_002.ogg',
     ],
-    gain: 0.22,
+    gain: 0.32,
   },
   hit: {
     variants: [
