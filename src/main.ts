@@ -273,7 +273,7 @@ function finishOnboarding(): void {
 function currentObjective(): { text: string; kind: 'flight' | 'campaign' | 'journey' } | null {
   if (flightPlanObjective && performance.now() < flightPlanObjectiveUntil) return { text: flightPlanObjective, kind: 'flight' }
   const camp = currentCampaignStep(campaign)
-  if (camp) return { text: `${camp.label} — ${Math.floor(campaign.progress)}/${camp.target}`, kind: 'campaign' }
+  if (camp) return { text: `${camp.label} (${Math.floor(campaign.progress)}/${camp.target})`, kind: 'campaign' }
   const goal = nextJourneyGoal({
     minedEver,
     dockedEver,
