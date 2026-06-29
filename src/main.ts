@@ -3198,7 +3198,7 @@ addEventListener('keydown', (e) => {
     solarMap.open()
     return
   }
-  if (e.code === 'Enter' && running && !docked) { openChat(); return }
+  if (e.code === 'Enter' && running && !docked && !spectating) { openChat(); return }
   if (e.code === 'Space') e.preventDefault()
   if (e.repeat) return
   if (e.code === 'KeyO' && running && !docked) {
@@ -3244,7 +3244,7 @@ addEventListener('keydown', (e) => {
       requestFlightPointerLock()
     }
   }
-  if (e.code === 'KeyG' && running && !docked) {
+  if (e.code === 'KeyG' && running && !docked && !spectating) {
     if (dailyPanelEl.hidden) {
       renderDailyPanel(Date.now())
       dailyPanelEl.hidden = false
@@ -3590,6 +3590,7 @@ function addChatLine(name: string, text: string, tier = 0): void {
 }
 
 function openChat(): void {
+  if (spectating) return // Browse is viewer-only — no chat-as-player
   if (chatOpen || !running || docked) return
   chatOpen = true
   document.exitPointerLock()
