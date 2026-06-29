@@ -49,7 +49,7 @@ export function recordBlackHoleRun(store, { key, name, distance, now }) {
 export function blackHoleLeaderboardPage(store, { offset = 0, limit = LEADERBOARD_PAGE_SIZE } = {}) {
   const ranked = Object.entries(store)
     .filter(([, entry]) => cleanBlackHoleStats(entry?.blackHole).bestDistance > 0)
-    .filter(([key, entry]) => !isOperatorBotEntry(key, entry))
+    .filter(([key, entry]) => isWalletKey(key) && !isOperatorBotEntry(key, entry))
     .sort(([keyA, a], [keyB, b]) => {
       const as = cleanBlackHoleStats(a?.blackHole)
       const bs = cleanBlackHoleStats(b?.blackHole)

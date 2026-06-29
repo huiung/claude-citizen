@@ -49,7 +49,7 @@ export function recordRankedRaceFinish(store, { key, name, timeMs, now }) {
 export function raceLeaderboardPage(store, { offset = 0, limit = LEADERBOARD_PAGE_SIZE } = {}) {
   const ranked = Object.entries(store)
     .filter(([, entry]) => cleanRaceStats(entry?.race).bestTimeMs > 0)
-    .filter(([key, entry]) => !isOperatorBotEntry(key, entry))
+    .filter(([key, entry]) => isWalletKey(key) && !isOperatorBotEntry(key, entry))
     .sort(([keyA, a], [keyB, b]) => {
       const ar = cleanRaceStats(a?.race)
       const br = cleanRaceStats(b?.race)

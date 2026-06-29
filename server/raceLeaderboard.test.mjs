@@ -26,7 +26,7 @@ describe('race leaderboard', () => {
     })
   })
 
-  it('sorts lower times first, then more finishes, then newer runs', () => {
+  it('sorts lower times first, then more finishes, then newer runs (wallet-only)', () => {
     const store = {
       [WALLET_A]: { name: 'ACE', race: { bestTimeMs: 42000, finishes: 4, lastFinishAt: 5000 } },
       [WALLET_B]: { name: 'MAV', race: { bestTimeMs: 42000, finishes: 6, lastFinishAt: 4000 } },
@@ -36,27 +36,40 @@ describe('race leaderboard', () => {
 
     const page = raceLeaderboardPage(store)
 
+    // ANON (non-wallet key) is excluded even though it has the best time
     expect(page.rows.map((row) => row.name)).toEqual([
-      'ANON',
       'ZEN (1111...1111)',
       'MAV (9AbC...2XyZ)',
       'ACE (7GgB...6QnU)',
     ])
-    expect(page.rows[0].timeMs).toBe(12000)
-    expect(page.total).toBe(4)
+    expect(page.rows[0].timeMs).toBe(39800)
+    expect(page.total).toBe(3)
   })
 
-  it('excludes operator bot rows from the race leaderboard', () => {
+  it('includes only wallet-key entries, excluding qualifying anon rows', () => {
     const store = {
-      'bot-claude-race': { name: 'CLAUDE', race: { bestTimeMs: 21000, finishes: 5, lastFinishAt: 5000 } },
-      anonClaude: { name: 'CLAUDE', race: { bestTimeMs: 22000, finishes: 2, lastFinishAt: 4000 } },
       [WALLET_A]: { name: 'ACE', race: { bestTimeMs: 42000, finishes: 1, lastFinishAt: 3000 } },
+      ['a'.repeat(64)]: { name: 'ANON', race: { bestTimeMs: 10000, finishes: 9, lastFinishAt: 9000 } },
+      'anon-token-1': { name: 'OTHER', race: { bestTimeMs: 11000, finishes: 5, lastFinishAt: 8000 } },
     }
 
     const page = raceLeaderboardPage(store)
 
     expect(page.rows.map((row) => row.name)).toEqual(['ACE (7GgB...6QnU)'])
     expect(page.total).toBe(1)
+  })
+
+  it('excludes operator bot rows from the race leaderboard', () => {
+    const store = {
+      'bot-claude-race': { name: 'CLAUDE', race: { bestTimeMs: 21000, finishes: 5, lastFinishAt: 5000 } },
+      [WALLET_B]: { name: 'MAV', race: { bestTimeMs: 22000, finishes: 2, lastFinishAt: 4000 } },
+      [WALLET_A]: { name: 'ACE', race: { bestTimeMs: 42000, finishes: 1, lastFinishAt: 3000 } },
+    }
+
+    const page = raceLeaderboardPage(store)
+
+    expect(page.rows.map((row) => row.name)).toEqual(['MAV (9AbC...2XyZ)', 'ACE (7GgB...6QnU)'])
+    expect(page.total).toBe(2)
   })
 
   it('preserves race stats when ordinary progress saves arrive', () => {

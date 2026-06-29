@@ -37,21 +37,8 @@ export function leaderboardPage(store, { offset = 0, limit = LEADERBOARD_PAGE_SI
     .filter(([, entry]) => entry && (typeof entry.credits === 'number' || typeof entry.earned === 'number'))
     .filter(([key, entry]) => !isOperatorBotEntry(key, entry))
 
-  const bestWalletScoreByName = new Map()
-  for (const [key, entry] of entries) {
-    if (!isWalletKey(key)) continue
-    const name = String(entry.name ?? 'PILOT').trim().toLowerCase()
-    if (name === 'pilot') continue
-    bestWalletScoreByName.set(name, Math.max(bestWalletScoreByName.get(name) ?? 0, score(entry)))
-  }
-
   const ranked = entries
-    .filter(([key, entry]) => {
-      if (isWalletKey(key)) return true
-      const name = String(entry.name ?? 'PILOT').trim().toLowerCase()
-      const walletScore = bestWalletScoreByName.get(name)
-      return walletScore === undefined || score(entry) > walletScore
-    })
+    .filter(([key]) => isWalletKey(key))
     .sort(([, a], [, b]) => score(b) - score(a))
     .slice(0, LEADERBOARD_MAX_RANK)
     .map(([key, entry], index) => {

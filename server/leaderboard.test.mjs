@@ -6,11 +6,18 @@ function entry(name, earned) {
 }
 
 const WALLET = '7GgB2mDWpD6nA3xJ9sS6e5zqZTa3YL6hFLaeL5Qz6QnU'
+const WALLET_B = '9AbC123456789ABCDEFGHJKLMNPQRSTUVWXYZ2XyZ'
 
 describe('leaderboard paging', () => {
   it('returns a 10 pilot page with global ranks and total capped at 100', () => {
     const store = {}
-    for (let i = 0; i < 120; i++) store[`p${i}`] = entry(`P${i}`, 1000 - i)
+    // base58 wallet-style keys only (anon keys are excluded from the board)
+    const b58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+    for (let i = 0; i < 120; i++) {
+      const tail = `${b58[Math.floor(i / 58)]}${b58[i % 58]}`
+      const key = `1111111111111111111111111111111${tail}` // 33 base58 chars
+      store[key] = entry(`P${i}`, 1000 - i)
+    }
 
     const page = leaderboardPage(store, { offset: 10, limit: 10 })
 
@@ -18,20 +25,22 @@ describe('leaderboard paging', () => {
     expect(page.offset).toBe(10)
     expect(page.limit).toBe(10)
     expect(page.rows).toHaveLength(10)
-    expect(page.rows[0]).toEqual({ rank: 11, name: 'P10', earned: 990 })
+    expect(page.rows[0].rank).toBe(11)
+    expect(page.rows[0].callsign).toBe('P10')
+    expect(page.rows[0].earned).toBe(990)
     expect(page.rows[9].rank).toBe(20)
   })
 
   it('ignores empty saves and falls back from earned to credits', () => {
     const page = leaderboardPage({
-      a: { name: 'A', credits: 50 },
+      [WALLET]: { name: 'A', credits: 50 },
       b: null,
-      c: { name: 'C' },
-      d: { name: 'D', earned: 70, credits: 20 },
+      [WALLET_B]: { name: 'C' },
+      '11111111111111111111111111111111': { name: 'D', earned: 70, credits: 20 },
     }, { offset: 0, limit: 10 })
 
     expect(page.total).toBe(2)
-    expect(page.rows.map((row) => row.name)).toEqual(['D', 'A'])
+    expect(page.rows.map((row) => row.callsign)).toEqual(['D', 'A'])
     expect(page.rows.map((row) => row.earned)).toEqual([70, 50])
   })
 
@@ -47,49 +56,31 @@ describe('leaderboard paging', () => {
       wallet: '7GgB...6QnU',
       earned: 1000,
     })
-    expect(page.rows[1]).toEqual({ rank: 2, name: 'ANON', earned: 900 })
+    // anon entry is excluded entirely (wallet-only board)
+    expect(page.total).toBe(1)
+    expect(page.rows).toHaveLength(1)
   })
 
-  it('hides stale anonymous career rows already claimed by a wallet row with the same callsign', () => {
+  it('includes only wallet-key entries, excluding qualifying anon rows', () => {
     const page = leaderboardPage({
-      [WALLET]: { name: 'MAV', earned: 1200 },
-      staleAnon: { name: 'MAV', earned: 1100 },
-      strongerAnon: { name: 'MAV', earned: 1300 },
-      otherAnon: { name: 'OTHER', earned: 1000 },
+      [WALLET]: { name: 'ACE', earned: 1000 },
+      ['a'.repeat(64)]: { name: 'ANON', earned: 5000 },
+      'anon-token-1': { name: 'OTHER', earned: 4000 },
     }, { offset: 0, limit: 10 })
 
-    expect(page.rows.map((row) => row.name)).toEqual([
-      'MAV',
-      'MAV (7GgB...6QnU)',
-      'OTHER',
-    ])
-    expect(page.total).toBe(3)
-  })
-
-  it('keeps anonymous PILOT rows even when a wallet-connected PILOT exists', () => {
-    const page = leaderboardPage({
-      [WALLET]: { name: 'PILOT', earned: 1200 },
-      anonPilot: { name: 'PILOT', earned: 1100 },
-      otherAnon: { name: 'OTHER', earned: 1000 },
-    }, { offset: 0, limit: 10 })
-
-    expect(page.rows.map((row) => row.name)).toEqual([
-      'PILOT (7GgB...6QnU)',
-      'PILOT',
-      'OTHER',
-    ])
-    expect(page.total).toBe(3)
+    expect(page.rows.map((row) => row.callsign)).toEqual(['ACE'])
+    expect(page.total).toBe(1)
   })
 
   it('excludes operator bot rows from the career leaderboard', () => {
     const page = leaderboardPage({
       'bot-claude-abc': { name: 'CLAUDE', earned: 999999 },
-      anonClaude: { name: 'CLAUDE', earned: 888888 },
-      realPilot: { name: 'ACE', earned: 1000 },
+      [WALLET_B]: { name: 'MAV', earned: 888888 },
+      [WALLET]: { name: 'ACE', earned: 1000 },
     }, { offset: 0, limit: 10 })
 
-    expect(page.rows.map((row) => row.name)).toEqual(['ACE'])
-    expect(page.total).toBe(1)
+    expect(page.rows.map((row) => row.callsign)).toEqual(['MAV', 'ACE'])
+    expect(page.total).toBe(2)
   })
 
   it('clamps request params to 10-row pages through rank 100', () => {

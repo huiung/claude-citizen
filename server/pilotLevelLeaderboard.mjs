@@ -59,30 +59,8 @@ export function pilotLevelLeaderboardPage(store, { offset = 0, limit = LEADERBOA
     .filter(([, entry]) => pilotScore(entry).level > 0)
     .filter(([key, entry]) => !isOperatorBotEntry(key, entry))
 
-  // Same callsign/wallet dedup as Career: a wallet row claims its callsign, hiding weaker anon
-  // rows that share it (PILOT is exempt — it's the default name many anons keep).
-  const bestWalletScoreByName = new Map()
-  for (const [key, entry] of entries) {
-    if (!isWalletKey(key)) continue
-    const name = String(entry.name ?? 'PILOT').trim().toLowerCase()
-    if (name === 'pilot') continue
-    const stats = pilotScore(entry)
-    const prev = bestWalletScoreByName.get(name)
-    if (!prev || stats.level > prev.level || (stats.level === prev.level && stats.xp > prev.xp)) {
-      bestWalletScoreByName.set(name, stats)
-    }
-  }
-
   const ranked = entries
-    .filter(([key, entry]) => {
-      if (isWalletKey(key)) return true
-      const name = String(entry.name ?? 'PILOT').trim().toLowerCase()
-      const walletScore = bestWalletScoreByName.get(name)
-      if (walletScore === undefined) return true
-      const stats = pilotScore(entry)
-      return stats.level > walletScore.level
-        || (stats.level === walletScore.level && stats.xp > walletScore.xp)
-    })
+    .filter(([key]) => isWalletKey(key))
     .sort(([keyA, a], [keyB, b]) => {
       const ap = pilotScore(a)
       const bp = pilotScore(b)
