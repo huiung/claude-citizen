@@ -1530,6 +1530,10 @@ const projectiles: Projectile[] = []
 const projectileMeshes = new Map<Projectile, THREE.Mesh>()
 const pirates: Pirate[] = []
 const pirateMeshes = new Map<string, THREE.Group>()
+// Enemy readouts (hull bar + tier/name) for ELITE & NAMED pirates only — grunts get nothing.
+// Keyed by pirate.id and added directly to the scene (NOT as a child of the placeholder mesh),
+// so they survive the async placeholder→GLB swap in addPirate. Position is synced each frame.
+const pirateLabels = new Map<string, CSS2DObject>()
 const trainingDrones: TrainingDrone[] = []
 const trainingDroneMeshes = new Map<string, THREE.Group>()
 const trainingDroneWrecks: { mesh: THREE.Group; born: number; velocity: THREE.Vector3; spin: THREE.Vector3 }[] = []
@@ -2019,6 +2023,19 @@ function addPirate(pirate: Pirate, pos: THREE.Vector3): void {
   mesh.position.copy(pos)
   scene.add(mesh)
   pirateMeshes.set(pirate.id, mesh)
+  // ELITE & NAMED pirates carry a floating threat readout (tier/name + hull bar). Grunts get nothing.
+  // The label is added to the scene (not the mesh) so it survives the placeholder→GLB swap below;
+  // its position is synced to pirate.position each frame in the pirate update loop.
+  if (pirate.tier === 'elite' || pirate.tier === 'named') {
+    const el = document.createElement('div')
+    el.className = pirate.tier === 'named' ? 'enemyplate named' : 'enemyplate'
+    enemyLabelParts(el).name.textContent = pirate.tier === 'named' ? (pirate.name ?? 'RAIDER').toUpperCase() : 'ELITE'
+    const labelObj = new CSS2DObject(el)
+    labelObj.position.copy(pos)
+    labelObj.position.y += 3.2 * scale
+    scene.add(labelObj)
+    pirateLabels.set(pirate.id, labelObj)
+  }
   loadPirateModel().then((model) => {
     if (!model) return
     if (pirateMeshes.get(pirate.id) !== mesh) { disposeObject(model); return }
@@ -2260,6 +2277,14 @@ function clearPirates(): void {
 }
 
 function removePirateMesh(id: string): void {
+  // Drop the enemy readout first so its CSS2D element never lingers in the DOM. Centralized here
+  // because every pirate-removal path (kill, despawn, clearPirates) routes through removePirateMesh.
+  const label = pirateLabels.get(id)
+  if (label) {
+    scene.remove(label)
+    label.element.remove() // CSS2D label lives in the DOM — drop it or the bar lingers forever
+    pirateLabels.delete(id)
+  }
   const mesh = pirateMeshes.get(id)
   if (!mesh) return
   scene.remove(mesh)
@@ -2726,6 +2751,29 @@ function updateNameplateHealth(el: HTMLElement, hull: number, maxHull: number, v
   parts.hull.hidden = !visible
   const frac = maxHull > 0 ? THREE.MathUtils.clamp(hull / maxHull, 0, 1) : 0
   parts.fill.style.width = `${Math.round(frac * 100)}%`
+}
+// Enemy readout DOM: mirrors the peer nameplate (a name line + hull track + fill) but with its own
+// `.enemyplate` class (threat red/orange) so it stays visually distinct from holder-themed peer plates.
+function enemyLabelParts(el: HTMLElement): { name: HTMLElement; fill: HTMLElement } {
+  let name = el.querySelector<HTMLElement>('.ep-name')
+  let hull = el.querySelector<HTMLElement>('.ep-hull')
+  let fill = hull?.querySelector<HTMLElement>('i') ?? null
+  if (!name) {
+    name = document.createElement('span')
+    name.className = 'ep-name'
+    el.appendChild(name)
+  }
+  if (!hull) {
+    hull = document.createElement('span')
+    hull.className = 'ep-hull'
+    fill = document.createElement('i')
+    hull.appendChild(fill)
+    el.appendChild(hull)
+  }
+  return { name, fill: fill! }
+}
+function updateEnemyLabelHealth(el: HTMLElement, frac: number): void {
+  enemyLabelParts(el).fill.style.width = `${Math.round(THREE.MathUtils.clamp(frac, 0, 1) * 100)}%`
 }
 const remotes = new Map<string, RemoteShip>()
 const PALETTE = [0xc75d5d, 0x5d8ac7, 0xc7a85d, 0x9b5dc7, 0x5dc7b8, 0xc75da6]
@@ -4574,6 +4622,18 @@ function frame(now: number): void {
       if (mesh) {
         mesh.position.copy(pirate.position)
         mesh.lookAt(ship.position)
+      }
+      // Enemy readout (elite/named only): track the ship, fill the hull bar, and distance-fade
+      // like peer nameplates so distant threats don't clutter the screen.
+      const label = pirateLabels.get(pirate.id)
+      if (label) {
+        label.position.copy(pirate.position)
+        label.position.y += 3.2 * TIER_SCALE[pirate.tier]
+        const d = ship.position.distanceTo(pirate.position)
+        const op = 1 - THREE.MathUtils.clamp((d - NAMEPLATE_FADE_NEAR) / (NAMEPLATE_FADE_FAR - NAMEPLATE_FADE_NEAR), 0, 1)
+        label.visible = op > 0.02
+        ;(label.element as HTMLElement).style.opacity = String(op)
+        updateEnemyLabelHealth(label.element as HTMLElement, hullFraction(pirate.health))
       }
     }
 

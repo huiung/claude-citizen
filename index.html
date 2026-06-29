@@ -42,6 +42,22 @@
     .nameplate.t1 { color: #ffd24a; text-shadow: 0 0 6px #000, 0 0 10px rgba(255, 210, 74, .6); }   /* gold */
     .nameplate.t2 { color: #4ef0ff; text-shadow: 0 0 6px #000, 0 0 10px rgba(78, 240, 255, .6); }   /* cyan */
     .nameplate.t3 { color: #c08aff; text-shadow: 0 0 6px #000, 0 0 12px rgba(192, 138, 255, .7); }  /* whale violet */
+    /* Enemy readout — hull bar + tier/name over elite & named pirates. Threat-tinted, distinct from peer plates. */
+    .enemyplate {
+      color: #ff9a3a; font-size: 12px; font-weight: 600; letter-spacing: .04em; text-shadow: 0 0 6px #000, 0 0 8px rgba(255, 100, 40, .6);
+      background: rgba(28, 8, 4, 0.6); border: 1px solid currentColor; padding: 1px 6px; border-radius: 3px;
+      font-family: inherit; text-align: center; min-width: 44px; pointer-events: none;
+    }
+    .enemyplate.named { color: #ff4530; text-shadow: 0 0 6px #000, 0 0 10px rgba(255, 60, 40, .7); }  /* named miniboss — hotter red */
+    .enemyplate .ep-name { display: block; white-space: nowrap; }
+    .enemyplate .ep-hull {
+      display: block; width: 54px; height: 4px; margin: 3px auto 0;
+      border-radius: 3px; overflow: hidden; background: rgba(255, 60, 40, .22);
+      border: 1px solid rgba(255, 120, 60, .4);
+    }
+    .enemyplate .ep-hull[hidden] { display: none; }
+    .enemyplate .ep-hull i { display: block; height: 100%; width: 100%; background: #ff6a2a; box-shadow: 0 0 8px rgba(255, 90, 30, .75); }
+    .enemyplate.named .ep-hull i { background: #ff3b2f; box-shadow: 0 0 8px rgba(255, 50, 30, .8); }
     .ore-float {
       color: #8ff0ff; font-size: 15px; font-weight: 600; font-family: inherit;
       text-shadow: 0 0 8px rgba(80, 220, 255, .7), 0 0 2px #000; pointer-events: none;
