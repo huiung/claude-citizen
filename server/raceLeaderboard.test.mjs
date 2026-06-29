@@ -46,6 +46,19 @@ describe('race leaderboard', () => {
     expect(page.total).toBe(4)
   })
 
+  it('excludes operator bot rows from the race leaderboard', () => {
+    const store = {
+      'bot-claude-race': { name: 'CLAUDE', race: { bestTimeMs: 21000, finishes: 5, lastFinishAt: 5000 } },
+      anonClaude: { name: 'CLAUDE', race: { bestTimeMs: 22000, finishes: 2, lastFinishAt: 4000 } },
+      [WALLET_A]: { name: 'ACE', race: { bestTimeMs: 42000, finishes: 1, lastFinishAt: 3000 } },
+    }
+
+    const page = raceLeaderboardPage(store)
+
+    expect(page.rows.map((row) => row.name)).toEqual(['ACE (7GgB...6QnU)'])
+    expect(page.total).toBe(1)
+  })
+
   it('preserves race stats when ordinary progress saves arrive', () => {
     const progress = { credits: 100, earned: 120, name: 'ACE' }
     const previous = { race: { bestTimeMs: 39870, finishes: 3, lastFinishAt: 4000 } }

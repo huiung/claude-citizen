@@ -15,6 +15,12 @@ function shortWallet(key) {
   return `${text.slice(0, 4)}...${text.slice(-4)}`
 }
 
+export function isOperatorBotEntry(key, entry) {
+  const name = String(entry?.name ?? '').trim().toLowerCase()
+  const id = String(key ?? '').trim().toLowerCase()
+  return entry?.bot === true || name === 'claude' || id.startsWith('bot-claude-')
+}
+
 export function parseLeaderboardParams(rawUrl) {
   const url = new URL(rawUrl, 'http://localhost')
   const rawOffset = Number(url.searchParams.get('offset') ?? 0)
@@ -29,6 +35,7 @@ export function parseLeaderboardParams(rawUrl) {
 export function leaderboardPage(store, { offset = 0, limit = LEADERBOARD_PAGE_SIZE } = {}) {
   const entries = Object.entries(store)
     .filter(([, entry]) => entry && (typeof entry.credits === 'number' || typeof entry.earned === 'number'))
+    .filter(([key, entry]) => !isOperatorBotEntry(key, entry))
 
   const bestWalletScoreByName = new Map()
   for (const [key, entry] of entries) {

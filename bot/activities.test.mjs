@@ -87,6 +87,12 @@ describe('buildActivity', () => {
     expect(pvpA.sparMs).not.toBe(pvpB.sparMs)
     expect(pvpA.weaveRadius).not.toBe(pvpB.weaveRadius)
   })
+  it('pvp-training carries a drone kill goal for the stream bot', () => {
+    const a = buildActivity('pvp-training', here, rng, 0, BOT_WORLD)
+
+    expect(a.droneKills).toBe(0)
+    expect(a.droneKillGoal).toBe(2)
+  })
   it('falls back to a cruise for an unknown kind (never throws)', () => {
     const a = buildActivity('nonsense', here, rng, 0, BOT_WORLD)
     expect(a.kind).toBe('cruise')
@@ -161,6 +167,15 @@ describe('stepActivity', () => {
     stepActivity(a, a.center.clone(), 0.125, 1000, BOT_WORLD)
     expect(a.phase).toBe('spar')
     expect(stepActivity(a, a.center.clone(), 0.125, a.sparUntil + 1, BOT_WORLD).done).toBe(true)
+  })
+
+  it('pvp-training can finish early once the bot clears its drone targets', () => {
+    const a = buildActivity('pvp-training', new Vector3(0, 0, 0), () => 0, 0, BOT_WORLD)
+    stepActivity(a, a.center.clone(), 0.125, 1000, BOT_WORLD)
+
+    a.droneKills = a.droneKillGoal
+
+    expect(stepActivity(a, a.center.clone(), 0.125, 1200, BOT_WORLD).done).toBe(true)
   })
 
   it('wander loiters locally (no intro) then finishes after its timer', () => {

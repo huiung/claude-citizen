@@ -126,7 +126,7 @@ export function buildActivity(kind, fromPos, rng, nowMs, world) {
       return { kind, phase: 'approach', center: world.pvpArenaCenter.clone(),
                target: world.pvpArenaCenter.clone(), sparMs: randRange(rng, 14000, 28000),
                weaveRadius: randRange(rng, 1000, 1900), weaveHeight: randRange(rng, 320, 720),
-               weaveRate: randRange(rng, 0.85, 1.45),
+               weaveRate: randRange(rng, 0.85, 1.45), droneKills: 0, droneKillGoal: 2,
                intro: pickIntro(rng, [
                  'Warming up in the training arena.',
                  'Running a few arena lines. No prizes, just hands.',
@@ -208,7 +208,8 @@ export function stepActivity(a, botPos, dtSec, nowMs, world) {
       const radius = a.weaveRadius ?? 1400
       const height = a.weaveHeight ?? 500
       const weave = new Vector3(Math.sin(a.t * 1.3) * radius, Math.sin(a.t * 0.7) * height, Math.cos(a.t * 1.1) * radius).add(a.center)
-      return { target: weave, speed: a.raceSpeed ?? SPEEDS.RACE, done: nowMs >= a.sparUntil }
+      const clearedTargets = (a.droneKills ?? 0) >= (a.droneKillGoal ?? Infinity)
+      return { target: weave, speed: a.raceSpeed ?? SPEEDS.RACE, done: clearedTargets || nowMs >= a.sparUntil }
     }
     case 'wander': {
       a.theta += dtSec * 0.5

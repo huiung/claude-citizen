@@ -4146,6 +4146,7 @@ function frame(now: number): void {
     let input: ControlInput
     if (BOT) {
       input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
+      weaponActive = false
       const idle = quantum.phase === 'idle'
       // We only enter 'transit' right after a jump starts (phase != idle), so transit + idle = arrived.
       // (Robust against a missed traveling→idle edge, e.g. a backgrounded tab fast-forwarding the jump.)
@@ -4165,6 +4166,16 @@ function frame(now: number): void {
             if (botActivity.kind === 'wander') startBotTransit()
             else { botActivity = buildActivity('wander', ship.position, Math.random, now, BOT_WORLD); botPerformUntil = now + BOT_PERFORM_CAP_MS }
           } else {
+            if (botActivity.kind === 'pvp-training' && botActivity.phase === 'spar') {
+              const targetDrone = trainingDrones
+                .filter((drone) => !isDead(drone.health))
+                .sort((a, b) => ship.position.distanceToSquared(a.position) - ship.position.distanceToSquared(b.position))[0]
+              if (targetDrone) {
+                cmd.target = targetDrone.position
+                cmd.speed = Math.max(cmd.speed, 520)
+                weaponActive = true
+              }
+            }
             _botPrevPos.copy(ship.position)
             const r = stepMover(ship.position, cmd.target, cmd.speed, dt)
             ship.position.copy(r.pos)
@@ -4226,7 +4237,7 @@ function frame(now: number): void {
       // (exitRunAlive gates on the tidal radius and resets the run; null = never qualified).
       if (blackHoleRun.active) {
         const best = exitRunAlive(blackHoleRun)
-        if (best != null) net.sendBlackHoleRun(best)
+        if (best != null && !BOT) net.sendBlackHoleRun(best)
       }
       bhPressure = 0
       if (!blackHoleEl.hidden) blackHoleEl.hidden = true
@@ -4255,7 +4266,7 @@ function frame(now: number): void {
       const isNewBest = previousBest === null || trialUpdate.time < previousBest
       if (hubTimeTrial.bestTime !== null) saveTimeTrialBest(hubTimeTrial.bestTime)
       timeTrialBannerText = `${isNewBest ? 'NEW BEST' : 'FINISH'} - ${formatTrialTime(trialUpdate.time)}`
-      net.sendRaceFinish(Math.round(trialUpdate.time * 1000))
+      if (!BOT) net.sendRaceFinish(Math.round(trialUpdate.time * 1000))
       timeTrialMessageUntil = trialNow + 5
       showTimeTrialCenterBanner(timeTrialEventBannerText(trialUpdate, hubTimeTrial.gates.length, isNewBest, previousBest), trialNow, 4)
       showRaceFinishGlow(trialNow)
@@ -4504,6 +4515,15 @@ function frame(now: number): void {
         spawnExplosion(drone.position, now)
         registerKillBanner(combatFeedback, 'DRONE DESTROYED', 'training target', now)
         audio.blip('explosion')
+        if (BOT && botActivity?.kind === 'pvp-training') {
+          const trainingActivity = botActivity as typeof botActivity & { droneKills?: number; droneKillGoal?: number }
+          const previousKills = typeof trainingActivity.droneKills === 'number' ? trainingActivity.droneKills : 0
+          const killGoal = typeof trainingActivity.droneKillGoal === 'number' ? trainingActivity.droneKillGoal : Infinity
+          trainingActivity.droneKills = previousKills + 1
+          if (previousKills < killGoal && trainingActivity.droneKills >= killGoal) {
+            net.sendChat('Training targets cleared. Moving on.')
+          }
+        }
         destroyTrainingDroneMesh(drone.id, now)
         trainingDrones.splice(i, 1)
       }

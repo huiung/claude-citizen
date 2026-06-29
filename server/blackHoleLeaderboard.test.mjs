@@ -33,6 +33,18 @@ describe('blackHoleLeaderboard', () => {
     expect(page.total).toBe(3)
   })
 
+  it('excludes operator bot rows from the black-hole leaderboard', () => {
+    const store = {}
+    recordBlackHoleRun(store, { key: 'bot-claude-void', name: 'CLAUDE', distance: 5600, now: 1 })
+    recordBlackHoleRun(store, { key: 'anonClaude', name: 'CLAUDE', distance: 5700, now: 2 })
+    recordBlackHoleRun(store, { key: 'realPilot', name: 'ACE', distance: 8000, now: 3 })
+
+    const page = blackHoleLeaderboardPage(store, { offset: 0 })
+
+    expect(page.rows.map((row) => row.name)).toEqual(['ACE'])
+    expect(page.total).toBe(1)
+  })
+
   it('merge preserves prior blackHole stats onto a fresh progress object', () => {
     const store = {}
     recordBlackHoleRun(store, { key: 'k1', name: 'ACE', distance: 8000, now: 1 })

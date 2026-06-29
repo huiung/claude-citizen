@@ -81,6 +81,17 @@ describe('leaderboard paging', () => {
     expect(page.total).toBe(3)
   })
 
+  it('excludes operator bot rows from the career leaderboard', () => {
+    const page = leaderboardPage({
+      'bot-claude-abc': { name: 'CLAUDE', earned: 999999 },
+      anonClaude: { name: 'CLAUDE', earned: 888888 },
+      realPilot: { name: 'ACE', earned: 1000 },
+    }, { offset: 0, limit: 10 })
+
+    expect(page.rows.map((row) => row.name)).toEqual(['ACE'])
+    expect(page.total).toBe(1)
+  })
+
   it('clamps request params to 10-row pages through rank 100', () => {
     expect(parseLeaderboardParams('/leaderboard?offset=999&limit=999')).toEqual({ offset: 90, limit: 10 })
     expect(parseLeaderboardParams('/leaderboard?offset=-40&limit=2')).toEqual({ offset: 0, limit: 10 })

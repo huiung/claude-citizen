@@ -1,4 +1,4 @@
-import { LEADERBOARD_MAX_RANK, LEADERBOARD_PAGE_SIZE } from './leaderboard.mjs'
+import { isOperatorBotEntry, LEADERBOARD_MAX_RANK, LEADERBOARD_PAGE_SIZE } from './leaderboard.mjs'
 
 function isWalletKey(key) {
   return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(String(key ?? ''))
@@ -49,6 +49,7 @@ export function recordBlackHoleRun(store, { key, name, distance, now }) {
 export function blackHoleLeaderboardPage(store, { offset = 0, limit = LEADERBOARD_PAGE_SIZE } = {}) {
   const ranked = Object.entries(store)
     .filter(([, entry]) => cleanBlackHoleStats(entry?.blackHole).bestDistance > 0)
+    .filter(([key, entry]) => !isOperatorBotEntry(key, entry))
     .sort(([keyA, a], [keyB, b]) => {
       const as = cleanBlackHoleStats(a?.blackHole)
       const bs = cleanBlackHoleStats(b?.blackHole)

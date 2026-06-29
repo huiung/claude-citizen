@@ -369,7 +369,7 @@ wss.on('connection', (ws) => {
       const client = {
         id: Math.random().toString(36).slice(2, 10),
         name: null, color: -1, p: [0, 0, 0], q: [0, 0, 0, 1], token,
-        active: false, authed: false, pubkey: null, tier: 0, holderBalance: 0, lastPvpCombatAt: null, visual: 'standard', cosmetics: '',
+        active: false, authed: false, pubkey: null, tier: 0, holderBalance: 0, lastPvpCombatAt: null, visual: 'standard', cosmetics: '', isBot: false,
       }
       resetPvpHull(client, 'hauler')
       applySession(client, msg.sessionId)
@@ -404,14 +404,14 @@ wss.on('connection', (ws) => {
           name: String(msg.name ?? 'PILOT').slice(0, 16),
           color: nextColor++, p: [0, 0, 0], q: [0, 0, 0, 1], token,
           active: true, authed: false, pubkey: null, tier: 0, holderBalance: 0, lastPvpCombatAt: null, visual: normalizeHolderShipVisual(msg.visual), cosmetics: normalizeCosmetics(msg.cosmetics),
-          invisible: msg.invisible === true,
+          invisible: msg.invisible === true, isBot: false,
         }
         resetPvpHull(client, normalizeShip(msg.ship))
         clients.set(ws, client)
       }
       // Operator showcase bot: grant cosmetic-only tier 3 (unlocks T3 hull skins) when it presents the
       // shared secret. Purely visual — ranked PvP still requires a verified wallet balance the bot lacks.
-      if (BOT_COSMETIC_SECRET && msg.botSecret === BOT_COSMETIC_SECRET) client.tier = 3
+      if (BOT_COSMETIC_SECRET && msg.botSecret === BOT_COSMETIC_SECRET) { client.tier = 3; client.isBot = true }
       if (!client.authed) applySession(client, msg.sessionId)
       client.name = resolveCallsign({ authed: client.authed, storedName: store[identityKey(client)]?.name, requestedName: client.name })
       if (client.authed && client.name && client.name.toLowerCase() !== 'pilot') send(ws, { t: 'callsign', name: client.name })
@@ -572,6 +572,7 @@ wss.on('connection', (ws) => {
     }
 
     if (msg.t === 'save') {
+      if (client.isBot) return
       const key = identityKey(client)
       if (!key) return
       if (!anonymousProgressAllowed(client)) return
@@ -588,6 +589,7 @@ wss.on('connection', (ws) => {
     }
 
     if (msg.t === 'race-finish' && client.active) {
+      if (client.isBot) return
       const recorded = recordRankedRaceFinish(store, {
         key: identityKey(client),
         name: client.name,
@@ -602,6 +604,7 @@ wss.on('connection', (ws) => {
     }
 
     if (msg.t === 'black-hole-run' && client.active) {
+      if (client.isBot) return
       const distance = Math.max(0, Math.floor(Number(msg.distance) || 0))
       const recorded = recordBlackHoleRun(store, {
         key: identityKey(client),
