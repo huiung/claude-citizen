@@ -182,6 +182,8 @@ const appEl = document.getElementById('app')!
 const overlayEl = document.getElementById('overlay')!
 const nicknameEl = document.getElementById('nickname') as HTMLInputElement
 const launchEl = document.getElementById('launch') as HTMLButtonElement
+const buyCitizenEl = document.getElementById('buy-citizen') as HTMLAnchorElement
+const gateMsgEl = document.getElementById('gate-msg')!
 const hudEl = document.getElementById('hud')!
 const statusEl = document.getElementById('status')!
 const helpEl = document.getElementById('help')!
@@ -363,6 +365,9 @@ if (walletSession) { lockWalletButton(walletSession.pubkey); setWalletStatus('Wa
 // guard means a fresh connection is the clean way to switch wallets.
 disconnectWalletBtn.addEventListener('click', () => {
   saveWalletSession(localStorage, null)
+  walletSession = null
+  holderBalance = 0
+  refreshLaunchGateUI() // immediate feedback before the reload re-renders the landing fresh
   setWalletStatus('Disconnecting…')
   setTimeout(() => location.reload(), 200)
 })
@@ -384,6 +389,23 @@ connectWalletBtn.addEventListener('click', () => {
       : 'Connection cancelled.')
   })
 })
+
+// Holder gate (landing): LAUNCH unlocks only for a connected wallet holding ≥1 $CITIZEN.
+// Non-holders can still BROWSE (wired in a later task). Drives launch.disabled + buy link + message.
+// Own var (not selfHolderBalance, which is declared far below) so the initial render is TDZ-safe.
+let holderBalance = 0
+function walletConnected(): boolean { return Boolean(walletSession) }
+function refreshLaunchGateUI(): void {
+  const connected = walletConnected()
+  const canFly = connected && holderBalance >= 1
+  launchEl.disabled = !canFly
+  buyCitizenEl.hidden = !(connected && holderBalance < 1)
+  gateMsgEl.hidden = canFly
+  gateMsgEl.textContent = !connected
+    ? 'Connect a wallet holding ≥1 $CITIZEN to fly — or Browse.'
+    : holderBalance < 1 ? 'Hold ≥1 $CITIZEN to fly. You can still Browse.' : ''
+}
+refreshLaunchGateUI() // LAUNCH starts disabled until connected + ≥1 $CITIZEN
 
 // Landing stats (online / registered pilots) from the relay's /stats endpoint.
 const WS_URL = import.meta.env.VITE_WS_URL ?? `ws://${location.hostname}:8080`
@@ -3296,6 +3318,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     saveWalletSession(localStorage, walletSession)
     pendingPubkey = null
     lockWalletButton(pubkey)
+    refreshLaunchGateUI() // wallet linked — re-evaluate the gate (the 'holder' balance will refine it)
     setWalletStatus(`Connected ${pubkey.slice(0, 4)}…${pubkey.slice(-4)} — press LAUNCH to play`)
     if (name && name.toLowerCase() !== 'pilot') {
       nicknameEl.value = name
@@ -3352,8 +3375,18 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   onHolder(tier, balance) {
     selfTier = tier
     selfHolderBalance = balance
+    holderBalance = balance
+    refreshLaunchGateUI() // a non-holder can't even attempt LAUNCH; a holder unlocks it
     applyLocalDevHolderOverride()
     setPlayerCraft(selectedShipType)
+  },
+  onJoinError(reason) {
+    gateMsgEl.hidden = false
+    gateMsgEl.textContent = reason === 'wallet-required'
+      ? 'Connect a wallet to fly.'
+      : reason === 'insufficient-tokens'
+        ? "Couldn't confirm ≥1 $CITIZEN — make sure you hold the token and retry."
+        : 'Unable to launch right now — retry.'
   },
   onPeerLeave(id) {
     const remote = remotes.get(id)

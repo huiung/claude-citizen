@@ -417,6 +417,16 @@
       cursor: pointer; border-radius: 4px;
     }
     #overlay button:hover { background: #1b5a30; }
+    #overlay button:disabled { opacity: .5; cursor: default; background: #0d2614; border-color: rgba(63,174,95,.4); }
+    #browse-btn { background: transparent; border-color: rgba(159,255,176,.5); padding: 8px 28px; font-size: 13px; }
+    #buy-citizen {
+      display: inline-block; margin-top: 6px; padding: 7px 18px; border-radius: 4px;
+      color: #ffe08a; border: 1px solid rgba(255,224,138,.55); text-decoration: none;
+      font: 700 12px "Share Tech Mono", ui-monospace, monospace; letter-spacing: 2px;
+    }
+    #buy-citizen:hover { color: #fff; border-color: #ffe08a; }
+    #buy-citizen[hidden], #gate-msg[hidden] { display: none; }
+    #gate-msg { margin-top: 6px; font-size: 11px; color: #ffe08a; max-width: 360px; }
     #overlay .foot { font-size: 11px; opacity: .4; }
     #pilot-code { margin-top: 10px; font-size: 11px; color: #7fc99a; max-width: 380px; }
     #pilot-code summary { cursor: pointer; opacity: .65; letter-spacing: .3px; }
@@ -940,6 +950,9 @@
     <div id="mobile-notice"><b>Mobile Civilian Mode</b><br/>Mobile flight supports exploration, mining, docking, trading, upgrades, wallet, and leaderboards. PvP combat stays desktop-only for now.</div>
     <input id="nickname" maxlength="16" placeholder="CALLSIGN" autocomplete="off" />
     <button id="launch">LAUNCH</button>
+    <button id="browse-btn" type="button">BROWSE</button>
+    <a id="buy-citizen" href="https://pump.fun/coin/6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump" target="_blank" rel="noopener" hidden>BUY $CITIZEN</a>
+    <div id="gate-msg" hidden></div>
     <div id="launch-loading" hidden>
       <div id="launch-loading-text">Preparing your sector...</div>
       <div class="bar"><i></i></div>
