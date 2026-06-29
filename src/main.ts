@@ -61,7 +61,7 @@ import {
 } from './sim/timeTrial'
 import {
   applyDamage, canFire, createHealth, createWeapon, fire as fireWeapon, type HitTarget, hullFraction,
-  isDead, isEngageable, type Projectile, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile,
+  isDead, isEngageable, type Projectile, PROJECTILE_DAMAGE, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile,
   stepProjectiles, stepWeapon,
 } from './sim/combat'
 import {
@@ -4489,7 +4489,7 @@ function frame(now: number): void {
         _fwd,
         'player',
         PROJECTILE_SPEED,
-        combatWeaponActive ? pvpWeapon.damage : undefined,
+        combatWeaponActive ? pvpWeapon.damage : PROJECTILE_DAMAGE + unlocksForLevel(pilot.level).weaponDamageBonus,
         ship.velocity,
       ))
       fireWeapon(playerWeapon)
