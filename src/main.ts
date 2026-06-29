@@ -270,10 +270,10 @@ function finishOnboarding(): void {
 }
 /** Career journey: the center HUD always shows the next useful thing to try.
  *  Early steps teach the core loop; later steps point pilots toward daily, craft, race, and void goals. */
-function currentObjective(): string | null {
-  if (flightPlanObjective && performance.now() < flightPlanObjectiveUntil) return flightPlanObjective
+function currentObjective(): { text: string; kind: 'flight' | 'campaign' | 'journey' } | null {
+  if (flightPlanObjective && performance.now() < flightPlanObjectiveUntil) return { text: flightPlanObjective, kind: 'flight' }
   const camp = currentCampaignStep(campaign)
-  if (camp) return `${camp.label} — ${Math.floor(campaign.progress)}/${camp.target}`
+  if (camp) return { text: `${camp.label} — ${Math.floor(campaign.progress)}/${camp.target}`, kind: 'campaign' }
   const goal = nextJourneyGoal({
     minedEver,
     dockedEver,
@@ -287,7 +287,7 @@ function currentObjective(): string | null {
     blackHoleRecorded: blackHoleRecordedEver,
   })
   if (!goal) return null
-  return goal.progress ? `${goal.label} - ${goal.progress}` : goal.label
+  return { text: goal.progress ? `${goal.label} - ${goal.progress}` : goal.label, kind: 'journey' }
 }
 const safeEl = document.getElementById('safe-zone')!
 const pvpEl = document.getElementById('pvp-zone')!
@@ -4676,7 +4676,7 @@ function frame(now: number): void {
       if (isDead(pirates[i].health)) {
         const p = pirates[i]
         spawnExplosion(p.position, now)
-        registerKillBanner(combatFeedback, 'PIRATE DESTROYED', `+${p.reward} cr`, now)
+        registerKillBanner(combatFeedback, p.tier === 'named' && p.name ? `${p.name.toUpperCase()} DESTROYED` : 'PIRATE DESTROYED', `+${p.reward} cr`, now)
         audio.blip('explosion')
         gainCredits(econ, p.reward)
         recordDailyEvent('kill_pirates', 1, now)
@@ -4813,7 +4813,7 @@ function frame(now: number): void {
   if (!sessionKicked) {
     const obj = running && !docked ? currentObjective() : null
     objectiveEl.hidden = !obj
-    if (obj) objectiveEl.textContent = `PILOT JOURNEY - ${obj}`
+    if (obj) objectiveEl.textContent = `${obj.kind === 'campaign' ? 'CAMPAIGN' : 'PILOT JOURNEY'} - ${obj.text}`
   }
 
   pfMark('logic')
