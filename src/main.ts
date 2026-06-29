@@ -318,8 +318,9 @@ function loadToken(): string {
 }
 const playerToken = loadToken()
 
-// Wallet session (optional, secondary to the anonymous Pilot Code). When linked, the verified
-// pubkey becomes the active identity; otherwise the anonymous token is used.
+// Wallet session — flying now REQUIRES a linked wallet holding ≥1 $CITIZEN; Browse is the only
+// no-wallet path. When linked, the verified pubkey becomes the active identity; otherwise the
+// anonymous token is used (for Browse/presence).
 let walletSession = loadWalletSession(localStorage)
 const identity = activeIdentity(playerToken, walletSession)
 
@@ -345,7 +346,8 @@ restoreBtn.addEventListener('click', () => {
   setTimeout(() => location.reload(), 400)
 })
 
-// Connect Wallet (optional, SIWS) — link a Solana wallet to claim the pilot. Anonymous play is unaffected.
+// Connect Wallet (SIWS) — link a Solana wallet to fly: a wallet holding ≥1 $CITIZEN is required
+// to LAUNCH (Browse is the only no-wallet path).
 // Declared here (before NetClient) so the auth callbacks in the events object can see them.
 const connectWalletBtn = document.getElementById('connect-wallet') as HTMLButtonElement
 const disconnectWalletBtn = document.getElementById('disconnect-wallet') as HTMLButtonElement
@@ -406,7 +408,7 @@ function refreshLaunchGateUI(): void {
   gateMsgEl.hidden = canFly
   gateMsgEl.textContent = !connected
     ? 'Connect a wallet holding ≥1 $CITIZEN to fly — or Browse.'
-    : holderBalance < 1 ? 'Hold ≥1 $CITIZEN to fly. You can still Browse.' : ''
+    : holderBalance < 1 ? '⚠ This wallet holds no $CITIZEN. You need ≥1 to fly — grab some, or Browse.' : ''
 }
 refreshLaunchGateUI() // LAUNCH starts disabled until connected + ≥1 $CITIZEN
 
@@ -3903,13 +3905,16 @@ const _timeTrialShowcaseLookAt = new THREE.Vector3()
 const G_SWAY_K = 0.03   // accel (m/s²) → offset (m)
 const G_SWAY_MAX = 2.6  // clamp so it never gets nauseating
 const G_SWAY_RESP = 6   // spring stiffness
-// Fixed point the Browse camera orbits — the origin, which the spawn scatter (r=200–600)
-// and visible peers cluster around. No player ship exists in Browse, so we never read ship.*.
+// Point the Browse camera orbits — the Meridian Refinery station hub (REFINERY_POS), which is
+// visible set-dressing AND where new pilots spawn (scatter r=200–600 around origin) face on
+// arrival and cluster. Set in enterBrowseMode from station.position; origin orbits empty space.
+// No player ship exists in Browse, so we never read ship.*.
 const SPECTATE_ANCHOR = new THREE.Vector3(0, 0, 0)
+const SPECTATE_ORBIT_DISTANCE = 600 // frames the station ring + nearby spawned pilots
 function updateCamera(dt: number): void {
   if (spectating) {
     cameraOrbitElapsed += dt
-    camera.position.copy(SPECTATE_ANCHOR).add(orbitCameraOffset(cameraOrbitElapsed, 0, 800))
+    camera.position.copy(SPECTATE_ANCHOR).add(orbitCameraOffset(cameraOrbitElapsed, 0, SPECTATE_ORBIT_DISTANCE))
     camera.lookAt(SPECTATE_ANCHOR)
     return
   }
@@ -3977,6 +3982,8 @@ function enterBrowseMode(): void {
   if (running) return // already in-world
   spectating = true
   running = true // needed so the frame loop renders + peers interpolate
+  SPECTATE_ANCHOR.copy(station.position) // orbit the refinery hub — visible content + where pilots spawn/cluster
+  cameraOrbitElapsed = 0 // start the orbit fresh so the first Browse frame faces the hub
   scene.remove(shipMesh) // no player ship in Browse
   if (statsTimer) clearInterval(statsTimer) // stop the landing-stats poll like launch() does
   overlayEl.hidden = true
@@ -3987,6 +3994,11 @@ function enterBrowseMode(): void {
 
 function launch(): void {
   if (running) return
+  // Holder gate (client UX; the relay enforces the real boundary). Exempt the showcase/bot auto-launch.
+  if (!BOT && !CAPTURE_OG && !SHOWCASE_HOLDER && !SHOWCASE_TIME_TRIAL && !(walletConnected() && holderBalance >= 1)) {
+    refreshLaunchGateUI() // re-assert the disabled state + show the gate message
+    return
+  }
   spectating = false // clear any prior Browse state so a real launch flies normally
   browseBannerEl.hidden = true
   const callsign = nicknameEl.value.trim() || 'PILOT'
