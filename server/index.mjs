@@ -16,7 +16,7 @@ import { blackHoleLeaderboardPage, mergeBlackHoleStats, recordBlackHoleRun } fro
 import { pilotLevelLeaderboardPage, mergePilotStats, mergeCampaignStats } from './pilotLevelLeaderboard.mjs'
 import { applyPvpHit, applyPvpRespawn, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
 import { resolveCallsign, identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
-import { guardEconomyGrowth, sanitizeProgress, scrubCareerOutliers } from './progress.mjs'
+import { guardEconomyGrowth, guardPilotGrowth, sanitizeProgress, scrubCareerOutliers } from './progress.mjs'
 import {
   buyListing,
   cancelListing,
@@ -591,8 +591,13 @@ wss.on('connection', (ws) => {
         // drops them), so merge them from the raw msg.progress — not from prev like the
         // server-owned stat blocks.
         const merged = mergeCampaignStats(mergePilotStats(mergeBlackHoleStats(mergeRaceStats(mergePvpStats(clean, prev), prev), prev), msg.progress), msg.progress)
+        const now = Date.now()
         // Server owns earned/credits growth — reject implausible per-save jumps (Career + wallet anti-cheat).
-        store[key] = guardEconomyGrowth(merged, prev, Date.now())
+        const guarded = guardEconomyGrowth(merged, prev, now)
+        // Server also bounds pilot XP growth (rate cap, mirrors the economy guard) so fabricated
+        // level/XP can't inflate the PILOT board or self-buff combat power. Maps pilotAt → _pilotAt.
+        const guardedPilot = guardPilotGrowth(merged.pilot, prev, now)
+        store[key] = { ...guarded, pilot: guardedPilot.pilot, _pilotAt: guardedPilot.pilotAt }
         flush()
       } // stamp callsign for the leaderboard
       return
