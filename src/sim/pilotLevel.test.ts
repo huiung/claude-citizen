@@ -20,6 +20,16 @@ describe('xpForLevel', () => {
     expect(xpForLevel(2)).toBeGreaterThan(xpForLevel(1))
     expect(xpForLevel(MAX_LEVEL)).toBe(Infinity)
   })
+
+  // Concrete pins: the server mirrors this curve in server/progress.mjs (cumulativeXp/levelForTotal)
+  // and its drift test asserts the SAME totals. Pinning the per-level values here means a change to
+  // this formula fails CI unless the server copy is updated to match — keeping the two in lockstep.
+  it('pins the exact per-level XP cost', () => {
+    expect(xpForLevel(1)).toBe(80)
+    expect(xpForLevel(2)).toBe(200)
+    expect(xpForLevel(3)).toBe(360)
+    expect(xpForLevel(4)).toBe(560)
+  })
 })
 
 describe('addXp', () => {
