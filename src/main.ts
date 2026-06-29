@@ -90,7 +90,7 @@ import {
   trainingDronesActive,
 } from './sim/pvp'
 import { type Pirate, PIRATE_REWARD, PIRATE_TIER_HULL_MUL, PIRATE_TIER_REWARD, shouldDespawnPirate, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
-import { addXp, loadPilot, MAX_LEVEL, savePilot, xpForKill, xpForLevel } from './sim/pilotLevel'
+import { addXp, loadPilot, MAX_LEVEL, savePilot, unlocksForLevel, xpForKill, xpForLevel } from './sim/pilotLevel'
 import { currentCampaignStep, loadCampaign, recordCampaignEvent, saveCampaign, SECTOR1_CAMPAIGN } from './sim/campaign'
 import {
   createTrainingDrones,
@@ -1458,12 +1458,23 @@ const pilot = loadPilot(localStorage)
 const campaign = loadCampaign(localStorage)
 let namedRaiderActive = false // guards against double-spawning the campaign's named miniboss
 
+// Raise the hull cap to the current level's bonus and heal exactly the gained amount, so a level-up
+// is felt immediately. Safe to call when nothing changed (delta 0 → no heal).
+function applyLevelHull(): void {
+  const prevMax = playerHealth.max
+  playerHealth.max = effMaxHull()
+  if (playerHealth.max > prevMax) playerHealth.hull += playerHealth.max - prevMax
+}
+
 // Apply Pilot-Level XP and announce any level-ups. (showPromotion is hoisted, so it's visible here.)
 function awardPilotXp(amount: number): void {
   const r = addXp(pilot, amount)
   pilot.level = r.progress.level
   pilot.xp = r.progress.xp
-  if (r.leveledUp.length) showPromotion(`Pilot Level ${pilot.level}`)
+  if (r.leveledUp.length) {
+    showPromotion(`Pilot Level ${pilot.level}`)
+    applyLevelHull()
+  }
 }
 
 let playerEngineGlows: CraftEngineGlow[] = collectCraftEngineGlows(shipMesh)
@@ -2157,6 +2168,7 @@ const baseBoost = SHIP_STATS.hauler.boostMultiplier
 const baseCargo = SHIP_STATS.hauler.cargo
 function effSpeed(): number { return SHIP_STATS[selectedShipType].topSpeed + (topSpeed(upgrades) - baseSpeed) }
 function effBoost(): number { return SHIP_STATS[selectedShipType].boostMultiplier + (boostMultiplier(upgrades) - baseBoost) }
+function effMaxHull(): number { return SHIP_STATS[selectedShipType].hull + unlocksForLevel(pilot.level).hullBonus }
 function effCargo(): number {
   return Math.max(1, Math.round(SHIP_STATS[selectedShipType].cargo + (cargoCapacity(upgrades) - baseCargo)))
 }
@@ -2173,7 +2185,7 @@ function setPlayerCraft(type: ShipType): void {
   playerCosmetics = createShipCosmetics(shipMesh, scene)
   applyPlayerCosmetics()
   selectedShipType = type
-  playerHealth.max = SHIP_STATS[type].hull
+  playerHealth.max = SHIP_STATS[type].hull + unlocksForLevel(pilot.level).hullBonus
   playerHealth.hull = playerHealth.max
   saveHangar()
   updateWalletHUD()
