@@ -7,7 +7,7 @@ export const SETTINGS_STORAGE_KEY = 'scc.settings.v1'
 export const DEFAULT_MOUSE_SENSITIVITY = 1
 export const MIN_MOUSE_SENSITIVITY = 0.5
 export const MAX_MOUSE_SENSITIVITY = 2
-export const DEFAULT_AMBIENT_VOLUME = 0.65
+export const DEFAULT_AMBIENT_VOLUME = 0.8
 export const MIN_AMBIENT_VOLUME = 0
 export const MAX_AMBIENT_VOLUME = 1
 

@@ -213,12 +213,14 @@ describe('forge + dock cue tuning', () => {
 
 
 describe('regional ambience shaping', () => {
-  it('keeps regional layers quieter than the idle engine', () => {
-    for (const kind of ['deepSpace', 'spawn', 'seasonHub', 'pvp', 'race', 'blackHole', 'mining'] as const) {
-      const params = regionalAmbienceToParams({ kind, intensity: 1 })
-      expect(params.bedGain).toBeLessThan(ENGINE_GAIN_IDLE)
-      expect(params.pulseGain).toBeLessThan(ENGINE_GAIN_IDLE)
-      expect(params.noiseGain).toBeLessThanOrEqual(0.004)
+  it('keeps named regional beds audible at the default mix without overpowering the engine', () => {
+    for (const kind of ['spawn', 'seasonHub', 'pvp', 'race', 'blackHole', 'mining'] as const) {
+      const params = regionalAmbienceToParams({ kind, intensity: 0.8 })
+      const combinedGain = params.bedGain + params.pulseGain + params.noiseGain
+
+      expect(combinedGain).toBeGreaterThan(ENGINE_GAIN_IDLE)
+      expect(combinedGain).toBeLessThan(ENGINE_GAIN_MAX)
+      expect(params.noiseGain).toBeLessThanOrEqual(0.006)
     }
   })
 

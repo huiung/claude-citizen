@@ -22,9 +22,9 @@ export const MINING_FREQ = 520
 export const SPACE_AMBIENCE_GAIN = 0.0032
 export const ATMO_AMBIENCE_GAIN_MAX = 0.026
 export const QUANTUM_AMBIENCE_GAIN_MAX = 0.012
-export const REGIONAL_AMBIENCE_GAIN_MAX = 0.0065
-export const REGIONAL_AMBIENCE_PULSE_MAX = 0.0048
-export const REGIONAL_AMBIENCE_NOISE_MAX = 0.004
+export const REGIONAL_AMBIENCE_GAIN_MAX = 0.016
+export const REGIONAL_AMBIENCE_PULSE_MAX = 0.01
+export const REGIONAL_AMBIENCE_NOISE_MAX = 0.006
 
 /** Clamp `x` into [min, max]. NaN collapses to `min` so audio params never go NaN. */
 export function clamp(x: number, min: number, max: number): number {
@@ -110,7 +110,7 @@ export function ambienceToParams(state: AmbienceState): AmbienceParams {
   }
 }
 
-/** Region ambience is intentionally quiet: a faint identity layer, not background music. */
+/** Region ambience is audible as a quiet musical identity layer under flight audio. */
 export function regionalAmbienceToParams(state: RegionalAmbienceState): RegionalAmbienceParams {
   const intensity = clamp(state.intensity, 0, 1)
   const i = intensity * intensity

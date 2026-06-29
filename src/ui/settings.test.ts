@@ -42,6 +42,9 @@ describe('game settings', () => {
     expect(loadGameSettings(storage)).toEqual({ mouseSensitivity: 1.25, ambientVolume: DEFAULT_AMBIENT_VOLUME })
   })
 
+  it('defaults ambience high enough to be heard under flight audio', () => {
+    expect(DEFAULT_AMBIENT_VOLUME).toBeGreaterThanOrEqual(0.8)
+  })
   it('clamps and formats mouse sensitivity for the slider UI', () => {
     expect(clampMouseSensitivity(0.1)).toBe(0.5)
     expect(clampMouseSensitivity(3)).toBe(2)
