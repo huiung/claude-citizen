@@ -383,7 +383,7 @@ wss.on('connection', (ws) => {
       applySession(client, msg.sessionId)
       clients.set(ws, client)
       const key = identityKey(client)
-      if (key && anonymousProgressAllowed(client) && !(key in store)) { store[key] = null; flush() } // seen → counts as registered
+      if (key && client.authed && anonymousProgressAllowed(client) && !(key in store)) { store[key] = null; flush() } // seen → counts as registered
       void refreshHolder(ws, client) // resolve holder flair if this viewer carried a verified session
       if (client.authed && client.pubkey) {
         const locked = resolveCallsign({ authed: true, storedName: store[client.pubkey]?.name, requestedName: client.name })
@@ -440,7 +440,7 @@ wss.on('connection', (ws) => {
         // token has nothing stored. The explicit null lets the client init day-one state right
         // away (event-driven) instead of guessing with a timer.
         ws.send(JSON.stringify({ t: 'progress', data: store[key] ?? null }))
-        if (!(key in store)) { store[key] = null; flush() }
+        if (key && client.authed && !(key in store)) { store[key] = null; flush() }
       }
       if (!client.invisible) broadcast(ws, { t: 'peer-join', id: client.id, name: client.name, color: client.color, p: client.p, q: client.q, tier: client.tier ?? 0, ship: client.ship, visual: client.visual, cosmetics: client.cosmetics, hull: client.hull, maxHull: client.maxHull })
       console.log(`[join] ${client.name} (${client.id})${client.token ? ' +token' : ''} — ${clients.size} online`)
