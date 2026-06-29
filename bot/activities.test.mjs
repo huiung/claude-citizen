@@ -53,21 +53,21 @@ describe('buildActivity', () => {
     expect(a.waypoints).toHaveLength(10)
     expect(a.index).toBe(0)
   })
-  it('black-hole-dive rolls a varied depth, skim timer, escape vector, and intro', () => {
-    const shallow = buildActivity('black-hole-dive', here, sequence([0.9, 0.2, 0.2, 0.2, 0.15, 0.2, 0.15, 0.2]), 0, BOT_WORLD)
-    const danger = buildActivity('black-hole-dive', here, sequence([0.02, 0.4, 0.8, 0.6, 0.85, 0.8, 0.85, 0.8]), 0, BOT_WORLD)
+  it('black-hole-dive skips shallow passes and can roll a fatal horizon dive', () => {
+    const standard = buildActivity('black-hole-dive', here, sequence([0.9, 0.2, 0.2, 0.2, 0.15, 0.2, 0.15, 0.2]), 0, BOT_WORLD)
+    const fatal = buildActivity('black-hole-dive', here, sequence([0.02, 0.4, 0.8, 0.6, 0.85, 0.8, 0.85, 0.8]), 0, BOT_WORLD)
 
-    expect(shallow.phase).toBe('approach')
-    expect(shallow.diveProfile).toBe('shallow')
-    expect(shallow.diveDistance).toBeGreaterThanOrEqual(11500)
-    expect(shallow.diveDistance).toBeLessThanOrEqual(15500)
-    expect(danger.diveProfile).toBe('danger')
-    expect(danger.diveDistance).toBeGreaterThanOrEqual(6200)
-    expect(danger.diveDistance).toBeLessThanOrEqual(8200)
-    expect(danger.target.distanceTo(new Vector3(118000, 9000, 118000))).toBeCloseTo(danger.diveDistance, -1)
-    expect(danger.skimMs).not.toBe(shallow.skimMs)
-    expect(danger.escapeDir.angleTo(shallow.escapeDir)).toBeGreaterThan(0.01)
-    expect(danger.intro).not.toBe(shallow.intro)
+    expect(standard.phase).toBe('approach')
+    expect(standard.diveProfile).toBe('standard')
+    expect(standard.diveDistance).toBeGreaterThanOrEqual(6400)
+    expect(standard.diveDistance).toBeLessThanOrEqual(9500)
+    expect(fatal.diveProfile).toBe('fatal')
+    expect(fatal.diveDistance).toBeGreaterThanOrEqual(3600)
+    expect(fatal.diveDistance).toBeLessThanOrEqual(4600)
+    expect(fatal.target.distanceTo(new Vector3(118000, 9000, 118000))).toBeCloseTo(fatal.diveDistance, -1)
+    expect(fatal.skimMs).not.toBe(standard.skimMs)
+    expect(fatal.escapeDir.angleTo(standard.escapeDir)).toBeGreaterThan(0.01)
+    expect(fatal.intro).not.toBe(standard.intro)
   })
 
   it('adds small personality jitter to repeated non-black-hole activities', () => {
@@ -180,7 +180,7 @@ describe('stepActivity', () => {
 // goes deep enough to qualify for the board, and finishes within the perform cap.
 import { stepMover } from './mover.mjs'
 import {
-  tidalDamageRate, TIDAL_RADIUS, BLACK_HOLE_CENTER, BLACK_HOLE_APPROACH_DESTINATION,
+  tidalDamageRate, TIDAL_RADIUS, BLACK_HOLE_CENTER, BLACK_HOLE_APPROACH_DESTINATION, isPastHorizon,
 } from '../src/sim/blackHole.ts'
 
 function simulateDive(hullMax, rng = () => 0) {
@@ -198,6 +198,7 @@ function simulateDive(hullMax, rng = () => 0) {
     if (cmd.done) { completed = true; break }
     pos = stepMover(pos, cmd.target, cmd.speed, dt).pos
     hp -= tidalDamageRate(pos) * dt // tidal bleed mirrors the main loop (only nonzero inside TIDAL_RADIUS)
+    if (isPastHorizon(pos)) hp = 0
     minDist = Math.min(minDist, pos.distanceTo(BLACK_HOLE_CENTER))
     minHp = Math.min(minHp, hp)
     t += dt
@@ -207,21 +208,22 @@ function simulateDive(hullMax, rng = () => 0) {
 }
 
 describe('black-hole-dive survival (varied profiles)', () => {
-  it('a hauler (hull 100) dives deep, qualifies, survives, and finishes inside the perform cap', () => {
-    const r = simulateDive(100)
+  it('a hauler (hull 100) can run the standard dive, qualify, survive, and finish inside the perform cap', () => {
+    const r = simulateDive(100, sequence([0.9, 0.4, 0.4, 0.4, 0]))
     expect(r.completed).toBe(true)              // escapes influence on its own
     expect(r.durationS).toBeLessThan(45)        // within BOT_PERFORM_CAP_MS
     expect(r.minDist).toBeLessThan(TIDAL_RADIUS) // reaches the tidal zone → qualifies for the board
     expect(r.minDist).toBeLessThan(12500)        // genuinely deep, not a timid skim
-    expect(r.minHp).toBeGreaterThan(0)           // never dies on stream
+    expect(r.minHp).toBeGreaterThan(0)           // standard runs still survive
   })
 
-  it('survives even on the frailest hull across shallow, standard, and danger profiles', () => {
-    const profiles = [
-      sequence([0.9, 0.4, 0.4, 0.4, 0]),
-      sequence([0.4, 0.4, 0.4, 0.4, 0]),
-      sequence([0.02, 0.4, 0.4, 0.4, 0]),
-    ]
-    for (const rng of profiles) expect(simulateDive(60, rng).minHp).toBeGreaterThan(0)
+  it('keeps the nonfatal profile survivable on the frailest hull', () => {
+    expect(simulateDive(60, sequence([0.9, 0.4, 0.4, 0.4, 0])).minHp).toBeGreaterThan(0)
+  })
+
+  it('lets the fatal profile cross the horizon and die for a dramatic stream moment', () => {
+    const r = simulateDive(60, sequence([0.02, 0.4, 0.4, 0.4, 0]))
+    expect(r.minDist).toBeLessThanOrEqual(5600)
+    expect(r.minHp).toBeLessThanOrEqual(0)
   })
 })

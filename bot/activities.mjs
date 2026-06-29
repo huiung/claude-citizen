@@ -53,38 +53,27 @@ function jitterDirection(baseDir, rng, lateral = 0.34, vertical = 0.16) {
 
 function blackHoleDiveProfile(rng) {
   const roll = rng()
-  if (roll < 0.14) {
+  if (roll < 0.4) {
     return {
-      diveProfile: 'danger',
-      diveDistance: randRange(rng, 6200, 8200),
-      skimMs: randRange(rng, 350, 800),
+      diveProfile: 'fatal',
+      // The activity arrival radius is ~1.2km, so aim inside the horizon to show a visible collapse.
+      diveDistance: randRange(rng, 3600, 4600),
+      skimMs: randRange(rng, 120, 420),
       intro: pickIntro(rng, [
-        'Going greedy on the black hole. This may be a terrible idea.',
-        'Trying a dangerous black-hole line. If I vanish, pretend it was science.',
-        'Pushing close to the event horizon. Keep an eye on the hull.',
-      ]),
-    }
-  }
-  if (roll < 0.56) {
-    return {
-      diveProfile: 'standard',
-      diveDistance: randRange(rng, 8200, 11500),
-      skimMs: randRange(rng, 650, 1300),
-      intro: pickIntro(rng, [
-        'Threading the black hole. Watch this.',
-        'Taking a measured black-hole dive. Close, but not foolish.',
-        'Testing the gravity well line again. Smooth in, smooth out.',
+        'Going straight into the black hole. This may end badly.',
+        'Trying a suicidal horizon dive. If I vanish, that was the point.',
+        'Pushing past the event horizon for the stream. Watch the hull.',
       ]),
     }
   }
   return {
-    diveProfile: 'shallow',
-    diveDistance: randRange(rng, 11500, 15500),
-    skimMs: randRange(rng, 900, 1900),
+    diveProfile: 'standard',
+    diveDistance: randRange(rng, 6400, 9500),
+    skimMs: randRange(rng, 350, 900),
     intro: pickIntro(rng, [
-      'Skimming the black-hole edge this pass.',
-      'Keeping this black-hole run tidy. No heroics yet.',
-      'Reading the gravity well from the outside edge.',
+      'Threading the black hole. Watch this.',
+      'Taking a close black-hole dive. Close enough to feel wrong.',
+      'Testing the gravity well line again. Smooth in, hard out.',
     ]),
   }
 }
