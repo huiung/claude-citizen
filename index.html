@@ -3,6 +3,30 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>
+    /* TEMP DIAGNOSTIC — surface any runtime error on-screen so we can pinpoint the launch/browse hang.
+       Installed before the module scripts so it also catches module-eval errors. Remove once fixed. */
+    (function () {
+      function show(msg) {
+        var el = document.getElementById('err-banner');
+        if (!el) {
+          el = document.createElement('div');
+          el.id = 'err-banner';
+          el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:#b00020;color:#fff;font:12px/1.45 monospace;padding:10px 14px;white-space:pre-wrap;max-height:60vh;overflow:auto;border-bottom:2px solid #ff6b6b';
+          (document.body || document.documentElement).appendChild(el);
+        }
+        el.textContent += msg + '\n';
+      }
+      window.addEventListener('error', function (e) {
+        var stack = e.error && e.error.stack ? '\n' + e.error.stack.split('\n').slice(0, 5).join('\n') : '';
+        show('[error] ' + (e.message || (e.error && e.error.message) || 'unknown') + ' @ ' + (e.filename || '') + ':' + (e.lineno || '') + stack);
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        var r = e.reason;
+        show('[promise] ' + (r && r.message ? r.message : String(r)) + (r && r.stack ? '\n' + r.stack.split('\n').slice(0, 5).join('\n') : ''));
+      });
+    })();
+  </script>
   <title>Claude Citizen — finish Star Citizen before Star Citizen does</title>
   <meta name="description" content="An open-source browser space MMO — fly, mine, trade, fight pirates, and quantum-jump across a procedurally generated solar system with other pilots. No download, no account. Built with Claude." />
 
