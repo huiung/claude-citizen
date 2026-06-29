@@ -202,6 +202,7 @@
     /* While chatting, the log expands into a scrollable history (mouse is unlocked then). */
     #chat-log.open {
       max-height: 300px; overflow-y: auto; pointer-events: auto;
+      justify-content: flex-start; overscroll-behavior: contain;
       background: rgba(2, 10, 6, .72); border-radius: 6px; padding: 6px 4px;
     }
     #chat-log.open .chat-line { opacity: 1 !important; }

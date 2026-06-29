@@ -3,6 +3,12 @@ import { ACTIVITY_WEIGHTS, SPEEDS, pickActivity, buildActivity } from './activit
 import { BOT_WORLD } from './landmarks.mjs'
 import { Vector3 } from 'three'
 
+
+function sequence(values) {
+  let i = 0
+  return () => values[Math.min(i++, values.length - 1)]
+}
+
 describe('pickActivity', () => {
   const kinds = Object.keys(ACTIVITY_WEIGHTS)
   it('returns a known activity kind', () => {
@@ -47,10 +53,39 @@ describe('buildActivity', () => {
     expect(a.waypoints).toHaveLength(10)
     expect(a.index).toBe(0)
   })
-  it('black-hole-dive aims ~9000 units from the center (deep inside the 18000 tidal zone)', () => {
-    const a = buildActivity('black-hole-dive', here, rng, 0, BOT_WORLD)
-    expect(a.phase).toBe('approach')
-    expect(a.target.distanceTo(new Vector3(118000, 9000, 118000))).toBeCloseTo(9000, -1)
+  it('black-hole-dive rolls a varied depth, skim timer, escape vector, and intro', () => {
+    const shallow = buildActivity('black-hole-dive', here, sequence([0.9, 0.2, 0.2, 0.2, 0.15, 0.2, 0.15, 0.2]), 0, BOT_WORLD)
+    const danger = buildActivity('black-hole-dive', here, sequence([0.02, 0.4, 0.8, 0.6, 0.85, 0.8, 0.85, 0.8]), 0, BOT_WORLD)
+
+    expect(shallow.phase).toBe('approach')
+    expect(shallow.diveProfile).toBe('shallow')
+    expect(shallow.diveDistance).toBeGreaterThanOrEqual(11500)
+    expect(shallow.diveDistance).toBeLessThanOrEqual(15500)
+    expect(danger.diveProfile).toBe('danger')
+    expect(danger.diveDistance).toBeGreaterThanOrEqual(6200)
+    expect(danger.diveDistance).toBeLessThanOrEqual(8200)
+    expect(danger.target.distanceTo(new Vector3(118000, 9000, 118000))).toBeCloseTo(danger.diveDistance, -1)
+    expect(danger.skimMs).not.toBe(shallow.skimMs)
+    expect(danger.escapeDir.angleTo(shallow.escapeDir)).toBeGreaterThan(0.01)
+    expect(danger.intro).not.toBe(shallow.intro)
+  })
+
+  it('adds small personality jitter to repeated non-black-hole activities', () => {
+    const cruiseA = buildActivity('cruise', here, sequence([0.1, 0.1]), 1000, BOT_WORLD)
+    const cruiseB = buildActivity('cruise', here, sequence([0.1, 0.9]), 1000, BOT_WORLD)
+    const raceA = buildActivity('race', here, sequence([0.1]), 0, BOT_WORLD)
+    const raceB = buildActivity('race', here, sequence([0.9]), 0, BOT_WORLD)
+    const hubA = buildActivity('hub-visit', here, sequence([0.2, 0.1, 0.1]), 0, BOT_WORLD)
+    const hubB = buildActivity('hub-visit', here, sequence([0.2, 0.9, 0.9]), 0, BOT_WORLD)
+    const pvpA = buildActivity('pvp-training', here, sequence([0.1, 0.1]), 0, BOT_WORLD)
+    const pvpB = buildActivity('pvp-training', here, sequence([0.9, 0.9]), 0, BOT_WORLD)
+
+    expect(cruiseA.boostWindowMs).not.toBe(cruiseB.boostWindowMs)
+    expect(raceA.gateTimeoutMs).not.toBe(raceB.gateTimeoutMs)
+    expect(hubA.orbitRadius).not.toBe(hubB.orbitRadius)
+    expect(hubA.loiterMs).not.toBe(hubB.loiterMs)
+    expect(pvpA.sparMs).not.toBe(pvpB.sparMs)
+    expect(pvpA.weaveRadius).not.toBe(pvpB.weaveRadius)
   })
   it('falls back to a cruise for an unknown kind (never throws)', () => {
     const a = buildActivity('nonsense', here, rng, 0, BOT_WORLD)
@@ -83,7 +118,7 @@ describe('stepActivity', () => {
     expect(warp.speed).toBe(SPEEDS.WARP)
   })
 
-  it('hub-visit approaches then loiters for ~20s', () => {
+  it('hub-visit approaches then loiters for its rolled dwell time', () => {
     const a = buildActivity('hub-visit', new Vector3(0, 0, 0), () => 0, 0, BOT_WORLD)
     stepActivity(a, a.center.clone(), 0.125, 1000, BOT_WORLD) // arrive → enter loiter
     expect(a.phase).toBe('loiter')
@@ -121,7 +156,7 @@ describe('stepActivity', () => {
     expect(out.done).toBe(true) // beyond INFLUENCE (50000)
   })
 
-  it('pvp-training approaches then spars for ~20s', () => {
+  it('pvp-training approaches then spars for its rolled dwell time', () => {
     const a = buildActivity('pvp-training', new Vector3(0, 0, 0), () => 0, 0, BOT_WORLD)
     stepActivity(a, a.center.clone(), 0.125, 1000, BOT_WORLD)
     expect(a.phase).toBe('spar')
@@ -148,7 +183,7 @@ import {
   tidalDamageRate, TIDAL_RADIUS, BLACK_HOLE_CENTER, BLACK_HOLE_APPROACH_DESTINATION,
 } from '../src/sim/blackHole.ts'
 
-function simulateDive(hullMax) {
+function simulateDive(hullMax, rng = () => 0) {
   const dt = 1 / 60
   let pos = BLACK_HOLE_APPROACH_DESTINATION.position.clone() // where the bot drops out of its transit jump
   let hp = hullMax
@@ -157,7 +192,7 @@ function simulateDive(hullMax) {
   let t = 0
   let nowMs = 0
   let completed = false
-  const a = buildActivity('black-hole-dive', pos, () => 0, 0, BOT_WORLD)
+  const a = buildActivity('black-hole-dive', pos, rng, 0, BOT_WORLD)
   while (t < 60) {
     const cmd = stepActivity(a, pos, dt, nowMs, BOT_WORLD)
     if (cmd.done) { completed = true; break }
@@ -171,17 +206,22 @@ function simulateDive(hullMax) {
   return { minDist, minHp, durationS: t, completed }
 }
 
-describe('black-hole-dive survival (deep 9000 tuning)', () => {
+describe('black-hole-dive survival (varied profiles)', () => {
   it('a hauler (hull 100) dives deep, qualifies, survives, and finishes inside the perform cap', () => {
     const r = simulateDive(100)
     expect(r.completed).toBe(true)              // escapes influence on its own
     expect(r.durationS).toBeLessThan(45)        // within BOT_PERFORM_CAP_MS
     expect(r.minDist).toBeLessThan(TIDAL_RADIUS) // reaches the tidal zone → qualifies for the board
-    expect(r.minDist).toBeLessThan(11000)        // genuinely deep, not a timid skim
+    expect(r.minDist).toBeLessThan(12500)        // genuinely deep, not a timid skim
     expect(r.minHp).toBeGreaterThan(0)           // never dies on stream
   })
 
-  it('survives even on the frailest hull (interceptor, hull 60)', () => {
-    expect(simulateDive(60).minHp).toBeGreaterThan(0)
+  it('survives even on the frailest hull across shallow, standard, and danger profiles', () => {
+    const profiles = [
+      sequence([0.9, 0.4, 0.4, 0.4, 0]),
+      sequence([0.4, 0.4, 0.4, 0.4, 0]),
+      sequence([0.02, 0.4, 0.4, 0.4, 0]),
+    ]
+    for (const rng of profiles) expect(simulateDive(60, rng).minHp).toBeGreaterThan(0)
   })
 })

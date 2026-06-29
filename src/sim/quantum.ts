@@ -14,11 +14,11 @@ export type QuantumPhase = 'idle' | 'spooling' | 'traveling'
 /** Tuning for the quantum drive. All travel feel lives here. */
 export const QUANTUM_TUNING = {
   /** Seconds the drive must charge before any motion begins. */
-  spoolTime: 2,
+  spoolTime: 1.6,
   /** Peak cruise speed (m/s) — orders of magnitude above sublight TUNING.maxSpeed. */
-  cruiseSpeed: 6000,
+  cruiseSpeed: 9000,
   /** Acceleration / deceleration magnitude (m/s²) for the spin-up and braking ramps. */
-  accel: 1500,
+  accel: 2500,
   /** Drop-out distance (m): travel ends this far short of the target, never inside it. */
   safeRadius: 250,
   /** startTravel rejects targets whose path length is below this (m). */

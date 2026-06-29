@@ -25,6 +25,12 @@ describe('quantum travel', () => {
     expect(cycleQuantumDestinationIndex(2, 5, -1)).toBe(1)
   })
 
+  it('uses a snappier but still readable quantum travel tune', () => {
+    expect(QUANTUM_TUNING.spoolTime).toBe(1.6)
+    expect(QUANTUM_TUNING.cruiseSpeed).toBe(9000)
+    expect(QUANTUM_TUNING.accel).toBe(2500)
+  })
+
   it('starts idle with zero progress', () => {
     const q = createQuantum()
     expect(q.phase).toBe('idle')

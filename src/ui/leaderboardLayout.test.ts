@@ -8,6 +8,14 @@ function cssBlockFor(selector: string): string {
 }
 
 describe('landing leaderboard layout CSS', () => {
+  it('lets the expanded chat history scroll upward from the oldest visible line', () => {
+    const block = cssBlockFor('#chat-log.open')
+
+    expect(block).toContain('overflow-y: auto')
+    expect(block).toContain('pointer-events: auto')
+    expect(block).toContain('justify-content: flex-start')
+  })
+
   it('keeps landing pager arrow buttons compact inside the launch overlay', () => {
     const block = cssBlockFor('#overlay .lb-prev, #overlay .lb-next')
 
