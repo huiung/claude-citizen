@@ -22,7 +22,7 @@ import {
   type CraftingCosmeticId,
   type CraftedCosmeticItem,
 } from '../sim/crafting'
-import { type BetType, clampBet, MAX_BET, MIN_BET, payoutMultiplier, spinRoulette } from '../sim/roulette'
+import { type BetType, clampBet, colorOf, MAX_BET, MIN_BET, payoutMultiplier, spinRoulette, WHEEL_SIZE } from '../sim/roulette'
 import { groupCraftedItems } from './inventory'
 import type { GameAudio } from '../audio/sound'
 import { HOLDER_SHIP_VISUALS, resolveHolderShipVisual, type HolderShipVisualId } from './holderShipVisual'
@@ -122,6 +122,9 @@ export class StationMenu {
   private casinoSpinning = false
   private casinoLast: { text: string; win: boolean } | null = null
   private casinoTimer: ReturnType<typeof setTimeout> | null = null
+  // The number the reel must land on this spin (decided up front by spinRoulette in spin()).
+  // Drives the deterministic reel render; null when idle.
+  private casinoReelTarget: number | null = null
 
   constructor(opts: { onChange: () => void; onUndock: () => void; onForgeChange?: (forgingItemId: string | null) => void; onContractDelivered?: () => void }) {
     this.onChange = opts.onChange
@@ -543,67 +546,163 @@ export class StationMenu {
     }
   }
 
+  // Reel geometry: each pocket cell is this wide; the spinning strip repeats the 0..36 sequence
+  // this many cycles so there's a long deceleration before the decided pocket comes to rest.
+  private static readonly CASINO_CELL_W = 62
+  private static readonly CASINO_CYCLES = 7
+  private static readonly CASINO_SPIN_MS = 2600
+
   private renderCasino(): void {
     // Re-clamp the standing stake against the live balance so a prior loss can never leave a
     // stake larger than we can afford. clampBet returns 0 when the balance is below MIN_BET.
     this.casinoStake = clampBet(this.casinoStake, this.ctx.econ.credits)
     const credits = Math.floor(this.ctx.econ.credits)
+    const broke = credits < MIN_BET
+    const stake = this.casinoStake
+
+    const panel = document.createElement('div')
+    panel.className = 'casino-panel'
 
     const note = document.createElement('div')
-    note.className = 'station-empty'
+    note.className = 'station-empty casino-note'
     note.textContent = 'Wager credits on European roulette. Even-money bets pay 2×; the green 0 loses. Credits only — never affects rank or career.'
-    this.bodyEl.appendChild(note)
+    panel.appendChild(note)
 
-    const balanceRow = this.rowEl('Balance', 'Spendable credits at the wheel', `Credits: ${credits}`)
-    this.bodyEl.appendChild(balanceRow)
+    // Spinning reel viewport + centered pointer. The strip is rebuilt fresh each render.
+    const reel = document.createElement('div')
+    reel.className = 'casino-reel'
+    const pointer = document.createElement('div')
+    pointer.className = 'casino-pointer'
+    const strip = document.createElement('div')
+    strip.className = 'casino-strip'
+    strip.appendChild(this.buildCasinoStrip())
+    reel.append(strip, pointer)
+    panel.appendChild(reel)
 
-    // Stake control: preset chips + the live stake readout.
-    const stakeRow = this.rowEl('Stake', `Min ${MIN_BET} · Max ${MAX_BET}`, `${this.casinoStake} cr`)
-    const stakeActions = stakeRow.querySelector('.s-actions')!
-    const presets: [string, number][] = [
-      ['-100', this.casinoStake - 100], ['+100', this.casinoStake + 100],
-      ['1k', 1000], ['5k', 5000], ['MAX', MAX_BET],
+    // Result line under the reel.
+    const result = document.createElement('div')
+    result.className = 'casino-result-line'
+    if (this.casinoSpinning) {
+      result.textContent = 'spinning…'
+      result.classList.add('casino-spinning')
+    } else if (this.casinoLast) {
+      result.textContent = this.casinoLast.text
+      result.classList.add(this.casinoLast.win ? 'casino-win' : 'casino-loss')
+    } else {
+      result.textContent = 'Place a bet and spin.'
+      result.classList.add('casino-idle')
+    }
+    panel.appendChild(result)
+
+    // Readouts: balance / stake / potential win (even-money = 2× stake).
+    const stats = document.createElement('div')
+    stats.className = 'casino-stats'
+    const stat = (label: string, value: string, cls: string): HTMLElement => {
+      const box = document.createElement('div')
+      box.className = `casino-stat ${cls}`
+      box.innerHTML = `<span class="casino-stat-label">${label}</span><span class="casino-stat-value">${value}</span>`
+      return box
+    }
+    stats.append(
+      stat('Balance', `${credits} cr`, 'casino-stat-balance'),
+      stat('Stake', `${stake} cr`, 'casino-stat-stake'),
+      stat('Win pays', broke ? '—' : `${stake * 2} cr`, 'casino-stat-win'),
+    )
+    panel.appendChild(stats)
+
+    // Chip row: set the stake quickly.
+    const chips = document.createElement('div')
+    chips.className = 'casino-chips'
+    const chipVals: [string, number][] = [
+      ['100', 100], ['500', 500], ['1,000', 1000], ['5,000', 5000], ['MAX', MAX_BET],
     ]
-    for (const [label, value] of presets) {
-      stakeActions.appendChild(this.btn(label, 'buy', this.casinoSpinning || credits < MIN_BET, () => {
+    for (const [label, value] of chipVals) {
+      const c = document.createElement('button')
+      c.type = 'button'
+      c.className = 'casino-chip'
+      c.textContent = label
+      c.disabled = this.casinoSpinning || broke
+      if (!broke && clampBet(value, this.ctx.econ.credits) === stake) c.classList.add('active')
+      c.addEventListener('click', () => {
         this.casinoStake = clampBet(value, this.ctx.econ.credits)
         this.render()
-      }))
+      })
+      chips.appendChild(c)
     }
-    this.bodyEl.appendChild(stakeRow)
+    panel.appendChild(chips)
 
-    // Bet-type selector. Highlight the active bet like the tab buttons.
-    const betRow = this.rowEl('Bet', 'Pick an even-money outcome', '')
-    const betActions = betRow.querySelector('.s-actions')!
+    // Bet grid: big, color-coded outcome buttons.
+    const grid = document.createElement('div')
+    grid.className = 'casino-grid'
     const bets: [BetType, string][] = [
       ['red', 'RED'], ['black', 'BLACK'], ['even', 'EVEN'],
-      ['odd', 'ODD'], ['low', 'LOW 1-18'], ['high', 'HIGH 19-36'],
+      ['odd', 'ODD'], ['low', 'LOW 1–18'], ['high', 'HIGH 19–36'],
     ]
     for (const [bet, label] of bets) {
-      const b = this.btn(label, 'buy', this.casinoSpinning, () => {
+      const b = document.createElement('button')
+      b.type = 'button'
+      b.className = `casino-bet casino-bet-${bet}`
+      b.textContent = label
+      b.disabled = this.casinoSpinning
+      if (this.casinoBet === bet) b.classList.add('active')
+      b.addEventListener('click', () => {
         this.casinoBet = bet
         this.render()
       })
-      b.classList.add('casino-bet', `casino-bet-${bet}`)
-      if (this.casinoBet === bet) b.classList.add('active')
-      betActions.appendChild(b)
+      grid.appendChild(b)
     }
-    this.bodyEl.appendChild(betRow)
+    panel.appendChild(grid)
 
-    // Spin + result line.
-    const spinRow = this.rowEl('Roulette', 'Spend the stake, spin the wheel', '')
-    const resultEl = spinRow.querySelector('.s-held')!
-    if (this.casinoSpinning) {
-      resultEl.textContent = 'spinning…'
-      resultEl.className = 's-held casino-result casino-spinning'
-    } else if (this.casinoLast) {
-      resultEl.textContent = this.casinoLast.text
-      resultEl.className = `s-held casino-result ${this.casinoLast.win ? 'casino-win' : 'casino-loss'}`
+    // Big SPIN button.
+    const spinBtn = document.createElement('button')
+    spinBtn.type = 'button'
+    spinBtn.className = 'casino-spin-btn'
+    spinBtn.textContent = this.casinoSpinning ? 'SPINNING…' : 'SPIN'
+    spinBtn.disabled = this.casinoSpinning || broke
+    spinBtn.addEventListener('click', () => this.spin())
+    panel.appendChild(spinBtn)
+
+    this.bodyEl.appendChild(panel)
+
+    // Drive the reel. When idle, rest with the last (or 0) pocket under the pointer. When a spin
+    // is in flight, snap to the start offset, then on the next frame set the landing transform so
+    // the CSS ease-out transition decelerates the strip onto the decided target.
+    const center = StationMenu.CASINO_CELL_W / 2
+    if (this.casinoSpinning && this.casinoReelTarget !== null) {
+      const startIdx = this.casinoReelTarget // first cycle copy of the target
+      const endIdx = (StationMenu.CASINO_CYCLES - 1) * WHEEL_SIZE + this.casinoReelTarget
+      strip.style.transition = 'none'
+      strip.style.transform = `translateX(${center - (startIdx * StationMenu.CASINO_CELL_W + StationMenu.CASINO_CELL_W / 2)}px)`
+      // Force layout so the starting transform is committed before we kick off the transition.
+      void strip.offsetWidth
+      requestAnimationFrame(() => {
+        strip.style.transition = `transform ${StationMenu.CASINO_SPIN_MS}ms cubic-bezier(.12,.62,.24,1)`
+        strip.style.transform = `translateX(${center - (endIdx * StationMenu.CASINO_CELL_W + StationMenu.CASINO_CELL_W / 2)}px)`
+      })
+    } else {
+      const restIdx = this.casinoReelTarget ?? 0
+      strip.style.transition = 'none'
+      strip.style.transform = `translateX(${center - (restIdx * StationMenu.CASINO_CELL_W + StationMenu.CASINO_CELL_W / 2)}px)`
+      // Flash the landed pocket once the strip has come to rest.
+      if (!this.casinoSpinning && this.casinoReelTarget !== null) {
+        const cells = strip.querySelectorAll('.casino-pocket')
+        cells[restIdx]?.classList.add('landed')
+      }
     }
-    spinRow.querySelector('.s-actions')!.appendChild(
-      this.btn('Spin', 'buy', this.casinoSpinning || credits < MIN_BET, () => this.spin()),
-    )
-    this.bodyEl.appendChild(spinRow)
+  }
+
+  /** Build the repeated 0..36 pocket strip the reel scrolls through (deterministic order). */
+  private buildCasinoStrip(): DocumentFragment {
+    const frag = document.createDocumentFragment()
+    for (let cycle = 0; cycle < StationMenu.CASINO_CYCLES; cycle++) {
+      for (let n = 0; n < WHEEL_SIZE; n++) {
+        const cell = document.createElement('div')
+        cell.className = `casino-pocket casino-pocket-${colorOf(n)}`
+        cell.textContent = String(n)
+        frag.appendChild(cell)
+      }
+    }
+    return frag
   }
 
   private spin(): void {
@@ -624,9 +723,10 @@ export class StationMenu {
       win,
       text: `${result.number} ${result.color.toUpperCase()} — ${win ? `WIN +${stake}` : `LOSE -${stake}`}`,
     }
+    this.casinoReelTarget = result.number                 // reel lands deterministically on this number
     this.onChange()                                       // commit spend + payout before the reveal (mirror craft())
     this.casinoSpinning = true
-    this.render()
+    this.render()                                         // renders the reel + kicks off the landing transition
     // Defer the win/loss sfx to the reveal so audio + the revealed result land together; tracked
     // like forgeTimers so cancelForge() (open/close) can drop it before it fires on a stale ctx.
     this.casinoTimer = setTimeout(() => {
@@ -634,7 +734,7 @@ export class StationMenu {
       this.casinoTimer = null
       this.ctx.audio.blip(win ? 'trade' : 'error')
       this.render()
-    }, 1800)
+    }, StationMenu.CASINO_SPIN_MS)
   }
 
   private renderUpgrades(): void {
