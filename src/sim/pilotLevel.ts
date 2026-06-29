@@ -41,6 +41,7 @@ export function addXp(p: PilotProgress, amount: number): XpResult {
 
 export interface LevelUnlock {
   hullBonus: number            // flat hull added at this level (felt-but-minor power bump)
+  weaponDamageBonus: number    // flat projectile damage added at this level (PvE only — see main.ts)
   unlockSector: number | null  // sector index opened at this level, or null
   unlockUpgradeTier: number | null // raises the purchasable upgrade ceiling, or null
 }
@@ -48,6 +49,7 @@ export interface LevelUnlock {
 export function unlocksForLevel(level: number): LevelUnlock {
   return {
     hullBonus: (level - 1) * 5,
+    weaponDamageBonus: (level - 1) * 1, // starting value, tuned live; base PROJECTILE_DAMAGE is 12
     unlockSector: level >= 5 ? 2 : null,
     unlockUpgradeTier: level >= 5 ? 5 : null,
   }

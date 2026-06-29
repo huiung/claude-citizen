@@ -57,6 +57,22 @@ describe('unlocksForLevel', () => {
     expect(unlocksForLevel(5).unlockSector).toBe(2)
     expect(unlocksForLevel(5).unlockUpgradeTier).toBe(5)
   })
+
+  it('grants no combat bonus at level 1 and scales monotonically', () => {
+    expect(unlocksForLevel(1).hullBonus).toBe(0)
+    expect(unlocksForLevel(1).weaponDamageBonus).toBe(0)
+    expect(unlocksForLevel(2).hullBonus).toBeGreaterThan(unlocksForLevel(1).hullBonus)
+    expect(unlocksForLevel(2).weaponDamageBonus).toBeGreaterThan(unlocksForLevel(1).weaponDamageBonus)
+    expect(unlocksForLevel(5).hullBonus).toBeGreaterThan(unlocksForLevel(4).hullBonus)
+    expect(unlocksForLevel(5).weaponDamageBonus).toBeGreaterThan(unlocksForLevel(4).weaponDamageBonus)
+  })
+
+  it('matches the combat-bonus formulas at sample levels', () => {
+    expect(unlocksForLevel(5).hullBonus).toBe(20)         // (5-1)*5
+    expect(unlocksForLevel(5).weaponDamageBonus).toBe(4)  // (5-1)*1
+    expect(unlocksForLevel(20).hullBonus).toBe(95)        // (20-1)*5
+    expect(unlocksForLevel(20).weaponDamageBonus).toBe(19)
+  })
 })
 
 describe('xpForKill', () => {
