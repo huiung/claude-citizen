@@ -89,7 +89,9 @@ import {
   shouldClearPveHostiles,
   trainingDronesActive,
 } from './sim/pvp'
-import { type Pirate, PIRATE_REWARD, shouldDespawnPirate, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
+import { type Pirate, PIRATE_REWARD, PIRATE_TIER_HULL_MUL, PIRATE_TIER_REWARD, shouldDespawnPirate, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
+import { addXp, loadPilot, savePilot, xpForKill } from './sim/pilotLevel'
+import { currentCampaignStep, loadCampaign, recordCampaignEvent, saveCampaign } from './sim/campaign'
 import {
   createTrainingDrones,
   stepTrainingDrone,
@@ -1437,6 +1439,9 @@ const singularityFlashEl = document.getElementById('singularity-flash') as HTMLE
 let bhShake = 0 // camera-shake trauma (0..1) from black-hole proximity / capture, decays each frame
 let bhPressure = 0 // audio rumble intensity (0..1) while within the black hole's influence
 const blackHoleRun = createBlackHoleRun()
+const pilot = loadPilot(localStorage)
+const campaign = loadCampaign(localStorage)
+let namedRaiderActive = false // guards against double-spawning the campaign's named miniboss
 
 let playerEngineGlows: CraftEngineGlow[] = collectCraftEngineGlows(shipMesh)
 let playerCosmetics: ShipCosmetics = createShipCosmetics(shipMesh, scene)
@@ -1931,6 +1936,29 @@ function applyBlackHoleShake(dt: number): void {
   bhShake = Math.max(0, bhShake - dt * 1.6)
 }
 
+// Register a freshly-spawned pirate: track it, add its placeholder mesh, then swap in the GLB model.
+// Shared by the wave spawner and the campaign's named-raider spawner. (Mesh code lifted verbatim from
+// the old spawnPirateWave body, with tier-based color/scale so elites and minibosses read distinct.)
+function addPirate(pirate: Pirate, pos: THREE.Vector3): void {
+  pirates.push(pirate)
+  const mesh = buildCraft('interceptor', pirate.tier === 'grunt' ? 0xc0392b : 0xff7a1a)
+  if (pirate.tier === 'named') mesh.scale.multiplyScalar(1.8) // minibosses read bigger
+  mesh.position.copy(pos)
+  scene.add(mesh)
+  pirateMeshes.set(pirate.id, mesh)
+  loadPirateModel().then((model) => {
+    if (!model) return
+    if (pirateMeshes.get(pirate.id) !== mesh) { disposeObject(model); return }
+    model.position.copy(mesh.position)
+    model.quaternion.copy(mesh.quaternion)
+    if (pirate.tier === 'named') model.scale.multiplyScalar(1.8)
+    scene.remove(mesh)
+    disposeObject(mesh)
+    scene.add(model)
+    pirateMeshes.set(pirate.id, model)
+  })
+}
+
 function spawnPirateWave(now: number): void {
   const depth = deepFactor()
   if (pirates.length >= MAX_PIRATES + Math.round(depth * 2)) return // up to +2 more in deep space
@@ -1938,27 +1966,31 @@ function spawnPirateWave(now: number): void {
   if (withinInfluence(ship.position)) return // no pirates near the black hole — it's a solo skill run
   if (!allowsPveHostiles(ship.position, MOBILE_COMPANION)) return
   const pos = spawnPositionAround(ship.position, 600, pirateSpawnCount++)
-  // Deeper space: tankier pirates worth a bigger bounty (risk scales with reward).
-  const pirate = spawnPirate(`pir-${pirateSpawnCount}`, pos, 1 + depth * 1.6, Math.round(PIRATE_REWARD * (1 + depth * 2)))
-  pirates.push(pirate)
-  const mesh = buildCraft('interceptor', 0xc0392b)
-  mesh.position.copy(pos)
-  scene.add(mesh)
-  pirateMeshes.set(pirate.id, mesh)
-  loadPirateModel().then((model) => {
-    if (!model) return
-    if (pirateMeshes.get(pirate.id) !== mesh) {
-      disposeObject(model)
-      return
-    }
-    model.position.copy(mesh.position)
-    model.quaternion.copy(mesh.quaternion)
-    scene.remove(mesh)
-    disposeObject(mesh)
-    scene.add(model)
-    pirateMeshes.set(pirate.id, model)
-  })
+  // Deeper space: tankier pirates worth a bigger bounty. 25% of waves are elites.
+  const elite = Math.random() < 0.25
+  const tier = elite ? ('elite' as const) : ('grunt' as const)
+  const hullMul = (elite ? PIRATE_TIER_HULL_MUL.elite : 1) * (1 + depth * 1.6)
+  const reward = Math.round((elite ? PIRATE_TIER_REWARD.elite : PIRATE_REWARD) * (1 + depth * 2))
+  addPirate(spawnPirate(`pir-${pirateSpawnCount}`, pos, { hullMul, reward, tier }), pos)
   void now
+}
+
+// Spawn the named raider for the active campaign step (Vex Marrow, then the heavier Raider Captain),
+// once at a time. Killing it advances the chain (kill_named) and clears namedRaiderActive.
+function maybeSpawnNamedRaider(now: number): void {
+  if (namedRaiderActive) return
+  const step = currentCampaignStep(campaign)
+  if (!step || step.counter !== 'kill_named') return
+  const captain = step.id === 's1-captain'
+  const name = captain ? 'Raider Captain' : 'Vex Marrow'
+  const pos = spawnPositionAround(ship.position, 700, pirateSpawnCount++)
+  addPirate(spawnPirate(`named-${campaign.step}`, pos, {
+    tier: 'named', name,
+    hullMul: captain ? 12 : PIRATE_TIER_HULL_MUL.named,
+    reward: PIRATE_TIER_REWARD.named,
+  }), pos)
+  namedRaiderActive = true
+  registerKillBanner(combatFeedback, `INCOMING: ${name.toUpperCase()}`, 'named raider', now)
 }
 
 function respawnPlayer(now: number): void {
@@ -2238,6 +2270,8 @@ function currentProgress(): PlayerProgress {
     hangar: { selected: selectedShipType, owned: [...ownedShips] },
     crafting: { cores: crafting.cores, items: [...crafting.items], equipped: crafting.equipped, pityCount: crafting.pityCount },
     daily: dailyState,
+    pilot: { level: pilot.level, xp: pilot.xp },
+    campaign: { step: campaign.step, progress: campaign.progress, sectorUnlocked: campaign.sectorUnlocked },
   }
 }
 
@@ -2310,6 +2344,8 @@ function applyServerProgress(p: PlayerProgress): void {
   crafting.items.splice(0, crafting.items.length, ...nextCrafting.items)
   crafting.equipped = nextCrafting.equipped
   crafting.pityCount = nextCrafting.pityCount
+  if (p.pilot) { pilot.level = p.pilot.level; pilot.xp = p.pilot.xp }
+  if (p.campaign) { campaign.step = p.campaign.step; campaign.progress = p.campaign.progress; campaign.sectorUnlocked = p.campaign.sectorUnlocked }
   dailyState = p.daily ? { ...emptyDaily(), ...p.daily } : emptyDaily()
   initDaily(Date.now())
   ownedShips.clear()
@@ -2329,6 +2365,8 @@ function refreshWallet(): void {
   saveEconomy(econ)
   saveUpgrades(upgrades)
   saveCraftingState(crafting, localStorage)
+  savePilot(pilot, localStorage)
+  saveCampaign(campaign, localStorage)
   net.saveProgress(currentProgress())
 }
 
@@ -4324,6 +4362,7 @@ function frame(now: number): void {
     const mineResult = mineStep(field, ship.position, econ, dt, miningActive, effCargo(), miningYield(upgrades))
     if (mineResult.mined > 0 && mineResult.asteroid) {
       recordDailyEvent('mine_ore', mineResult.mined, now)
+      recordCampaignEvent(campaign, 'mine_ore', mineResult.mined)
       if (!minedEver) markOnboard('scc.ob.mined', (v) => { minedEver = v }) // onboarding step 1
       const rm = rockMeshes.get(mineResult.asteroid.id)
       if (rm?.rare) gainCredits(econ, mineResult.mined * ORE_RARE_BONUS) // rare vein jackpot, on top of the ORE
@@ -4424,6 +4463,7 @@ function frame(now: number): void {
 
     if (!safe && pveHostilesAllowed && !BOT && now >= nextSpawnAt) {
       spawnPirateWave(now)
+      maybeSpawnNamedRaider(now)
       nextSpawnAt = now + 19000
     }
 
@@ -4492,6 +4532,26 @@ function frame(now: number): void {
         audio.blip('explosion')
         gainCredits(econ, p.reward)
         recordDailyEvent('kill_pirates', 1, now)
+        // Pilot Level XP for the kill (tier-scaled), then campaign progress.
+        const killXp = addXp(pilot, xpForKill(p.tier))
+        pilot.level = killXp.progress.level
+        pilot.xp = killXp.progress.xp
+        if (killXp.leveledUp.length) showPromotion(`Pilot Level ${pilot.level}`)
+        if (p.tier === 'named') {
+          namedRaiderActive = false
+          crafting.cores += 1 // named minibosses guarantee a core
+        }
+        const camp = recordCampaignEvent(campaign, p.tier === 'named' ? 'kill_named' : 'kill_pirates', 1)
+        if (camp.completed) {
+          const stepXp = addXp(pilot, camp.completed.xpReward)
+          pilot.level = stepXp.progress.level
+          pilot.xp = stepXp.progress.xp
+          gainCredits(econ, camp.completed.creditReward)
+          if (stepXp.leveledUp.length) showPromotion(`Pilot Level ${pilot.level}`)
+          if (camp.completed.unlockSector) {
+            registerKillBanner(combatFeedback, `SECTOR ${camp.completed.unlockSector} UNLOCKED`, 'new space charted', now)
+          }
+        }
         finishOnboarding() // graduates the onboarding objective
         refreshWallet()
         spawnLoot(p.position) // drop a loot crate where it died

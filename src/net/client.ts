@@ -39,6 +39,8 @@ export interface PlayerProgress {
     pityCount?: number
   }
   daily?: DailyState
+  pilot?: { level: number; xp: number }
+  campaign?: { step: number; progress: number; sectorUnlocked: number }
 }
 
 export interface MarketListingItem {
