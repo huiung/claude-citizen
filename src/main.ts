@@ -4012,13 +4012,9 @@ function enterBrowseMode(): void {
 
 function launch(): void {
   if (running) return
-  // Smart LAUNCH routing (client UX; the relay enforces the real boundary). Exempt showcase/bot auto-launch.
-  if (!BOT && !CAPTURE_OG && !SHOWCASE_HOLDER && !SHOWCASE_TIME_TRIAL) {
-    // Not connected → kick off connect; onHolder auto-enters once a ≥1 balance arrives.
-    if (!walletConnected()) { pendingLaunch = true; setWalletStatus('Connect your wallet to fly…'); startWalletConnect(); return }
-    // Connected but holds 0 → show the buy warning; don't enter.
-    if (holderBalance < 1) { refreshLaunchGateUI(); return }
-  }
+  // No client gate here: this is the in-game entry, called by landing.ts's beginLaunch AFTER the
+  // landing has gated on wallet + holder balance. The relay also enforces the gate at `join`. Gating
+  // here would wrongly bail (main.ts's holderBalance is still 0 the instant the game module loads).
   spectating = false // clear any prior Browse state so a real launch flies normally
   browseBannerEl.hidden = true
   const callsign = nicknameEl.value.trim() || 'PILOT'
