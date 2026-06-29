@@ -3,6 +3,33 @@ import {
   CAREER_SCRUB_CEILING, guardEconomyGrowth, MAX_EARN_RATE, MAX_EARN_WINDOW_SEC,
   sanitizeCrafting, sanitizeProgress, scrubCareerOutliers,
 } from './progress.mjs'
+import { MAX_PILOT_LEVEL, cumulativeXp, levelForTotal } from './progress.mjs'
+
+describe('server XP curve (mirror of src/sim/pilotLevel.ts)', () => {
+  it('matches the client cumulative-XP totals', () => {
+    expect(cumulativeXp(1, 0)).toBe(0)
+    expect(cumulativeXp(2, 0)).toBe(80)              // xpForLevel(1)
+    expect(cumulativeXp(5, 0)).toBe(1200)            // 80+200+360+560
+    expect(cumulativeXp(3, 40)).toBe(80 + 200 + 40)  // prior costs + xp-into-level
+  })
+
+  it('round-trips level/xp through cumulative + inverse', () => {
+    for (const [lvl, xp] of [[1, 0], [3, 40], [5, 0], [10, 15], [19, 100]]) {
+      expect(levelForTotal(cumulativeXp(lvl, xp))).toEqual({ level: lvl, xp })
+    }
+  })
+
+  it('caps at MAX_PILOT_LEVEL with xp pinned to 0', () => {
+    expect(MAX_PILOT_LEVEL).toBe(20)
+    expect(levelForTotal(cumulativeXp(20, 0))).toEqual({ level: 20, xp: 0 })
+    expect(levelForTotal(99_999_999)).toEqual({ level: 20, xp: 0 })
+  })
+
+  it('clamps bad input', () => {
+    expect(cumulativeXp(-5, -9)).toBe(0)       // level floored to 1, xp floored to 0
+    expect(levelForTotal(-100)).toEqual({ level: 1, xp: 0 })
+  })
+})
 
 describe('guardEconomyGrowth', () => {
   const row = (earned, credits, careerAt) => ({ earned, credits, ...(careerAt !== undefined ? { _careerAt: careerAt } : {}) })

@@ -1,3 +1,27 @@
+// --- Pilot XP curve (server mirror of src/sim/pilotLevel.ts) -----------------
+// Keep in lockstep with the client. The drift test in progress.test.mjs pins these sample values,
+// so a TS-side curve change that isn't mirrored here fails CI.
+export const MAX_PILOT_LEVEL = 20
+function xpForLevel(level) { return 60 * level + 20 * level * level } // 1→2:80, 2→3:200, 3→4:360, 4→5:560
+
+// Cumulative XP to be AT (level, xp): sum of all prior level costs + xp into the current level.
+export function cumulativeXp(level, xp) {
+  const lvl = Math.min(MAX_PILOT_LEVEL, Math.max(1, Math.floor(Number(level) || 1)))
+  let total = Math.max(0, Math.floor(Number(xp) || 0))
+  for (let i = 1; i < lvl; i++) total += xpForLevel(i)
+  return total
+}
+
+// Inverse: highest level whose cumulative cost <= total, remainder as xp-into-level.
+// At MAX_PILOT_LEVEL, xp is pinned to 0 (matches client addXp zeroing at the cap).
+export function levelForTotal(total) {
+  let t = Math.max(0, Math.floor(Number(total) || 0))
+  let level = 1
+  while (level < MAX_PILOT_LEVEL && t >= xpForLevel(level)) { t -= xpForLevel(level); level += 1 }
+  if (level >= MAX_PILOT_LEVEL) return { level: MAX_PILOT_LEVEL, xp: 0 }
+  return { level, xp: t }
+}
+
 const CRAFTING_COSMETICS = new Set(['aurum-trail-kit', 'nebula-hull-kit', 'comet-wake-kit', 'void-runner-kit'])
 const CRAFTING_RARITIES = new Set(['common', 'rare', 'epic', 'legendary'])
 const CRAFTING_VARIANTS = {
