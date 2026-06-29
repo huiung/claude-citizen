@@ -4083,6 +4083,7 @@ export function launchGame(callsign?: string): void {
   if (callsign) nicknameEl.value = callsign
   launch()
 }
+export function enterBrowse(): void { enterBrowseMode() }
 if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) {
   nicknameEl.value = SHOWCASE_HOLDER ? HOLDER_SHOWCASE_STEPS[0].callsign : SHOWCASE_TIME_TRIAL ? 'RACER' : 'test'
   requestAnimationFrame(() => launch())

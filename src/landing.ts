@@ -49,6 +49,10 @@ const connectWalletBtn = document.getElementById('connect-wallet') as HTMLButton
 const disconnectWalletBtn = document.getElementById('disconnect-wallet') as HTMLButtonElement
 const walletStatusEl = document.getElementById('wallet-status')!
 const landingMusicToggleEl = document.getElementById('landing-music-toggle') as HTMLButtonElement
+const buyCitizenEl = document.getElementById('buy-citizen') as HTMLAnchorElement
+const gateMsgEl = document.getElementById('gate-msg')!
+const browseBtnEl = document.getElementById('browse-btn')!
+connectWalletBtn.hidden = true // LAUNCH absorbs connect; keep the standalone button hidden
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:8080`
 const STATS_URL = WS_URL.replace(/^ws/, 'http') + '/stats'
@@ -76,6 +80,8 @@ let walletSession: WalletSession | null = loadWalletSession(localStorage)
 let pendingPubkey: string | null = null
 let netConnected = false
 let launchStarted = false
+let holderBalance = 0
+let pendingLaunch = false
 let leaderboardOffset = 0
 let leaderboardMode: LeaderboardMode = defaultLandingLeaderboardMode(MOBILE_COMPANION)
 const landingMusic = new LandingMusic()
@@ -240,6 +246,17 @@ function setWalletStatus(text: string): void {
   walletStatusEl.textContent = text
 }
 
+function refreshLaunchGateUI(): void {
+  const connected = Boolean(walletSession)
+  const canFly = connected && holderBalance >= 1
+  buyCitizenEl.hidden = !(connected && holderBalance < 1)
+  gateMsgEl.hidden = canFly
+  gateMsgEl.textContent = !connected
+    ? 'Press LAUNCH to connect your wallet and fly — or Browse.'
+    : holderBalance < 1 ? '⚠ This wallet holds no $CITIZEN. You need ≥1 to fly — grab some, or Browse.' : ''
+}
+refreshLaunchGateUI()
+
 function applyLockedCallsign(name: string): void {
   if (!name || name.toLowerCase() === 'pilot') return
   nicknameEl.value = name
@@ -270,8 +287,15 @@ const net = new NetClient(nicknameEl.value || 'PILOT', activeIdentity(playerToke
     saveWalletSession(localStorage, walletSession)
     pendingPubkey = null
     lockWalletButton(pubkey)
+    refreshLaunchGateUI()
     setWalletStatus(`Connected ${pubkey.slice(0, 4)}...${pubkey.slice(-4)} - press LAUNCH to play`)
     if (name) applyLockedCallsign(name)
+  },
+  onHolder(_tier, balance) {
+    holderBalance = balance
+    refreshLaunchGateUI()
+    if (pendingLaunch && balance >= 1) { pendingLaunch = false; void beginLaunch() }
+    else if (pendingLaunch && balance < 1) { pendingLaunch = false; refreshLaunchGateUI() } // connected but no token
   },
   onCallsign(name) {
     applyLockedCallsign(name)
@@ -302,23 +326,27 @@ disconnectWalletBtn.addEventListener('click', () => {
   setTimeout(() => location.reload(), 200)
 })
 
-connectWalletBtn.addEventListener('click', () => {
+function startWalletConnect(): void {
   if (!hasWallet()) {
+    pendingLaunch = false
     if (isMobileBrowser()) { setWalletStatus('Opening in Phantom — tap Connect there…'); location.href = phantomBrowseUrl(); return }
     setWalletStatus('No Solana wallet found - install the Phantom extension.'); return
   }
-  if (!netConnected) { setWalletStatus('Not connected to server - try again in a moment.'); return }
+  if (!netConnected) { pendingLaunch = false; setWalletStatus('Not connected to server - try again in a moment.'); return }
   setWalletStatus('Connecting...')
   connectWallet().then((pubkey) => {
     pendingPubkey = pubkey
     setWalletStatus('Approve the signature in your wallet...')
     net.requestChallenge(pubkey)
   }).catch((e) => {
+    pendingLaunch = false
     setWalletStatus(e instanceof WalletError && e.message === NO_WALLET
       ? 'No Solana wallet found - install Phantom.'
       : 'Connection cancelled.')
   })
-})
+}
+
+connectWalletBtn.addEventListener('click', () => { startWalletConnect() })
 
 function nextPaint(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
@@ -330,6 +358,8 @@ function setLaunchStatus(text: string): void {
 
 async function beginLaunch(): Promise<void> {
   if (launchStarted) return
+  if (!walletSession) { pendingLaunch = true; startWalletConnect(); return }   // connect → onHolder auto-launches at ≥1
+  if (holderBalance < 1) { refreshLaunchGateUI(); return }                      // connected but 0 → show buy warning, don't launch
   launchStarted = true
   landingMusic.start()
   const callsign = nicknameEl.value.trim() || 'PILOT'
@@ -361,6 +391,30 @@ async function beginLaunch(): Promise<void> {
 
 launchEl.addEventListener('click', () => { void beginLaunch() })
 nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') void beginLaunch() })
+
+let browseStarted = false
+browseBtnEl.addEventListener('click', async () => {
+  if (browseStarted || launchStarted) return
+  browseStarted = true
+  launchEl.disabled = true
+  launchLoadingEl.hidden = false
+  setLaunchStatus('Loading…')
+  clearInterval(statsTimer)
+  net.disconnect()
+  try {
+    await nextPaint()
+    const game = await import('./main')
+    await nextPaint()
+    landingMusic.stop()
+    game.enterBrowse()
+  } catch (e) {
+    browseStarted = false
+    launchEl.disabled = false
+    launchLoadingEl.hidden = true
+    setLaunchStatus('Browse failed — refresh and try again.')
+    console.error(e)
+  }
+})
 
 if (CAPTURE_LAUNCH.autoLaunch) {
   nicknameEl.value = CAPTURE_LAUNCH.callsign ?? 'PILOT'
