@@ -740,7 +740,9 @@ export class StationMenu {
     const p = this.casinoPending
     if (!p) return
     this.casinoPending = null
-    this.casinoTimer = null
+    // Clear the reveal timer here (not just in cancelForge), so however settle is triggered —
+    // by the reveal timer firing OR by cancelForge mid-spin — the pending timeout is cleared.
+    if (this.casinoTimer) { clearTimeout(this.casinoTimer); this.casinoTimer = null }
     this.ctx.econ.credits -= p.stake                       // spend the clamped stake
     const win = p.mult > 0
     if (win) this.ctx.econ.credits += p.stake * p.mult     // DIRECT add — NOT gainCredits (no earned/rank)

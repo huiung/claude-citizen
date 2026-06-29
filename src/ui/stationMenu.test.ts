@@ -169,6 +169,154 @@ describe('stationMenu contracts copy', () => {
   })
 })
 
+describe('stationMenu casino settle economy', () => {
+  beforeEach(() => { document.body.innerHTML = '' })
+
+  const CASINO_SPIN_MS = 2600 // mirror StationMenu.CASINO_SPIN_MS (private)
+
+  // rng→number map: floor(rng * 37). 0.03 → number 1 (RED, wins a 'red' bet); 0 → number 0 (GREEN, loses).
+  const RNG_RED_WIN = 0.03
+  const RNG_GREEN_LOSE = 0
+
+  function mountCasinoMenu(credits: number, onChange: () => void = () => {}) {
+    const econ = createEconomy()
+    econ.credits = credits
+    econ.earned = 0
+    const blips: string[] = []
+    const ctx = {
+      outpostId: 'colony',
+      econ,
+      market: createMarket(),
+      crafting: createCraftingState(),
+      upgrades: createUpgrades(),
+      contracts: [],
+      audio: { blip: (k: string) => blips.push(k) } as any,
+      capacity: () => 20,
+      selectedShip: () => 'hauler' as const,
+      ownedShips: new Set(['hauler'] as const),
+      shipPrices: { hauler: 0, fighter: 5000, miner: 8000, interceptor: 15000 },
+      onBuyShip: () => {},
+      onSelectShip: () => {},
+      holderTier: () => 0,
+      selectedHolderShipVisual: () => 'standard' as const,
+      onSelectHolderShipVisual: () => {},
+      marketplaceRows: () => [],
+      marketplaceCanTrade: () => true,
+      onRefreshMarketplace: () => {},
+      onBuyMarketListing: () => {},
+      onCancelMarketListing: () => {},
+    }
+    const menu = new StationMenu({ onChange, onUndock() {} })
+    document.body.appendChild(menu.root)
+    menu.open(ctx as any)
+    ;(menu.root.querySelector('[data-tab="casino"]') as HTMLButtonElement).click()
+    return { menu, ctx, econ, blips, root: menu.root }
+  }
+
+  const spinBtn = (root: HTMLElement) =>
+    [...root.querySelectorAll('button')].find((b) => b.textContent === 'SPIN' || b.textContent === 'SPINNING…') as HTMLButtonElement
+  const chip = (root: HTMLElement, label: string) =>
+    [...root.querySelectorAll('.casino-chip')].find((b) => b.textContent === label) as HTMLButtonElement
+
+  it('(a) a winning spin settles once at the reveal; spend is deferred', () => {
+    vi.useFakeTimers()
+    const rng = vi.spyOn(Math, 'random').mockReturnValue(RNG_RED_WIN)
+    try {
+      let changes = 0
+      const start = 100_000
+      const { root, econ } = mountCasinoMenu(start, () => { changes++ })
+      chip(root, '10,000').click() // stake 10,000; default bet 'red'
+      const stake = 10_000
+      spinBtn(root).click()
+      // spend deferred: credits unchanged immediately after spin()
+      expect(econ.credits).toBe(start)
+      expect(changes).toBe(0)
+      vi.advanceTimersByTime(CASINO_SPIN_MS)
+      // win pays 2× stake: net +stake
+      expect(econ.credits).toBe(start - stake + stake * 2)
+      expect(changes).toBe(1)
+    } finally {
+      rng.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('(b) a losing spin debits the stake at the reveal; onChange fires once', () => {
+    vi.useFakeTimers()
+    const rng = vi.spyOn(Math, 'random').mockReturnValue(RNG_GREEN_LOSE)
+    try {
+      let changes = 0
+      const start = 100_000
+      const { root, econ } = mountCasinoMenu(start, () => { changes++ })
+      chip(root, '10,000').click()
+      const stake = 10_000
+      spinBtn(root).click()
+      expect(econ.credits).toBe(start)
+      vi.advanceTimersByTime(CASINO_SPIN_MS)
+      expect(econ.credits).toBe(start - stake)
+      expect(changes).toBe(1)
+    } finally {
+      rng.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('(c) cancel mid-spin commits exactly once; the reveal timer does not double-settle', () => {
+    vi.useFakeTimers()
+    const rng = vi.spyOn(Math, 'random').mockReturnValue(RNG_RED_WIN)
+    try {
+      let changes = 0
+      const start = 100_000
+      const { menu, root, econ } = mountCasinoMenu(start, () => { changes++ })
+      chip(root, '10,000').click()
+      const stake = 10_000
+      spinBtn(root).click()
+      expect(econ.credits).toBe(start)
+      // cancelForge() runs on tab switch (and on close/undock); switch tabs before the reveal.
+      ;(root.querySelector('[data-tab="trade"]') as HTMLButtonElement).click()
+      const afterCancel = econ.credits
+      // settled once on cancel: a win commits start - stake + 2*stake
+      expect(afterCancel).toBe(start - stake + stake * 2)
+      expect(changes).toBe(1)
+      // advancing past the reveal timer must not settle again
+      vi.advanceTimersByTime(CASINO_SPIN_MS * 2)
+      expect(econ.credits).toBe(afterCancel)
+      expect(changes).toBe(1)
+      // sanity: menu is still usable
+      expect(menu.isOpen).toBe(true)
+    } finally {
+      rng.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('(d) gambling never touches lifetime earned (Career)', () => {
+    vi.useFakeTimers()
+    try {
+      // a win first
+      const win = vi.spyOn(Math, 'random').mockReturnValue(RNG_RED_WIN)
+      const a = mountCasinoMenu(100_000)
+      chip(a.root, '10,000').click()
+      spinBtn(a.root).click()
+      vi.advanceTimersByTime(CASINO_SPIN_MS)
+      expect(a.econ.earned).toBe(0)
+      win.mockRestore()
+      // fresh root: duplicate #ids across two mounts break jsdom's scoped querySelector
+      document.body.innerHTML = ''
+      // then a loss
+      const lose = vi.spyOn(Math, 'random').mockReturnValue(RNG_GREEN_LOSE)
+      const b = mountCasinoMenu(100_000)
+      chip(b.root, '10,000').click()
+      spinBtn(b.root).click()
+      vi.advanceTimersByTime(CASINO_SPIN_MS)
+      expect(b.econ.earned).toBe(0)
+      lose.mockRestore()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('station crafting forge sequence', () => {
   beforeEach(() => { document.body.innerHTML = '' })
 
