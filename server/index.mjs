@@ -175,7 +175,10 @@ async function refreshHolder(ws, client) {
   let status = holderCache.get(client.pubkey, Date.now())
   if (status === null) {
     status = await fetchHolderStatus(client.pubkey, { apiKey: HELIUS_API_KEY, mint: HOLDER_MINT })
-    holderCache.set(client.pubkey, status, Date.now())
+    // Only cache a VERIFIED lookup. Caching a failed lookup (ok=false → balance 0) would lock a real
+    // holder out of the launch gate for the full TTL on a single transient Helius error.
+    if (status.ok) holderCache.set(client.pubkey, status, Date.now())
+    else console.warn(`[holder] lookup failed for ${client.pubkey} — not cached, gate stays fail-closed this attempt`)
   }
   if (!clients.has(ws)) return // disconnected during the async lookup
   client.tier = Number(status.tier) || 0

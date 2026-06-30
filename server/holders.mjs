@@ -46,24 +46,37 @@ export function createHolderCache(ttlMs = 5 * 60 * 1000) {
   }
 }
 
-/** Query Helius for `pubkey`'s holding of `mint` and resolve a cosmetic tier (0..3).
- *  Resolves 0 on any failure (network, rate limit, missing key) — game just shows no flair. */
-export async function fetchHolderStatus(pubkey, { apiKey, mint }) {
-  if (!apiKey || !mint || !pubkey) return holderStatus(0)
-  try {
-    const res = await fetch(`https://mainnet.helius-rpc.com/?api-key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 'holder', method: 'getTokenAccountsByOwner',
-        params: [pubkey, { mint }, { encoding: 'jsonParsed' }],
-      }),
-    })
-    if (!res.ok) return holderStatus(0)
-    return holderStatus(parseHolderBalance(await res.json()))
-  } catch {
-    return holderStatus(0)
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** Query Helius for `pubkey`'s holding of `mint` and resolve a status `{ balance, tier, ok }`.
+ *  `ok` distinguishes a VERIFIED result (success, even a genuine 0 balance) from a FAILED lookup
+ *  (network, rate limit, RPC error, missing key). The caller must never cache a failed lookup as a
+ *  real 0 — a transient Helius blip would otherwise lock a genuine holder out of the gate for the
+ *  cache TTL. Retries transient failures `retries` times before giving up (still fail-closed:
+ *  ok=false carries balance 0). */
+export async function fetchHolderStatus(pubkey, { apiKey, mint, fetchImpl = fetch, retries = 1, retryDelayMs = 250 } = {}) {
+  if (!apiKey || !mint || !pubkey) return { balance: 0, tier: 0, ok: false }
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetchImpl(`https://mainnet.helius-rpc.com/?api-key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0', id: 'holder', method: 'getTokenAccountsByOwner',
+          params: [pubkey, { mint }, { encoding: 'jsonParsed' }],
+        }),
+      })
+      if (!res.ok) throw new Error(`helius http ${res.status}`)
+      const json = await res.json()
+      // A JSON-RPC error in the body (e.g. rate limit) often rides a 200 — treat it as a failure, not a verified 0.
+      if (json?.error) throw new Error(json.error?.message || 'helius rpc error')
+      return { ...holderStatus(parseHolderBalance(json)), ok: true }
+    } catch {
+      if (attempt < retries) { await sleep(retryDelayMs); continue }
+      return { balance: 0, tier: 0, ok: false }
+    }
   }
+  return { balance: 0, tier: 0, ok: false } // unreachable; satisfies control-flow analysis
 }
 
 export async function fetchHolderTier(pubkey, opts) {
