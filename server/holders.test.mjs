@@ -1,5 +1,49 @@
 import { describe, it, expect } from 'vitest'
-import { parseHolderBalance, holderTier, createHolderCache, holderStatus } from './holders.mjs'
+import { parseHolderBalance, holderTier, createHolderCache, holderStatus, fetchHolderStatus } from './holders.mjs'
+
+describe('fetchHolderStatus', () => {
+  const OPTS = { apiKey: 'k', mint: 'm', retryDelayMs: 0 }
+  const okResp = (ui) => ({ ok: true, json: async () => ({ result: { value: [{ account: { data: { parsed: { info: { tokenAmount: { uiAmount: ui } } } } } }] } }) })
+
+  it('verifies a real balance → ok true with balance/tier', async () => {
+    const s = await fetchHolderStatus('PK', { ...OPTS, fetchImpl: async () => okResp(1500) })
+    expect(s).toEqual({ balance: 1500, tier: 1, ok: true })
+  })
+
+  it('a genuine zero is a VERIFIED result (ok true), not a failure', async () => {
+    const s = await fetchHolderStatus('PK', { ...OPTS, fetchImpl: async () => okResp(0) })
+    expect(s).toEqual({ balance: 0, tier: 0, ok: true })
+  })
+
+  it('missing apiKey/mint/pubkey → ok false (not a verified 0)', async () => {
+    expect((await fetchHolderStatus('PK', { mint: 'm', retryDelayMs: 0 })).ok).toBe(false) // no apiKey
+    expect((await fetchHolderStatus('', OPTS)).ok).toBe(false)                              // no pubkey
+  })
+
+  it('HTTP error after retries → ok false (fail-closed, balance 0)', async () => {
+    let calls = 0
+    const s = await fetchHolderStatus('PK', { ...OPTS, retries: 1, fetchImpl: async () => { calls++; return { ok: false, status: 429 } } })
+    expect(s).toEqual({ balance: 0, tier: 0, ok: false })
+    expect(calls).toBe(2) // initial + 1 retry
+  })
+
+  it('a JSON-RPC error body (200 OK) is a failure, not a verified 0', async () => {
+    const s = await fetchHolderStatus('PK', { ...OPTS, retries: 0, fetchImpl: async () => ({ ok: true, json: async () => ({ error: { message: 'rate limited' } }) }) })
+    expect(s.ok).toBe(false)
+  })
+
+  it('a thrown network error → ok false', async () => {
+    const s = await fetchHolderStatus('PK', { ...OPTS, retries: 0, fetchImpl: async () => { throw new Error('ECONNRESET') } })
+    expect(s.ok).toBe(false)
+  })
+
+  it('retries a transient failure then succeeds → ok true', async () => {
+    let calls = 0
+    const s = await fetchHolderStatus('PK', { ...OPTS, retries: 1, fetchImpl: async () => { calls++; if (calls === 1) throw new Error('blip'); return okResp(250000) } })
+    expect(s).toEqual({ balance: 250000, tier: 2, ok: true })
+    expect(calls).toBe(2)
+  })
+})
 
 describe('parseHolderBalance', () => {
   // Shape returned by Helius getTokenAccountsByOwner (jsonParsed).
