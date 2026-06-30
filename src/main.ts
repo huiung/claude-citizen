@@ -65,6 +65,7 @@ import {
   isDead, isEngageable, type Projectile, PROJECTILE_DAMAGE, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile,
   stepProjectiles, stepWeapon,
 } from './sim/combat'
+import { modeById, resolveShot, spreadDirections, type FireModeId } from './sim/fireModes'
 import {
   allowsPveHostiles,
   CITIZEN_SEASON_HUB_DESTINATION,
@@ -1595,6 +1596,7 @@ function spawnLoot(pos: THREE.Vector3): void {
 const explosions: { mesh: THREE.Mesh; born: number }[] = []
 const hitSparks: { mesh: THREE.Mesh; born: number }[] = []
 let weaponActive = false
+let fireModeId: FireModeId = 'rapid' // right-click fire mode; persisted + switched in Task 4
 let pirateSpawnCount = 0
 let nextSpawnAt = Infinity
 const MAX_PIRATES = 2
@@ -4811,18 +4813,21 @@ function frame(now: number): void {
     }
     const pvpWeapon = pvpWeaponForShip(selectedShipType)
     const combatWeaponActive = pvpActive || dronesActive || pvpCombatTagged
-    playerWeapon.interval = combatWeaponActive ? pvpWeapon.interval : 0.16
+    // Base weapon (per-ship in combat, flat + pilot bonus in PvE), then the active fire mode layered on
+    // top as DPS-neutral multipliers. The pilot weapon-damage bonus is added BEFORE the mode multiplier.
+    const weaponBase = {
+      interval: combatWeaponActive ? pvpWeapon.interval : 0.16,
+      damage: combatWeaponActive ? pvpWeapon.damage : PROJECTILE_DAMAGE + unlocksForLevel(pilot.level).weaponDamageBonus,
+      speed: PROJECTILE_SPEED,
+    }
+    const shot = resolveShot(weaponBase, modeById(fireModeId))
+    playerWeapon.interval = shot.interval
     stepWeapon(playerWeapon, dt)
     if (weaponActive && canFire(playerWeapon)) {
       _fwd.set(0, 0, -1).applyQuaternion(ship.quaternion)
-      projectiles.push(spawnProjectile(
-        ship.position,
-        _fwd,
-        'player',
-        PROJECTILE_SPEED,
-        combatWeaponActive ? pvpWeapon.damage : PROJECTILE_DAMAGE + unlocksForLevel(pilot.level).weaponDamageBonus,
-        ship.velocity,
-      ))
+      for (const dir of spreadDirections(_fwd, shot.pellets, shot.spreadRad, Math.random)) {
+        projectiles.push(spawnProjectile(ship.position, dir, 'player', shot.speed, shot.damage, ship.velocity))
+      }
       fireWeapon(playerWeapon)
       audio.blip('fire')
     }
