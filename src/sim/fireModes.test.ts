@@ -108,4 +108,18 @@ describe('spreadDirections', () => {
       expect(angle).toBeLessThanOrEqual(0.07 + 1e-6)
     }
   })
+
+  it('handles forward aligned with ±Y (degenerate basis) — finite unit vectors within the cone', () => {
+    for (const f of [new Vector3(0, 1, 0), new Vector3(0, -1, 0), new Vector3(0, 0.999, 0.001).normalize()]) {
+      const dirs = spreadDirections(f, 4, 0.07, () => 0.5)
+      expect(dirs).toHaveLength(4)
+      for (const d of dirs) {
+        expect(Number.isFinite(d.x) && Number.isFinite(d.y) && Number.isFinite(d.z)).toBe(true)
+        expect(d.length()).toBeCloseTo(1, 5)
+        const fn = f.clone().normalize()
+        const angle = Math.acos(Math.max(-1, Math.min(1, d.dot(fn))))
+        expect(angle).toBeLessThanOrEqual(0.07 + 1e-6)
+      }
+    }
+  })
 })
