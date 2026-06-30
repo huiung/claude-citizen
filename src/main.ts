@@ -65,6 +65,7 @@ import {
   isDead, isEngageable, type Projectile, PROJECTILE_DAMAGE, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile,
   stepProjectiles, stepWeapon,
 } from './sim/combat'
+import { FIRE_MODES, cycleMode, modeById, resolveShot, spreadDirections, type FireModeId } from './sim/fireModes'
 import {
   allowsPveHostiles,
   CITIZEN_SEASON_HUB_DESTINATION,
@@ -209,6 +210,7 @@ combatCanvas.width = innerWidth
 combatCanvas.height = innerHeight
 const speedEl = document.getElementById('speed')!
 const assistEl = document.getElementById('assist')!
+const fireModeEl = document.getElementById('fire-mode')!
 const boostEl = document.getElementById('boost')!
 const netEl = document.getElementById('net')!
 const onlineEl = document.getElementById('online')!
@@ -1595,6 +1597,19 @@ function spawnLoot(pos: THREE.Vector3): void {
 const explosions: { mesh: THREE.Mesh; born: number }[] = []
 const hitSparks: { mesh: THREE.Mesh; born: number }[] = []
 let weaponActive = false
+let fireModeId: FireModeId = readStoredFireMode()
+function readStoredFireMode(): FireModeId {
+  const v = localStorage.getItem('scc.fireMode')
+  return FIRE_MODES.some((m) => m.id === v) ? (v as FireModeId) : 'rapid'
+}
+function setFireMode(id: FireModeId): void {
+  fireModeId = id
+  try { localStorage.setItem('scc.fireMode', id) } catch { /* storage blocked */ }
+  for (const el of fireModeEl.querySelectorAll<HTMLElement>('.fm')) {
+    el.classList.toggle('active', el.dataset.mode === id)
+  }
+}
+setFireMode(fireModeId) // reflect the stored/default mode in the HUD highlight up front
 let pirateSpawnCount = 0
 let nextSpawnAt = Infinity
 const MAX_PIRATES = 2
@@ -1765,7 +1780,7 @@ function startBotTransit(): void {
   } else if (kind === 'race') {
     customJumpDestination = { id: 'season-hub', name: 'the Season Hub', kind: 'Hub', position: CITIZEN_SEASON_HUB_DESTINATION.position.clone() }
   } else if (kind === 'pvp-training') {
-    customJumpDestination = { id: 'practice-arena', name: 'the arena', kind: 'Arena', position: BOT_WORLD.pvpArenaCenter.clone() }
+    customJumpDestination = { id: 'training-arena', name: 'the training arena', kind: 'Arena', position: BOT_WORLD.trainingArenaCenter.clone() }
   } else {
     selectedJumpIdx = Math.floor(Math.random() * PLANETS.length) // a planet to fly by
   }
@@ -2740,6 +2755,7 @@ const BOT_DOCK_CRAWL = 14            // crawl speed inside dock range (sub-DOCK_
 const BOT_MINE_PROXIMITY = 120       // within this of an asteroid → fire the mining laser
 type BotMinePhase = 'mine' | 'haul' | 'sell' | 'gamble' | 'done'
 let botMinePhase: BotMinePhase | null = null  // non-null only while running the mine-and-gamble activity
+let botSparModePicked = false
 let botMineUntil = 0
 let botHaulUntil = 0
 let botGambleNextAt = 0
@@ -3259,6 +3275,10 @@ addEventListener('keydown', (e) => {
   }
   if (e.code === 'KeyC' && running && !docked && !spectating) {
     cycleCameraView()
+    audio.blip('nav')
+  }
+  if ((e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') && running && !docked && !spectating) {
+    setFireMode(e.code === 'Digit1' ? 'rapid' : e.code === 'Digit2' ? 'heavy' : 'scatter')
     audio.blip('nav')
   }
   if (e.code === 'Space' && running && !docked && !spectating && dockable) dock(dockable)
@@ -4577,6 +4597,7 @@ function frame(now: number): void {
           // flies near real flight speed; the black-hole dive boosts) — no global cap, so it reads naturally.
           const cmd = stepActivity(botActivity, ship.position, dt, now, BOT_WORLD)
           if (cmd.done || now >= botPerformUntil) {
+            botSparModePicked = false
             // Content done → linger and wander the spot for a few seconds before jumping on. The wander
             // activity itself ends straight into the next transit (so we never nest wander-on-wander).
             if (botActivity.kind === 'wander') startBotTransit()
@@ -4589,6 +4610,10 @@ function frame(now: number): void {
               if (targetDrone) {
                 cmd.target = targetDrone.position
                 cmd.speed = Math.max(cmd.speed, 520)
+                if (!botSparModePicked) {
+                  setFireMode(cycleMode(fireModeId, 1)) // rotate modes leg-to-leg for footage variety
+                  botSparModePicked = true
+                }
                 weaponActive = true
               }
             }
@@ -4811,18 +4836,21 @@ function frame(now: number): void {
     }
     const pvpWeapon = pvpWeaponForShip(selectedShipType)
     const combatWeaponActive = pvpActive || dronesActive || pvpCombatTagged
-    playerWeapon.interval = combatWeaponActive ? pvpWeapon.interval : 0.16
+    // Base weapon (per-ship in combat, flat + pilot bonus in PvE), then the active fire mode layered on
+    // top as DPS-neutral multipliers. The pilot weapon-damage bonus is added BEFORE the mode multiplier.
+    const weaponBase = {
+      interval: combatWeaponActive ? pvpWeapon.interval : 0.16,
+      damage: combatWeaponActive ? pvpWeapon.damage : PROJECTILE_DAMAGE + unlocksForLevel(pilot.level).weaponDamageBonus,
+      speed: PROJECTILE_SPEED,
+    }
+    const shot = resolveShot(weaponBase, modeById(fireModeId))
+    playerWeapon.interval = shot.interval
     stepWeapon(playerWeapon, dt)
     if (weaponActive && canFire(playerWeapon)) {
       _fwd.set(0, 0, -1).applyQuaternion(ship.quaternion)
-      projectiles.push(spawnProjectile(
-        ship.position,
-        _fwd,
-        'player',
-        PROJECTILE_SPEED,
-        combatWeaponActive ? pvpWeapon.damage : PROJECTILE_DAMAGE + unlocksForLevel(pilot.level).weaponDamageBonus,
-        ship.velocity,
-      ))
+      for (const dir of spreadDirections(_fwd, shot.pellets, shot.spreadRad, Math.random)) {
+        projectiles.push(spawnProjectile(ship.position, dir, 'player', shot.speed, shot.damage, ship.velocity))
+      }
       fireWeapon(playerWeapon)
       audio.blip('fire')
     }

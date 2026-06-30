@@ -50,13 +50,14 @@ describe('pickDestination weighting', () => {
 
 import {
   BLACK_HOLE_CENTER, BLACK_HOLE_TIDAL, BLACK_HOLE_INFLUENCE,
-  PVP_ARENA_CENTER, SEASON_HUB_CENTER, RACE_GATES, STATIONS,
+  PVP_ARENA_CENTER, TRAINING_ARENA_CENTER, SEASON_HUB_CENTER, RACE_GATES, STATIONS,
 } from './landmarks.mjs'
 
 describe('activity landmarks', () => {
   it('exposes the deep-space points the activities target', () => {
     expect(BLACK_HOLE_CENTER.toArray()).toEqual([118000, 9000, 118000])
     expect(PVP_ARENA_CENTER.toArray()).toEqual([92000, 26000, -210000])
+    expect(TRAINING_ARENA_CENTER.toArray()).toEqual([88000, 26000, -206000]) // TRAINING_RANGE_CENTER in src/sim/pvp.ts — where the bot spars drones
     expect(SEASON_HUB_CENTER.toArray()).toEqual([93000, 26300, -218800])
     expect(BLACK_HOLE_TIDAL).toBe(18000)
     expect(BLACK_HOLE_INFLUENCE).toBe(50000)
