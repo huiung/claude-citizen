@@ -65,7 +65,7 @@ import {
   isDead, isEngageable, type Projectile, PROJECTILE_DAMAGE, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile,
   stepProjectiles, stepWeapon,
 } from './sim/combat'
-import { FIRE_MODES, cycleMode, modeById, resolveShot, spreadDirections, type FireModeId } from './sim/fireModes'
+import { FIRE_MODES, cycleMode, modeById, rescaleCooldown, resolveShot, spreadDirections, type FireModeId } from './sim/fireModes'
 import {
   allowsPveHostiles,
   CITIZEN_SEASON_HUB_DESTINATION,
@@ -1603,6 +1603,11 @@ function readStoredFireMode(): FireModeId {
   return FIRE_MODES.some((m) => m.id === v) ? (v as FireModeId) : 'rapid'
 }
 function setFireMode(id: FireModeId): void {
+  if (id !== fireModeId) {
+    // Preserve the elapsed fraction of the firing gap across the switch, so a mode-swap can't buy a
+    // faster-than-earned shot (e.g. rapid→heavy to land an early heavy slug). See rescaleCooldown.
+    playerWeapon.cooldown = rescaleCooldown(playerWeapon.cooldown, modeById(fireModeId).intervalMul, modeById(id).intervalMul)
+  }
   fireModeId = id
   try { localStorage.setItem('scc.fireMode', id) } catch { /* storage blocked */ }
   for (const el of fireModeEl.querySelectorAll<HTMLElement>('.fm')) {

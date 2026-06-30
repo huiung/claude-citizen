@@ -46,6 +46,16 @@ export function resolveShot(base: BaseWeapon, mode: FireMode): ResolvedShot {
   }
 }
 
+// Rescale a weapon's remaining cooldown when the fire mode switches, preserving the elapsed FRACTION
+// of the gap. The base weapon's interval cancels out, so only the two modes' intervalMuls matter:
+// remaining' = remaining * (nextMul / prevMul). This stops the "fire RAPID, instant-swap to HEAVY,
+// land a heavy slug after a rapid cooldown" trick — switching to a slower mode stretches the wait,
+// so no mode-swap ever buys a faster-than-earned shot. Keeps the equal-DPS invariant honest.
+export function rescaleCooldown(cooldown: number, prevIntervalMul: number, nextIntervalMul: number): number {
+  if (cooldown <= 0 || prevIntervalMul <= 0) return cooldown
+  return cooldown * (nextIntervalMul / prevIntervalMul)
+}
+
 // Fan `pellets` unit vectors around `forward`, each tilted up to `spreadRad` off-axis, evenly
 // distributed in azimuth around the forward axis (Vogel-ish) with a small rng jitter on the tilt so
 // volleys aren't a frozen pattern. pellets <= 1 (or spreadRad 0) returns forward alone.

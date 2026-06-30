@@ -1,5 +1,25 @@
 import { describe, it, expect } from 'vitest'
-import { FIRE_MODES, modeById, cycleMode, resolveShot, type FireModeId } from './fireModes'
+import { FIRE_MODES, modeById, cycleMode, resolveShot, rescaleCooldown, type FireModeId } from './fireModes'
+
+describe('rescaleCooldown', () => {
+  it('stretches the remaining cooldown when switching to a slower mode (rapid→heavy)', () => {
+    // fired RAPID (intervalMul 1), 0.16s on the clock; switch to HEAVY (intervalMul 2.2)
+    expect(rescaleCooldown(0.16, 1, 2.2)).toBeCloseTo(0.352, 6)
+  })
+  it('shrinks the remaining cooldown when switching to a faster mode (heavy→rapid)', () => {
+    expect(rescaleCooldown(0.352, 2.2, 1)).toBeCloseTo(0.16, 6)
+  })
+  it('preserves the elapsed fraction of the gap', () => {
+    // 25% elapsed of a rapid gap → still 25% elapsed of the heavy gap after the swap
+    const remaining = 0.16 * 0.75
+    expect(rescaleCooldown(remaining, 1, 2.2)).toBeCloseTo(0.352 * 0.75, 6)
+  })
+  it('is a no-op when not on cooldown or given a zero/negative prev mul', () => {
+    expect(rescaleCooldown(0, 1, 2.2)).toBe(0)
+    expect(rescaleCooldown(-0.1, 1, 2.2)).toBe(-0.1)
+    expect(rescaleCooldown(0.16, 0, 2.2)).toBe(0.16)
+  })
+})
 
 describe('FIRE_MODES', () => {
   it('has exactly rapid, heavy, scatter in order', () => {
