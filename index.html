@@ -149,6 +149,9 @@
     #hull-bar { display: block; height: 100%; width: 100%; background: #6fdc8c; transition: width .15s linear; }
     #ship-identity { margin-top: 5px; font-size: 11px; line-height: 1.45; letter-spacing: .7px; color: #aee9ff; opacity: .78; }
     #ship-identity b { color: #ffe08a; font-weight: 600; }
+    #fire-mode { margin-top: 6px; letter-spacing: 1px; font-size: 12px; opacity: .85; }
+    #fire-mode .fm { color: #5b6b7a; margin-right: 10px; }
+    #fire-mode .fm.active { color: #7fd4ff; text-shadow: 0 0 8px rgba(127, 212, 255, .6); }
     #ship-visual-line[hidden] { display: none; }
     #enemies { color: #ff8a6b; }
     #safe-zone { color: #6fdc8c; letter-spacing: 2px; text-shadow: 0 0 8px rgba(110, 220, 140, .5); }
@@ -972,6 +975,11 @@
       <div>SHIP <b id="ship-class">HAULER</b></div>
       <div id="ship-visual-line" hidden>VISUAL <b id="ship-visual">STANDARD HULL</b></div>
     </div>
+    <div id="fire-mode" aria-label="weapon fire mode">
+      <span class="fm" data-mode="rapid">1 RAPID</span>
+      <span class="fm" data-mode="heavy">2 HEAVY</span>
+      <span class="fm" data-mode="scatter">3 SCATTER</span>
+    </div>
   </div>
   <div id="status" hidden>
     <div id="net">CONNECTING…</div>
@@ -1020,7 +1028,7 @@
     Wheel camera zoom<br />
     MOUSE aim · W/S thrust · A/D strafe · R/F vertical · Q/E roll<br />
     SHIFT boost · X brake · V flight assist · ESC release mouse<br />
-    LEFT-CLICK mine · RIGHT-CLICK fire · SPACE dock · B/N pick destination · J quantum-jump<br />
+    LEFT-CLICK mine · RIGHT-CLICK fire · 1/2/3 fire mode · SPACE dock · B/N pick destination · J quantum-jump<br />
     M solar atlas · L leaderboard · I inventory · O settings · ENTER chat
   </div>
   <div id="mobile-controls" hidden aria-label="Mobile civilian flight controls">

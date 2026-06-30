@@ -65,7 +65,7 @@ import {
   isDead, isEngageable, type Projectile, PROJECTILE_DAMAGE, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile,
   stepProjectiles, stepWeapon,
 } from './sim/combat'
-import { modeById, resolveShot, spreadDirections, type FireModeId } from './sim/fireModes'
+import { FIRE_MODES, modeById, resolveShot, spreadDirections, type FireModeId } from './sim/fireModes'
 import {
   allowsPveHostiles,
   CITIZEN_SEASON_HUB_DESTINATION,
@@ -210,6 +210,7 @@ combatCanvas.width = innerWidth
 combatCanvas.height = innerHeight
 const speedEl = document.getElementById('speed')!
 const assistEl = document.getElementById('assist')!
+const fireModeEl = document.getElementById('fire-mode')!
 const boostEl = document.getElementById('boost')!
 const netEl = document.getElementById('net')!
 const onlineEl = document.getElementById('online')!
@@ -1596,7 +1597,19 @@ function spawnLoot(pos: THREE.Vector3): void {
 const explosions: { mesh: THREE.Mesh; born: number }[] = []
 const hitSparks: { mesh: THREE.Mesh; born: number }[] = []
 let weaponActive = false
-let fireModeId: FireModeId = 'rapid' // right-click fire mode; persisted + switched in Task 4
+let fireModeId: FireModeId = readStoredFireMode()
+function readStoredFireMode(): FireModeId {
+  const v = localStorage.getItem('scc.fireMode')
+  return FIRE_MODES.some((m) => m.id === v) ? (v as FireModeId) : 'rapid'
+}
+function setFireMode(id: FireModeId): void {
+  fireModeId = id
+  try { localStorage.setItem('scc.fireMode', id) } catch { /* storage blocked */ }
+  for (const el of fireModeEl.querySelectorAll<HTMLElement>('.fm')) {
+    el.classList.toggle('active', el.dataset.mode === id)
+  }
+}
+setFireMode(fireModeId) // reflect the stored/default mode in the HUD highlight up front
 let pirateSpawnCount = 0
 let nextSpawnAt = Infinity
 const MAX_PIRATES = 2
@@ -3261,6 +3274,10 @@ addEventListener('keydown', (e) => {
   }
   if (e.code === 'KeyC' && running && !docked && !spectating) {
     cycleCameraView()
+    audio.blip('nav')
+  }
+  if ((e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') && running && !docked && !spectating) {
+    setFireMode(e.code === 'Digit1' ? 'rapid' : e.code === 'Digit2' ? 'heavy' : 'scatter')
     audio.blip('nav')
   }
   if (e.code === 'Space' && running && !docked && !spectating && dockable) dock(dockable)
