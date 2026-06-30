@@ -16,7 +16,7 @@ Combat is one-note: every engagement is the same held-right-click bolt stream. F
 
 ### In scope
 - A pure `src/sim/fireModes.ts` module: the three mode profiles + pure helpers (`cycleMode`, `modeById`, `resolveShot`, `spreadDirections`), unit-tested.
-- `main.ts` integration: mode state (persisted), input handlers (Digit1/2/3 select, KeyQ cycle), the firing block applying the active mode to whichever base weapon is active (PvE or PvP), and a small HUD indicator.
+- `main.ts` integration: mode state (persisted), input handler (Digit1/2/3 direct select), the firing block applying the active mode to whichever base weapon is active (PvE or PvP), and a small HUD indicator.
 - `index.html`: a compact HUD element + CSS for the mode indicator.
 - (Optional, separable task) the `?bot=1` showcase bot varies its fire mode during `pvp-training` for footage.
 
@@ -89,8 +89,7 @@ export function spreadDirections(forward: THREE.Vector3, pellets: number, spread
 
 **Input** (in the existing `keydown` handler at ~3209, after the menu/chat guards, gated on `running && !docked && !spectating`, and skipped when `chatOpen` / map / panels are open — the handler already early-returns for those):
 - `e.code === 'Digit1' | 'Digit2' | 'Digit3'` → `setFireMode('rapid' | 'heavy' | 'scatter')`.
-- `e.code === 'KeyQ'` → `setFireMode(cycleMode(fireModeId, 1))`.
-- The scroll wheel is **not** used (the `wheel` listener at ~3311 already drives camera zoom; adding mode-cycling there would conflict).
+- **Direct number-key select only — no cycle key and no scroll.** `KeyQ`/`KeyE` are already bound to roll (`readInput` at ~3350: `roll: (keys.has('KeyQ')?1:0) - (keys.has('KeyE')?1:0)`), and the `wheel` listener at ~3311 already drives camera zoom — both would conflict, so neither is used for mode switching. `cycleMode` still ships as a tested helper (the optional showcase bot uses it to rotate modes), it is just not bound to a player key.
 
 **Firing** (replace the single-projectile block at ~4814):
 ```ts
@@ -144,4 +143,4 @@ During a `pvp-training` leg the bot picks a fire mode (e.g. SCATTER against the 
 
 ## 9. Success criteria
 
-In flight, pressing 1/2/3 (or Q to cycle) switches fire mode, the HUD reflects it, and the choice persists across sessions. RAPID is the current weapon unchanged. HEAVY fires slow heavy bolts; SCATTER fires a 4-pellet cone. Modes work in PvE and PvP with no ship gaining raw power. The change is isolated behind a pure, tested module; the projectile/hit systems are untouched.
+In flight, pressing 1/2/3 switches fire mode, the HUD reflects it, and the choice persists across sessions. RAPID is the current weapon unchanged. HEAVY fires slow heavy bolts; SCATTER fires a 4-pellet cone. Modes work in PvE and PvP with no ship gaining raw power. The change is isolated behind a pure, tested module; the projectile/hit systems are untouched.
