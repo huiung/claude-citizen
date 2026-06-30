@@ -65,7 +65,7 @@ import {
   isDead, isEngageable, type Projectile, PROJECTILE_DAMAGE, PROJECTILE_SPEED, repairHull, resolveHits, spawnProjectile,
   stepProjectiles, stepWeapon,
 } from './sim/combat'
-import { FIRE_MODES, modeById, resolveShot, spreadDirections, type FireModeId } from './sim/fireModes'
+import { FIRE_MODES, cycleMode, modeById, resolveShot, spreadDirections, type FireModeId } from './sim/fireModes'
 import {
   allowsPveHostiles,
   CITIZEN_SEASON_HUB_DESTINATION,
@@ -2755,6 +2755,7 @@ const BOT_DOCK_CRAWL = 14            // crawl speed inside dock range (sub-DOCK_
 const BOT_MINE_PROXIMITY = 120       // within this of an asteroid → fire the mining laser
 type BotMinePhase = 'mine' | 'haul' | 'sell' | 'gamble' | 'done'
 let botMinePhase: BotMinePhase | null = null  // non-null only while running the mine-and-gamble activity
+let botSparModePicked = false
 let botMineUntil = 0
 let botHaulUntil = 0
 let botGambleNextAt = 0
@@ -4596,6 +4597,7 @@ function frame(now: number): void {
           // flies near real flight speed; the black-hole dive boosts) — no global cap, so it reads naturally.
           const cmd = stepActivity(botActivity, ship.position, dt, now, BOT_WORLD)
           if (cmd.done || now >= botPerformUntil) {
+            botSparModePicked = false
             // Content done → linger and wander the spot for a few seconds before jumping on. The wander
             // activity itself ends straight into the next transit (so we never nest wander-on-wander).
             if (botActivity.kind === 'wander') startBotTransit()
@@ -4608,6 +4610,10 @@ function frame(now: number): void {
               if (targetDrone) {
                 cmd.target = targetDrone.position
                 cmd.speed = Math.max(cmd.speed, 520)
+                if (!botSparModePicked) {
+                  setFireMode(cycleMode(fireModeId, 1)) // rotate modes leg-to-leg for footage variety
+                  botSparModePicked = true
+                }
                 weaponActive = true
               }
             }
