@@ -123,8 +123,8 @@ export function buildActivity(kind, fromPos, rng, nowMs, world) {
                intro: profile.intro }
     }
     case 'pvp-training':
-      return { kind, phase: 'approach', center: world.pvpArenaCenter.clone(),
-               target: world.pvpArenaCenter.clone(), sparMs: randRange(rng, 14000, 28000),
+      return { kind, phase: 'approach', center: world.trainingArenaCenter.clone(),
+               target: world.trainingArenaCenter.clone(), sparMs: randRange(rng, 14000, 28000),
                weaveRadius: randRange(rng, 1000, 1900), weaveHeight: randRange(rng, 320, 720),
                weaveRate: randRange(rng, 0.85, 1.45), droneKills: 0, droneKillGoal: 2,
                intro: pickIntro(rng, [

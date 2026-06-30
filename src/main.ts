@@ -1780,7 +1780,7 @@ function startBotTransit(): void {
   } else if (kind === 'race') {
     customJumpDestination = { id: 'season-hub', name: 'the Season Hub', kind: 'Hub', position: CITIZEN_SEASON_HUB_DESTINATION.position.clone() }
   } else if (kind === 'pvp-training') {
-    customJumpDestination = { id: 'practice-arena', name: 'the arena', kind: 'Arena', position: BOT_WORLD.pvpArenaCenter.clone() }
+    customJumpDestination = { id: 'training-arena', name: 'the training arena', kind: 'Arena', position: BOT_WORLD.trainingArenaCenter.clone() }
   } else {
     selectedJumpIdx = Math.floor(Math.random() * PLANETS.length) // a planet to fly by
   }

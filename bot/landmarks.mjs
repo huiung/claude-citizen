@@ -40,7 +40,8 @@ export const BLACK_HOLE_CENTER = new Vector3(118000, 9000, 118000)
 export const BLACK_HOLE_TIDAL = 18000      // hull-damage radius in-game; the bot skims just outside it
 export const BLACK_HOLE_INFLUENCE = 50000  // gravity/lensing visual begins here
 
-export const PVP_ARENA_CENTER = new Vector3(92000, 26000, -210000)   // PVP_PRACTICE_ZONE_CENTER in src/sim/pvp.ts
+export const PVP_ARENA_CENTER = new Vector3(92000, 26000, -210000)   // PVP_PRACTICE_ZONE_CENTER in src/sim/pvp.ts (player-vs-player)
+export const TRAINING_ARENA_CENTER = new Vector3(88000, 26000, -206000) // TRAINING_RANGE_CENTER in src/sim/pvp.ts (where drones spawn)
 export const SEASON_HUB_CENTER = new Vector3(93000, 26300, -218800)  // race time-trial origin
 
 // Offsets from src/main.ts hubRoutePoint calls (hub time-trial gates); no sim-level source file.
@@ -70,6 +71,7 @@ export const BOT_WORLD = {
   stations: STATIONS,
   raceGates: RACE_GATES,
   pvpArenaCenter: PVP_ARENA_CENTER,
+  trainingArenaCenter: TRAINING_ARENA_CENTER, // bot pvp-training spars drones here (not the PvP-practice zone)
   blackHoleCenter: BLACK_HOLE_CENTER,
   blackHoleInfluence: BLACK_HOLE_INFLUENCE,
 }

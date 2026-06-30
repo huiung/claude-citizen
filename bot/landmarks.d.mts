@@ -4,6 +4,7 @@ export interface BotWorld {
   stations: { id: string; name: string; position: Vector3 }[]
   raceGates: Vector3[]
   pvpArenaCenter: Vector3
+  trainingArenaCenter: Vector3
   blackHoleCenter: Vector3
   blackHoleInfluence: number
 }
