@@ -358,9 +358,12 @@ function setLaunchStatus(text: string): void {
 
 async function beginLaunch(): Promise<void> {
   if (launchStarted) return
-  // Holder gate — production only. `import.meta.env.DEV` is true under `npm run dev`, false in the
-  // `vite build` output, so local dev flies freely (no wallet/HELIUS) while prod stays gated.
-  if (!import.meta.env.DEV) {
+  // Holder gate — production only, and never for operator/automation flows. `import.meta.env.DEV` is
+  // true under `npm run dev`, false in the `vite build` output, so local dev flies freely (no
+  // wallet/HELIUS) while prod stays gated. `CAPTURE_LAUNCH.autoLaunch` covers ?bot=1 / ?capture=og /
+  // ?showcase=holder — these auto-fly for footage and have no wallet to gate on; the relay is still
+  // the real gate at `join` (the showcase bot is exempt only with the matching botSecret).
+  if (!import.meta.env.DEV && !CAPTURE_LAUNCH.autoLaunch) {
     if (!walletSession) { pendingLaunch = true; startWalletConnect(); return }   // connect → onHolder auto-launches at ≥1
     if (holderBalance < 1) { refreshLaunchGateUI(); return }                      // connected but 0 → show buy warning, don't launch
   }
