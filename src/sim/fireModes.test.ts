@@ -62,3 +62,50 @@ describe('resolveShot', () => {
     expect(r).toEqual({ interval: 0.16, damage: 12, speed: 1400, pellets: 1, spreadRad: 0 })
   })
 })
+
+import { Vector3 } from 'three'
+import { spreadDirections } from './fireModes'
+
+describe('spreadDirections', () => {
+  const fwd = new Vector3(0, 0, -1)
+  const rng = () => 0.5 // deterministic
+
+  it('single pellet returns the normalized forward exactly', () => {
+    const dirs = spreadDirections(fwd, 1, 0.07, rng)
+    expect(dirs).toHaveLength(1)
+    expect(dirs[0].x).toBeCloseTo(0, 6)
+    expect(dirs[0].y).toBeCloseTo(0, 6)
+    expect(dirs[0].z).toBeCloseTo(-1, 6)
+  })
+
+  it('returns exactly `pellets` unit vectors', () => {
+    const dirs = spreadDirections(fwd, 4, 0.07, rng)
+    expect(dirs).toHaveLength(4)
+    for (const d of dirs) expect(d.length()).toBeCloseTo(1, 5)
+  })
+
+  it('every pellet lies within spreadRad of forward', () => {
+    const spreadRad = 0.07
+    const dirs = spreadDirections(fwd, 4, spreadRad, rng)
+    for (const d of dirs) {
+      const angle = Math.acos(Math.max(-1, Math.min(1, d.dot(fwd))))
+      expect(angle).toBeLessThanOrEqual(spreadRad + 1e-6)
+    }
+  })
+
+  it('is deterministic for a fixed rng', () => {
+    const a = spreadDirections(fwd, 4, 0.07, () => 0.3)
+    const b = spreadDirections(fwd, 4, 0.07, () => 0.3)
+    expect(a.map((v) => [v.x, v.y, v.z])).toEqual(b.map((v) => [v.x, v.y, v.z]))
+  })
+
+  it('works for a non-axis-aligned forward (still unit, still within cone)', () => {
+    const f = new Vector3(1, 2, -3).normalize()
+    const dirs = spreadDirections(f, 4, 0.07, rng)
+    for (const d of dirs) {
+      expect(d.length()).toBeCloseTo(1, 5)
+      const angle = Math.acos(Math.max(-1, Math.min(1, d.dot(f))))
+      expect(angle).toBeLessThanOrEqual(0.07 + 1e-6)
+    }
+  })
+})

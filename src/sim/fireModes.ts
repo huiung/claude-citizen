@@ -46,7 +46,24 @@ export function resolveShot(base: BaseWeapon, mode: FireMode): ResolvedShot {
   }
 }
 
-// spreadDirections is added in the next task.
-export function spreadDirections(_forward: Vector3, _pellets: number, _spreadRad: number, _rng: () => number): Vector3[] {
-  return [_forward.clone().normalize()]
+// Fan `pellets` unit vectors around `forward`, each tilted up to `spreadRad` off-axis, evenly
+// distributed in azimuth around the forward axis (Vogel-ish) with a small rng jitter on the tilt so
+// volleys aren't a frozen pattern. pellets <= 1 (or spreadRad 0) returns forward alone.
+export function spreadDirections(forward: Vector3, pellets: number, spreadRad: number, rng: () => number): Vector3[] {
+  const fwd = forward.clone().normalize()
+  if (pellets <= 1 || spreadRad <= 0) return [fwd]
+  // Build an orthonormal basis (u, v) perpendicular to fwd.
+  const ref = Math.abs(fwd.y) < 0.99 ? new Vector3(0, 1, 0) : new Vector3(1, 0, 0)
+  const u = new Vector3().crossVectors(fwd, ref).normalize()
+  const v = new Vector3().crossVectors(fwd, u).normalize()
+  const out: Vector3[] = []
+  for (let i = 0; i < pellets; i++) {
+    const az = (i / pellets) * Math.PI * 2
+    const tilt = spreadRad * (0.5 + 0.5 * rng()) // 50–100% of the cone, jittered
+    const dir = fwd.clone().multiplyScalar(Math.cos(tilt))
+    dir.addScaledVector(u, Math.sin(tilt) * Math.cos(az))
+    dir.addScaledVector(v, Math.sin(tilt) * Math.sin(az))
+    out.push(dir.normalize())
+  }
+  return out
 }
