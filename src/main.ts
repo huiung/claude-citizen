@@ -2065,6 +2065,8 @@ function applyBlackHoleShake(dt: number): void {
 // after the async model load (the GLB has no inherent tier colour of its own).
 const TIER_SCALE: Record<PirateTier, number> = { grunt: 1, elite: 1.25, named: 1.8 }
 const TIER_EMISSIVE: Record<PirateTier, number | null> = { grunt: null, elite: 0xff7a1a, named: 0xff3b2f }
+const ARCHETYPE_ACCENT: Record<PirateArchetype, number> = { chaser: 0xff7a1a, lancer: 0x8ad8ff, swarm: 0xff5df0 }
+const ARCHETYPE_LABEL: Record<PirateArchetype, string> = { chaser: 'CHASER', lancer: 'LANCER', swarm: 'SWARM' }
 
 // Tint every MeshStandardMaterial in `obj` with a "charged/dangerous" emissive glow. loadPirateModel
 // returns a fresh clone with per-instance materials (cloneCraftModelInstance in shipyard clones every
@@ -2091,25 +2093,25 @@ function addPirate(pirate: Pirate, pos: THREE.Vector3): void {
   pirates.push(pirate)
   const scale = TIER_SCALE[pirate.tier]
   const emissive = TIER_EMISSIVE[pirate.tier]
-  const mesh = buildCraft('interceptor', pirate.tier === 'grunt' ? 0xc0392b : 0xff7a1a)
+  const mesh = buildCraft('interceptor', ARCHETYPE_ACCENT[pirate.archetype])
   mesh.scale.multiplyScalar(scale) // elites bigger, minibosses biggest
   if (emissive !== null) tintModel(mesh, emissive)
   mesh.position.copy(pos)
   scene.add(mesh)
   pirateMeshes.set(pirate.id, mesh)
-  // ELITE & NAMED pirates carry a floating threat readout (tier/name + hull bar). Grunts get nothing.
+  // Every pirate gets a small plate naming its archetype so the player can pick the right fire mode;
+  // elites/named are emphasized (kept class + boss name).
   // The label is added to the scene (not the mesh) so it survives the placeholder→GLB swap below;
   // its position is synced to pirate.position each frame in the pirate update loop.
-  if (pirate.tier === 'elite' || pirate.tier === 'named') {
-    const el = document.createElement('div')
-    el.className = pirate.tier === 'named' ? 'enemyplate named' : 'enemyplate'
-    enemyLabelParts(el).name.textContent = pirate.tier === 'named' ? (pirate.name ?? 'RAIDER').toUpperCase() : 'ELITE'
-    const labelObj = new CSS2DObject(el)
-    labelObj.position.copy(pos)
-    labelObj.position.y += 3.2 * scale
-    scene.add(labelObj)
-    pirateLabels.set(pirate.id, labelObj)
-  }
+  const el = document.createElement('div')
+  el.className = pirate.tier === 'named' ? 'enemyplate named' : 'enemyplate'
+  const tierPrefix = pirate.tier === 'named' ? (pirate.name ?? 'RAIDER').toUpperCase() : pirate.tier === 'elite' ? 'ELITE ' : ''
+  enemyLabelParts(el).name.textContent = pirate.tier === 'named' ? tierPrefix : `${tierPrefix}${ARCHETYPE_LABEL[pirate.archetype]}`
+  const labelObj = new CSS2DObject(el)
+  labelObj.position.copy(pos)
+  labelObj.position.y += 3.2 * scale
+  scene.add(labelObj)
+  pirateLabels.set(pirate.id, labelObj)
   loadPirateModel().then((model) => {
     if (!model) return
     if (pirateMeshes.get(pirate.id) !== mesh) { disposeObject(model); return }
