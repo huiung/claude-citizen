@@ -5,6 +5,43 @@ import {
   PIRATE_ENGAGE_RANGE, PIRATE_HULL, PIRATE_LEASH_RANGE, PIRATE_REWARD, PIRATE_STANDOFF, shouldDespawnPirate,
   spawnPirate, spawnPositionAround, stepPirate,
 } from './pirates'
+import {
+  ARCHETYPE_BEHAVIOR, pickArchetype,
+  PIRATE_SPEED, PIRATE_FIRE_INTERVAL, PIRATE_DAMAGE, PIRATE_PROJECTILE_SPEED,
+} from './pirates'
+
+describe('ARCHETYPE_BEHAVIOR', () => {
+  it('chaser stats equal the legacy pirate constants (no regression)', () => {
+    const c = ARCHETYPE_BEHAVIOR.chaser
+    expect(c.engageRange).toBe(PIRATE_ENGAGE_RANGE)
+    expect(c.standoff).toBe(PIRATE_STANDOFF)
+    expect(c.speed).toBe(PIRATE_SPEED)
+    expect(c.fireInterval).toBe(PIRATE_FIRE_INTERVAL)
+    expect(c.damage).toBe(PIRATE_DAMAGE)
+    expect(c.projSpeed).toBe(PIRATE_PROJECTILE_SPEED)
+    expect(c.hullMul).toBe(1)
+  })
+  it('lancer snipes from long range; swarm is fast and fragile', () => {
+    expect(ARCHETYPE_BEHAVIOR.lancer.engageRange).toBeGreaterThan(ARCHETYPE_BEHAVIOR.chaser.engageRange)
+    expect(ARCHETYPE_BEHAVIOR.lancer.damage).toBeGreaterThan(ARCHETYPE_BEHAVIOR.chaser.damage)
+    expect(ARCHETYPE_BEHAVIOR.swarm.speed).toBeGreaterThan(ARCHETYPE_BEHAVIOR.chaser.speed)
+  })
+  it('hull order: swarm < lancer < chaser', () => {
+    expect(ARCHETYPE_BEHAVIOR.swarm.hullMul).toBeLessThan(ARCHETYPE_BEHAVIOR.lancer.hullMul)
+    expect(ARCHETYPE_BEHAVIOR.lancer.hullMul).toBeLessThan(ARCHETYPE_BEHAVIOR.chaser.hullMul)
+  })
+})
+
+describe('pickArchetype', () => {
+  it('maps the weighted bands (chaser 50 / lancer 30 / swarm 20)', () => {
+    expect(pickArchetype(() => 0)).toBe('chaser')
+    expect(pickArchetype(() => 0.49)).toBe('chaser')
+    expect(pickArchetype(() => 0.5)).toBe('lancer')
+    expect(pickArchetype(() => 0.79)).toBe('lancer')
+    expect(pickArchetype(() => 0.8)).toBe('swarm')
+    expect(pickArchetype(() => 0.999)).toBe('swarm')
+  })
+})
 
 describe('spawnPirate', () => {
   it('starts at full hull with a ready weapon', () => {

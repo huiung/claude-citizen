@@ -26,6 +26,36 @@ export type PirateTier = 'grunt' | 'elite' | 'named'
 export const PIRATE_TIER_HULL_MUL: Record<PirateTier, number> = { grunt: 1, elite: 2.5, named: 8 }
 export const PIRATE_TIER_REWARD: Record<PirateTier, number> = { grunt: PIRATE_REWARD, elite: 700, named: 4000 }
 
+export type PirateArchetype = 'chaser' | 'lancer' | 'swarm'
+
+export interface ArchetypeBehavior {
+  engageRange: number
+  standoff: number
+  speed: number
+  fireInterval: number
+  damage: number
+  projSpeed: number
+  hullMul: number
+  weaveAmp: number
+  weaveRate: number
+}
+
+// chaser row == the legacy PIRATE_* constants (no-regression). lancer = long-range heavy sniper,
+// low hull. swarm = fast, fragile, many. All values are live-tunable starting points.
+export const ARCHETYPE_BEHAVIOR: Record<PirateArchetype, ArchetypeBehavior> = {
+  chaser: { engageRange: PIRATE_ENGAGE_RANGE, standoff: PIRATE_STANDOFF, speed: PIRATE_SPEED, fireInterval: PIRATE_FIRE_INTERVAL, damage: PIRATE_DAMAGE, projSpeed: PIRATE_PROJECTILE_SPEED, hullMul: 1, weaveAmp: 28, weaveRate: 0.9 },
+  lancer: { engageRange: 900, standoff: 700, speed: 40, fireInterval: 2.4, damage: 20, projSpeed: 620, hullMul: 0.6, weaveAmp: 0, weaveRate: 0 },
+  swarm:  { engageRange: 260, standoff: 70,  speed: 95, fireInterval: 0.9, damage: 4,  projSpeed: 300, hullMul: 0.35, weaveAmp: 40, weaveRate: 1.6 },
+}
+
+// Weighted archetype roll: chaser 50% / lancer 30% / swarm 20%.
+export function pickArchetype(rng: () => number): PirateArchetype {
+  const r = rng()
+  if (r < 0.5) return 'chaser'
+  if (r < 0.8) return 'lancer'
+  return 'swarm'
+}
+
 export interface Pirate {
   id: string
   position: Vector3
