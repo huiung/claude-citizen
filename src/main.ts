@@ -80,6 +80,8 @@ import {
   PVP_RANKED_ZONE_CENTER,
   PVP_RANKED_ZONE_RADIUS,
   PVP_ZONE_CENTER,
+  TRAINING_RANGE_CENTER,
+  TRAINING_RANGE_RADIUS,
   TRAINING_RANGE_DESTINATION,
   isInTrainingRange,
   pvpArenaApproachPoint,
@@ -104,7 +106,7 @@ import { BLACK_HOLE_APPROACH_DESTINATION, BLACK_HOLE_CENTER, distanceToCenter, g
 import { createBlackHoleRun, enterRun, sampleRun, exitRunAlive, dieRun } from './sim/blackHoleRun'
 import { type DailyState, type Objective, type ObjectiveKind, OBJECTIVE_REWARD, SET_BONUS, STREAK_REWARD_CAP, dailyObjectives, dayKey, emptyDaily, rollStreak } from './sim/daily'
 import { nextJourneyGoal } from './sim/journey'
-import { pickFollowTarget, cycleFollowTarget, type FollowPeer } from './sim/spectate'
+import { pickFollowTarget, cycleFollowTarget, describePilotActivity, type ActivityZone, type FollowPeer } from './sim/spectate'
 import { GameAudio, type RegionalAmbienceKind } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { InventoryPanel } from './ui/inventory'
@@ -188,6 +190,7 @@ const launchEl = document.getElementById('launch') as HTMLButtonElement
 const buyCitizenEl = document.getElementById('buy-citizen') as HTMLAnchorElement
 const browseBtnEl = document.getElementById('browse-btn')!
 const browseBannerEl = document.getElementById('browse-banner')!
+const browseWatchingEl = document.getElementById('browse-watching')!
 const browseBackEl = document.getElementById('browse-back')!
 const gateMsgEl = document.getElementById('gate-msg')!
 const hudEl = document.getElementById('hud')!
@@ -3993,6 +3996,15 @@ function browseFollowPeers(): FollowPeer[] {
     lastActiveAt: r.peer.receivedAt,
   }))
 }
+const BROWSE_ZONES: ActivityZone[] = [
+  { label: 'diving the black hole', center: [BLACK_HOLE_CENTER.x, BLACK_HOLE_CENTER.y, BLACK_HOLE_CENTER.z], radius: INFLUENCE_RADIUS },
+  { label: 'in the training arena', center: [TRAINING_RANGE_CENTER.x, TRAINING_RANGE_CENTER.y, TRAINING_RANGE_CENTER.z], radius: TRAINING_RANGE_RADIUS + 800 },
+  { label: 'at the practice arena', center: [PVP_PRACTICE_ZONE_CENTER.x, PVP_PRACTICE_ZONE_CENTER.y, PVP_PRACTICE_ZONE_CENTER.z], radius: PVP_PRACTICE_ZONE_RADIUS + 800 },
+  { label: 'at the Season Hub', center: [CITIZEN_SEASON_HUB_DESTINATION.position.x, CITIZEN_SEASON_HUB_DESTINATION.position.y, CITIZEN_SEASON_HUB_DESTINATION.position.z], radius: 2500 },
+  { label: 'docked at the hub', center: [REFINERY_POS.x, REFINERY_POS.y, REFINERY_POS.z], radius: 1500 },
+  { label: 'at the mining colony', center: [COLONY_POS.x, COLONY_POS.y, COLONY_POS.z], radius: 1500 },
+]
+let browseBannerAt = 0 // throttle the banner-text update
 function updateCamera(dt: number): void {
   if (spectating) {
     // Auto-pick a live pilot to follow when we have none or the current one left (a manual Tab pick
@@ -5043,6 +5055,17 @@ function frame(now: number): void {
       remote.cosmetics.update(dt, remote.mesh.position)
     }
     updateCamera(dt)
+    if (spectating && now - browseBannerAt > 300) {
+      browseBannerAt = now
+      const followed = followId ? remotes.get(followId) : null
+      if (followed) {
+        const p = followed.mesh.position
+        const activity = describePilotActivity([p.x, p.y, p.z], BROWSE_ZONES)
+        browseWatchingEl.textContent = `Watching ${followed.peer.name} · ${activity}`
+      } else {
+        browseWatchingEl.textContent = 'Browsing live'
+      }
+    }
     applyBlackHoleShake(dt)
     drawMinimap()
     pfMark('minimap')
