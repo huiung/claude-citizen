@@ -3,8 +3,9 @@
 
 import { Vector3 } from 'three'
 import {
-  createHealth, createWeapon, type Health, type Projectile, spawnProjectile, type Weapon,
+  createHealth, createWeapon, type Health, hullFraction, type Projectile, spawnProjectile, type Weapon,
 } from './combat'
+import { spreadDirections } from './fireModes'
 
 export const PIRATE_HULL = 36
 export const PIRATE_SPEED = 55
@@ -181,12 +182,21 @@ export function stepPirate(pirate: Pirate, targetPos: Vector3, dt: number, nowSe
   const dist = _toTarget.length()
   const dir = dist > 1e-6 ? _toTarget.clone().multiplyScalar(1 / dist) : new Vector3(0, 0, -1)
 
+  // Boss enrage modulates speed + fire/ability cadence in the final third of the fight.
+  const boss = pirate.boss
+  let enrageSpeedMul = 1
+  let enrageFireMul = 1
+  if (boss) {
+    boss.enraged = hullFraction(pirate.health) < boss.kit.enrageAtHullFrac
+    if (boss.enraged) { enrageSpeedMul = boss.kit.enrageSpeedMul; enrageFireMul = boss.kit.enrageFireMul }
+  }
+
   let speed: number
   if (dist > b.engageRange) speed = b.speed
-  else if (dist < b.standoff) speed = -b.speed * 0.6 // back off
-  else speed = b.speed * 0.25 // hold and harass
+  else if (dist < b.standoff) speed = -b.speed * 0.6
+  else speed = b.speed * 0.25
+  speed *= enrageSpeedMul
 
-  // Radial move toward/away from the target, plus a perpendicular weave strafe (chaser/swarm).
   pirate.velocity.copy(dir).multiplyScalar(speed)
   pirate.position.addScaledVector(pirate.velocity, dt)
   if (b.weaveAmp > 0) {
@@ -194,12 +204,30 @@ export function stepPirate(pirate: Pirate, targetPos: Vector3, dt: number, nowSe
     pirate.position.addScaledVector(w, dt)
   }
 
-  let fired: Projectile | null = null
+  const result: PirateStepResult = { fired: null }
   if (dist <= b.engageRange && pirate.weapon.cooldown <= 0) {
-    fired = spawnProjectile(pirate.position, dir, 'pirate', b.projSpeed, b.damage) // aim stays straight at target
-    pirate.weapon.cooldown = pirate.weapon.interval
+    result.fired = spawnProjectile(pirate.position, dir, 'pirate', b.projSpeed, b.damage)
+    pirate.weapon.cooldown = pirate.weapon.interval * enrageFireMul
   }
-  return { fired }
+
+  if (boss) {
+    // Fire a pending telegraphed volley when its windup completes (one burst per windup).
+    if (boss.telegraphCd > 0) {
+      boss.telegraphCd -= dt
+      if (boss.telegraphCd <= 0) {
+        result.volley = spreadDirections(dir, boss.kit.volleyBolts, boss.kit.volleySpreadRad, () => 0.5)
+          .map((d) => spawnProjectile(pirate.position, d, 'pirate', b.projSpeed, b.damage))
+      }
+    }
+    // Ability timer: summon adds, or start a volley windup.
+    boss.abilityCd -= dt
+    if (boss.abilityCd <= 0) {
+      boss.abilityCd = boss.kit.abilityIntervalSec * enrageFireMul
+      if (boss.kit.ability === 'summon') result.summon = boss.kit.summonCount
+      else { boss.telegraphCd = boss.kit.telegraphSec; result.telegraphStart = true }
+    }
+  }
+  return result
 }
 
 /**

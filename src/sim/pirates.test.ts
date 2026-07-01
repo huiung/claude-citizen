@@ -235,6 +235,49 @@ describe('stepPirate archetype behavior', () => {
   })
 })
 
+describe('stepPirate boss abilities', () => {
+  const origin = new Vector3(0, 0, 0)
+  const summoner = () => spawnPirate('v', new Vector3(0, 0, 200), { tier: 'named', name: 'Vex Marrow', archetype: 'chaser', bossKey: 'vex' })
+  const gunner = () => spawnPirate('c', new Vector3(0, 0, 600), { tier: 'named', name: 'Raider Captain', archetype: 'lancer', bossKey: 'captain' })
+
+  it('summoner returns summon count once its interval elapses, not before', () => {
+    const v = summoner()
+    expect(stepPirate(v, origin, 1.0).summon).toBeUndefined()          // 1s < 9s interval
+    v.boss!.abilityCd = 0.001                                          // fast-forward to the trigger
+    expect(stepPirate(v, origin, 0.002).summon).toBe(BOSS_KITS.vex.summonCount)
+  })
+  it('gunner telegraphs first, then fires a volley after the telegraph', () => {
+    const c = gunner()
+    c.boss!.abilityCd = 0.001
+    const t = stepPirate(c, origin, 0.002)                             // ability fires → telegraph starts
+    expect(t.telegraphStart).toBe(true)
+    expect(t.volley).toBeUndefined()
+    // still winding up
+    expect(stepPirate(c, origin, 0.1).volley).toBeUndefined()
+    // finish the telegraph
+    const v = stepPirate(c, origin, BOSS_KITS.captain.telegraphSec)
+    expect(v.volley).toHaveLength(BOSS_KITS.captain.volleyBolts)
+    expect(v.volley!.every((p) => p.faction === 'pirate')).toBe(true)
+    // one volley per windup only
+    expect(stepPirate(c, origin, 0.1).volley).toBeUndefined()
+  })
+  it('enrages below the hull fraction (faster ability interval)', () => {
+    const v = summoner()
+    v.health.hull = v.health.max * 0.3   // < 0.35
+    v.boss!.abilityCd = 0.001
+    stepPirate(v, origin, 0.002)          // triggers summon + resets abilityCd
+    expect(v.boss!.enraged).toBe(true)
+    expect(v.boss!.abilityCd).toBeCloseTo(BOSS_KITS.vex.abilityIntervalSec * BOSS_KITS.vex.enrageFireMul, 3)
+  })
+  it('a normal pirate never returns boss events', () => {
+    const g = spawnPirate('g', new Vector3(0, 0, 100))
+    const r = stepPirate(g, origin, 0.5)
+    expect(r.summon).toBeUndefined()
+    expect(r.volley).toBeUndefined()
+    expect(r.telegraphStart).toBeUndefined()
+  })
+})
+
 describe('leash despawn', () => {
   it('PIRATE_LEASH_RANGE sits beyond weapon range so a dogfight never culls a pirate', () => {
     expect(PIRATE_LEASH_RANGE).toBeGreaterThan(WEAPON_RANGE)
