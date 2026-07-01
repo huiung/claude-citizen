@@ -60,7 +60,7 @@ export interface ArchetypeBehavior {
 
 // CHASER == today's constants so existing behavior is unchanged when unspecified.
 export const ARCHETYPE_BEHAVIOR: Record<PirateArchetype, ArchetypeBehavior> = {
-  chaser: { engageRange: 320, standoff: 100, speed: 55,  fireInterval: 1.1, damage: 7,  projSpeed: 300, hullMul: 1,    weaveAmp: 28, weaveRate: 0.9 },
+  chaser: { engageRange: 320, standoff: 120, speed: 55,  fireInterval: 1.1, damage: 7,  projSpeed: 300, hullMul: 1,    weaveAmp: 28, weaveRate: 0.9 },
   lancer: { engageRange: 900, standoff: 700, speed: 40,  fireInterval: 2.4, damage: 20, projSpeed: 620, hullMul: 0.6,  weaveAmp: 0,  weaveRate: 0   },
   swarm:  { engageRange: 260, standoff: 70,  speed: 95,  fireInterval: 0.9, damage: 4,  projSpeed: 300, hullMul: 0.35, weaveAmp: 40, weaveRate: 1.6 },
 }
@@ -70,10 +70,10 @@ export const ARCHETYPE_BEHAVIOR: Record<PirateArchetype, ArchetypeBehavior> = {
 - **`stepPirate`** reads the pirate's archetype behavior instead of the module-level `PIRATE_*` constants:
   - `engageRange`/`standoff`/`speed`/`projSpeed`/`damage`/interval all come from the behavior.
   - The close/standoff/back-off logic is unchanged in shape; only the thresholds/values are per-archetype.
-  - **Weave (CHASER/SWARM):** when `weaveAmp > 0` and closing/harassing, add a lateral offset to the movement direction via a pure helper `weaveOffset(elapsed, amp, rate, seed)` → a perpendicular displacement, so the unit strafes instead of flying a straight line. LANCER (`weaveAmp 0`) flies straight. `stepPirate` needs an elapsed/`nowSec` input for the weave phase — add a `nowSec` parameter (pirates carry a per-unit phase `seed` so they don't all weave in sync).
+  - **Weave (CHASER/SWARM):** when `weaveAmp > 0`, add a **perpendicular** (tangential) offset to the movement via a pure helper `weaveOffset(nowSec, amp, rate, seed)`, so the unit strafes instead of flying a straight line. The weave perturbs MOVEMENT only — the unit still AIMS its bolt straight at the target (so firing/aim is unchanged). LANCER (`weaveAmp 0`) flies straight. CHASER gains a modest weave vs today's straight-in grunt — an intentional motion upgrade; the no-regression guard covers the STAT params (engage/standoff/speed/fire/damage/proj/hull), not the new weave. `stepPirate` needs an elapsed/`nowSec` input for the weave phase — add a `nowSec` parameter (pirates carry a per-unit phase `seed` so they don't all weave in sync).
   - **LANCER holds range:** with large `engageRange`/`standoff`, it fires from far and backs off when the player closes — naturally the "sniper" feel. Low hull means closing or a HEAVY bolt kills it fast.
 - Keep the existing `PIRATE_*` constants as the CHASER source of truth (referenced by the `chaser` row) so nothing else that imports them breaks.
-- `stepPirate` signature grows a `nowSec: number` arg (callers pass the frame time). Pure weave helper `weaveOffset(...)` is unit-tested.
+- `stepPirate` signature grows an **optional** `nowSec = 0` arg (the game caller passes `now/1000`; the default keeps existing 3-arg calls/tests compiling — weave just sits at phase 0). Pure weave helper `weaveOffset(...)` is unit-tested.
 
 ---
 
