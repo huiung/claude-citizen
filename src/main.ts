@@ -80,6 +80,8 @@ import {
   PVP_RANKED_ZONE_CENTER,
   PVP_RANKED_ZONE_RADIUS,
   PVP_ZONE_CENTER,
+  TRAINING_RANGE_CENTER,
+  TRAINING_RANGE_RADIUS,
   TRAINING_RANGE_DESTINATION,
   isInTrainingRange,
   pvpArenaApproachPoint,
@@ -104,6 +106,7 @@ import { BLACK_HOLE_APPROACH_DESTINATION, BLACK_HOLE_CENTER, distanceToCenter, g
 import { createBlackHoleRun, enterRun, sampleRun, exitRunAlive, dieRun } from './sim/blackHoleRun'
 import { type DailyState, type Objective, type ObjectiveKind, OBJECTIVE_REWARD, SET_BONUS, STREAK_REWARD_CAP, dailyObjectives, dayKey, emptyDaily, rollStreak } from './sim/daily'
 import { nextJourneyGoal } from './sim/journey'
+import { pickFollowTarget, cycleFollowTarget, describePilotActivity, type ActivityZone, type FollowPeer } from './sim/spectate'
 import { GameAudio, type RegionalAmbienceKind } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { InventoryPanel } from './ui/inventory'
@@ -187,6 +190,7 @@ const launchEl = document.getElementById('launch') as HTMLButtonElement
 const buyCitizenEl = document.getElementById('buy-citizen') as HTMLAnchorElement
 const browseBtnEl = document.getElementById('browse-btn')!
 const browseBannerEl = document.getElementById('browse-banner')!
+const browseWatchingEl = document.getElementById('browse-watching')!
 const browseBackEl = document.getElementById('browse-back')!
 const gateMsgEl = document.getElementById('gate-msg')!
 const hudEl = document.getElementById('hud')!
@@ -3274,6 +3278,11 @@ addEventListener('keydown', (e) => {
     return
   }
   keys.add(e.code)
+  if (e.code === 'Tab' && running && spectating) {
+    e.preventDefault() // don't let Tab move DOM focus out of the canvas
+    followId = cycleFollowTarget(browseFollowPeers(), followId, e.shiftKey ? -1 : 1)
+    return
+  }
   if (e.code === 'KeyV') {
     assist = !assist
     assistEl.textContent = assist ? 'COUPLED' : 'DECOUPLED'
@@ -3978,8 +3987,32 @@ const G_SWAY_RESP = 6   // spring stiffness
 // No player ship exists in Browse, so we never read ship.*.
 const SPECTATE_ANCHOR = new THREE.Vector3(0, 0, 0)
 const SPECTATE_ORBIT_DISTANCE = 600 // frames the station ring + nearby spawned pilots
+let followId: string | null = null
+function browseFollowPeers(): FollowPeer[] {
+  return [...remotes.values()].map((r) => ({
+    id: r.peer.id,
+    name: r.peer.name,
+    position: [r.mesh.position.x, r.mesh.position.y, r.mesh.position.z],
+    lastActiveAt: r.peer.receivedAt,
+  }))
+}
+const BROWSE_ZONES: ActivityZone[] = [
+  { label: 'diving the black hole', center: [BLACK_HOLE_CENTER.x, BLACK_HOLE_CENTER.y, BLACK_HOLE_CENTER.z], radius: INFLUENCE_RADIUS },
+  { label: 'in the training arena', center: [TRAINING_RANGE_CENTER.x, TRAINING_RANGE_CENTER.y, TRAINING_RANGE_CENTER.z], radius: TRAINING_RANGE_RADIUS + 800 },
+  { label: 'at the practice arena', center: [PVP_PRACTICE_ZONE_CENTER.x, PVP_PRACTICE_ZONE_CENTER.y, PVP_PRACTICE_ZONE_CENTER.z], radius: PVP_PRACTICE_ZONE_RADIUS + 800 },
+  { label: 'at the Season Hub', center: [CITIZEN_SEASON_HUB_DESTINATION.position.x, CITIZEN_SEASON_HUB_DESTINATION.position.y, CITIZEN_SEASON_HUB_DESTINATION.position.z], radius: 2500 },
+  { label: 'docked at the hub', center: [REFINERY_POS.x, REFINERY_POS.y, REFINERY_POS.z], radius: 1500 },
+  { label: 'at the mining colony', center: [COLONY_POS.x, COLONY_POS.y, COLONY_POS.z], radius: 1500 },
+]
+let browseBannerAt = 0 // throttle the banner-text update
 function updateCamera(dt: number): void {
   if (spectating) {
+    // Auto-pick a live pilot to follow when we have none or the current one left (a manual Tab pick
+    // sticks until that peer despawns). The CLAUDE bot is the reliable default; a real player else.
+    if (followId === null || !remotes.has(followId)) followId = pickFollowTarget(browseFollowPeers(), followId)
+    const followed = followId ? remotes.get(followId) : null
+    const anchorTarget = followed ? followed.mesh.position : station.position // no one online → ease back to the hub
+    SPECTATE_ANCHOR.lerp(anchorTarget, 1 - Math.exp(-3 * dt)) // smooth: absorbs interpolated-peer jitter
     cameraOrbitElapsed += dt
     camera.position.copy(SPECTATE_ANCHOR).add(orbitCameraOffset(cameraOrbitElapsed, 0, SPECTATE_ORBIT_DISTANCE))
     camera.lookAt(SPECTATE_ANCHOR)
@@ -4057,11 +4090,13 @@ function enterBrowseMode(): void {
   running = true // needed so the frame loop renders + peers interpolate
   // station is a module-level Group (buildStation) created at load, so .position is always present.
   SPECTATE_ANCHOR.copy(station.position) // orbit the refinery hub — visible content + where pilots spawn/cluster
+  followId = null // fresh Browse: re-pick a target next frame
   cameraOrbitElapsed = 0 // start the orbit fresh so the first Browse frame faces the hub
   scene.remove(shipMesh) // no player ship in Browse
   if (statsTimer) clearInterval(statsTimer) // stop the landing-stats poll like launch() does
   if (document.pointerLockElement) document.exitPointerLock()
   browseBannerEl.hidden = false // persistent "connect to fly" banner
+  net.sendSpectate(true) // opt into the spectator peer feed so the follow-cam has live peers
 }
 
 function launch(): void {
@@ -4070,6 +4105,8 @@ function launch(): void {
   // landing has gated on wallet + holder balance. The relay also enforces the gate at `join`. Gating
   // here would wrongly bail (main.ts's holderBalance is still 0 the instant the game module loads).
   spectating = false // clear any prior Browse state so a real launch flies normally
+  // Note: the relay-side `spectating` flag is intentionally NOT cleared on launch — it's idempotent
+  // per-recipient (an active pilot skips the spectator branch) and harmless to leave set.
   browseBannerEl.hidden = true
   const callsign = nicknameEl.value.trim() || 'PILOT'
   localStorage.setItem('callsign', callsign)
@@ -4122,6 +4159,8 @@ nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') launch() 
 browseBtnEl.addEventListener('click', () => enterBrowseMode())
 browseBackEl.addEventListener('click', () => {
   spectating = false
+  net.sendSpectate(false) // leave the spectator peer feed — stop receiving peer spam on the landing
+  followId = null
   running = false
   browseBannerEl.hidden = true
   overlayEl.classList.remove('hidden')
@@ -5020,6 +5059,17 @@ function frame(now: number): void {
       remote.cosmetics.update(dt, remote.mesh.position)
     }
     updateCamera(dt)
+    if (spectating && now - browseBannerAt > 300) {
+      browseBannerAt = now
+      const followed = followId ? remotes.get(followId) : null
+      if (followed) {
+        const p = followed.mesh.position
+        const activity = describePilotActivity([p.x, p.y, p.z], BROWSE_ZONES)
+        browseWatchingEl.textContent = `Watching ${followed.peer.name} · ${activity}`
+      } else {
+        browseWatchingEl.textContent = 'Browsing live'
+      }
+    }
     applyBlackHoleShake(dt)
     drawMinimap()
     pfMark('minimap')

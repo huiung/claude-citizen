@@ -136,6 +136,7 @@ export class NetClient {
   private activeVisual: string | undefined
   private activeCosmetics: string | undefined
   private botSecret: string | undefined
+  private spectating = false
   private invisible = false // spectator camera: join as an active pilot the relay never broadcasts
   private sessionId: string | null = null
 
@@ -170,6 +171,7 @@ export class NetClient {
       this.ws?.send(JSON.stringify(this.active
         ? { t: 'join', name: this.name, token: this.token, sessionId: this.sessionId, ship: this.activeShip, visual: this.activeVisual, cosmetics: this.activeCosmetics, botSecret: this.botSecret, invisible: this.invisible }
         : { t: 'hello', token: this.token, sessionId: this.sessionId }))
+      if (this.spectating && !this.active) this.ws?.send(JSON.stringify({ t: 'spectate', on: true }))
       this.events.onStatus(true, this.online)
     }
     this.ws.onclose = () => {
@@ -202,6 +204,11 @@ export class NetClient {
         break
       case 'welcome':
         this.id = typeof msg.id === 'string' ? msg.id : this.id
+        for (const peer of msg.peers) this.addPeer(peer)
+        this.online = msg.peers.length + 1
+        this.events.onStatus(true, this.online)
+        break
+      case 'peers':
         for (const peer of msg.peers) this.addPeer(peer)
         this.online = msg.peers.length + 1
         this.events.onStatus(true, this.online)
@@ -387,6 +394,14 @@ export class NetClient {
   submitAuth(pubkey: string, signature: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return
     this.ws.send(JSON.stringify({ t: 'auth', pubkey, signature, anonToken: this.token }))
+  }
+
+  /** Opt this connection into the spectator peer feed (Browse). Re-asserted on reconnect. */
+  sendSpectate(on: boolean): boolean {
+    this.spectating = on
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return false
+    this.ws.send(JSON.stringify({ t: 'spectate', on }))
+    return true
   }
 
   /** Returns true if a chat line was sent (false when offline). */
