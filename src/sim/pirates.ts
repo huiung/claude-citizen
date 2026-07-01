@@ -26,6 +26,36 @@ export type PirateTier = 'grunt' | 'elite' | 'named'
 export const PIRATE_TIER_HULL_MUL: Record<PirateTier, number> = { grunt: 1, elite: 2.5, named: 8 }
 export const PIRATE_TIER_REWARD: Record<PirateTier, number> = { grunt: PIRATE_REWARD, elite: 700, named: 4000 }
 
+export type PirateArchetype = 'chaser' | 'lancer' | 'swarm'
+
+export interface ArchetypeBehavior {
+  engageRange: number
+  standoff: number
+  speed: number
+  fireInterval: number
+  damage: number
+  projSpeed: number
+  hullMul: number
+  weaveAmp: number
+  weaveRate: number
+}
+
+// chaser row == the legacy PIRATE_* constants (no-regression). lancer = long-range heavy sniper,
+// low hull. swarm = fast, fragile, many. All values are live-tunable starting points.
+export const ARCHETYPE_BEHAVIOR: Record<PirateArchetype, ArchetypeBehavior> = {
+  chaser: { engageRange: PIRATE_ENGAGE_RANGE, standoff: PIRATE_STANDOFF, speed: PIRATE_SPEED, fireInterval: PIRATE_FIRE_INTERVAL, damage: PIRATE_DAMAGE, projSpeed: PIRATE_PROJECTILE_SPEED, hullMul: 1, weaveAmp: 28, weaveRate: 0.9 },
+  lancer: { engageRange: 900, standoff: 700, speed: 40, fireInterval: 2.4, damage: 20, projSpeed: 620, hullMul: 0.6, weaveAmp: 0, weaveRate: 0 },
+  swarm:  { engageRange: 260, standoff: 70,  speed: 95, fireInterval: 0.9, damage: 4,  projSpeed: 300, hullMul: 0.35, weaveAmp: 40, weaveRate: 1.6 },
+}
+
+// Weighted archetype roll: chaser 50% / lancer 30% / swarm 20%.
+export function pickArchetype(rng: () => number): PirateArchetype {
+  const r = rng()
+  if (r < 0.5) return 'chaser'
+  if (r < 0.8) return 'lancer'
+  return 'swarm'
+}
+
 export interface Pirate {
   id: string
   position: Vector3
@@ -36,6 +66,10 @@ export interface Pirate {
   reward: number
   /** Threat tier: grunt (default), elite, or a named sector miniboss. */
   tier: PirateTier
+  /** Behavior archetype — drives the AI in stepPirate (orthogonal to tier). */
+  archetype: PirateArchetype
+  /** Per-unit weave phase so units don't strafe in sync. */
+  seed: number
   /** Display name — set only for named minibosses. */
   name?: string
 }
@@ -46,6 +80,8 @@ export interface SpawnPirateOpts {
   hullMul?: number
   reward?: number
   tier?: PirateTier
+  archetype?: PirateArchetype
+  seed?: number
   name?: string
 }
 
@@ -53,16 +89,34 @@ export interface SpawnPirateOpts {
  *  mark elites and named minibosses. Defaults reproduce the original base grunt. */
 export function spawnPirate(id: string, position: Vector3, opts: SpawnPirateOpts = {}): Pirate {
   const tier = opts.tier ?? 'grunt'
+  const archetype = opts.archetype ?? 'chaser'
+  const behavior = ARCHETYPE_BEHAVIOR[archetype]
   return {
     id,
     position: position.clone(),
     velocity: new Vector3(),
-    health: createHealth(Math.round(PIRATE_HULL * (opts.hullMul ?? 1))),
-    weapon: createWeapon(PIRATE_FIRE_INTERVAL),
+    health: createHealth(Math.round(PIRATE_HULL * behavior.hullMul * (opts.hullMul ?? 1))),
+    weapon: createWeapon(behavior.fireInterval),
     reward: opts.reward ?? PIRATE_REWARD,
     tier,
+    archetype,
+    seed: opts.seed ?? 0,
     name: opts.name,
   }
+}
+
+const _weavePerp = new Vector3()
+const _weaveUp = new Vector3(0, 1, 0)
+const _weaveAlt = new Vector3(1, 0, 0)
+/** A lateral (perpendicular-to-`forward`) strafe offset that oscillates over time. `seed` shifts the
+ *  phase so units don't weave in sync. amp<=0 → zero vector. Pure (deterministic in its inputs). */
+export function weaveOffset(nowSec: number, amp: number, rate: number, seed: number, forward: Vector3 = new Vector3(0, 0, -1)): Vector3 {
+  if (amp <= 0) return new Vector3()
+  // A perpendicular axis: cross(forward, up), or cross(forward, x-axis) if forward is ~parallel to up.
+  const f = forward.lengthSq() > 1e-9 ? forward.clone().normalize() : new Vector3(0, 0, -1)
+  _weavePerp.crossVectors(f, Math.abs(f.y) < 0.99 ? _weaveUp : _weaveAlt).normalize()
+  const s = Math.sin((nowSec * rate + seed) * Math.PI * 2)
+  return _weavePerp.multiplyScalar(amp * s).clone()
 }
 
 /** True when a pirate at `dist` metres should be culled — too far to threaten or be hit. */
@@ -84,7 +138,8 @@ const _toTarget = new Vector3()
  *  - inside standoff: back off (avoid hugging the player)
  * Mutates the pirate's position/velocity/weapon. Returns any shot fired.
  */
-export function stepPirate(pirate: Pirate, targetPos: Vector3, dt: number): PirateStepResult {
+export function stepPirate(pirate: Pirate, targetPos: Vector3, dt: number, nowSec = 0): PirateStepResult {
+  const b = ARCHETYPE_BEHAVIOR[pirate.archetype]
   pirate.weapon.cooldown = Math.max(0, pirate.weapon.cooldown - dt)
 
   _toTarget.subVectors(targetPos, pirate.position)
@@ -92,16 +147,21 @@ export function stepPirate(pirate: Pirate, targetPos: Vector3, dt: number): Pira
   const dir = dist > 1e-6 ? _toTarget.clone().multiplyScalar(1 / dist) : new Vector3(0, 0, -1)
 
   let speed: number
-  if (dist > PIRATE_ENGAGE_RANGE) speed = PIRATE_SPEED
-  else if (dist < PIRATE_STANDOFF) speed = -PIRATE_SPEED * 0.6 // back off
-  else speed = PIRATE_SPEED * 0.25 // hold and harass
+  if (dist > b.engageRange) speed = b.speed
+  else if (dist < b.standoff) speed = -b.speed * 0.6 // back off
+  else speed = b.speed * 0.25 // hold and harass
 
+  // Radial move toward/away from the target, plus a perpendicular weave strafe (chaser/swarm).
   pirate.velocity.copy(dir).multiplyScalar(speed)
   pirate.position.addScaledVector(pirate.velocity, dt)
+  if (b.weaveAmp > 0) {
+    const w = weaveOffset(nowSec, b.weaveAmp, b.weaveRate, pirate.seed, dir)
+    pirate.position.addScaledVector(w, dt)
+  }
 
   let fired: Projectile | null = null
-  if (dist <= PIRATE_ENGAGE_RANGE && pirate.weapon.cooldown <= 0) {
-    fired = spawnProjectile(pirate.position, dir, 'pirate', PIRATE_PROJECTILE_SPEED, PIRATE_DAMAGE)
+  if (dist <= b.engageRange && pirate.weapon.cooldown <= 0) {
+    fired = spawnProjectile(pirate.position, dir, 'pirate', b.projSpeed, b.damage) // aim stays straight at target
     pirate.weapon.cooldown = pirate.weapon.interval
   }
   return { fired }

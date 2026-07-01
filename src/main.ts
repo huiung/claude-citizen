@@ -93,7 +93,7 @@ import {
   shouldClearPveHostiles,
   trainingDronesActive,
 } from './sim/pvp'
-import { type Pirate, type PirateTier, PIRATE_REWARD, PIRATE_TIER_HULL_MUL, PIRATE_TIER_REWARD, shouldDespawnPirate, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
+import { type Pirate, type PirateArchetype, type PirateTier, pickArchetype, PIRATE_REWARD, PIRATE_TIER_HULL_MUL, PIRATE_TIER_REWARD, shouldDespawnPirate, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
 import { addXp, loadPilot, MAX_LEVEL, savePilot, unlocksForLevel, xpForKill, xpForLevel } from './sim/pilotLevel'
 import { type CampaignAdvance, currentCampaignStep, loadCampaign, recordCampaignEvent, saveCampaign, SECTOR1_CAMPAIGN } from './sim/campaign'
 import {
@@ -1575,7 +1575,7 @@ const projectiles: Projectile[] = []
 const projectileMeshes = new Map<Projectile, THREE.Mesh>()
 const pirates: Pirate[] = []
 const pirateMeshes = new Map<string, THREE.Group>()
-// Enemy readouts (hull bar + tier/name) for ELITE & NAMED pirates only — grunts get nothing.
+// Enemy readouts (hull bar + archetype/tier/name) — every pirate carries one so its class reads.
 // Keyed by pirate.id and added directly to the scene (NOT as a child of the placeholder mesh),
 // so they survive the async placeholder→GLB swap in addPirate. Position is synced each frame.
 const pirateLabels = new Map<string, CSS2DObject>()
@@ -2065,6 +2065,8 @@ function applyBlackHoleShake(dt: number): void {
 // after the async model load (the GLB has no inherent tier colour of its own).
 const TIER_SCALE: Record<PirateTier, number> = { grunt: 1, elite: 1.25, named: 1.8 }
 const TIER_EMISSIVE: Record<PirateTier, number | null> = { grunt: null, elite: 0xff7a1a, named: 0xff3b2f }
+const ARCHETYPE_ACCENT: Record<PirateArchetype, number> = { chaser: 0xff7a1a, lancer: 0x8ad8ff, swarm: 0xff5df0 }
+const ARCHETYPE_LABEL: Record<PirateArchetype, string> = { chaser: 'CHASER', lancer: 'LANCER', swarm: 'SWARM' }
 
 // Tint every MeshStandardMaterial in `obj` with a "charged/dangerous" emissive glow. loadPirateModel
 // returns a fresh clone with per-instance materials (cloneCraftModelInstance in shipyard clones every
@@ -2091,25 +2093,25 @@ function addPirate(pirate: Pirate, pos: THREE.Vector3): void {
   pirates.push(pirate)
   const scale = TIER_SCALE[pirate.tier]
   const emissive = TIER_EMISSIVE[pirate.tier]
-  const mesh = buildCraft('interceptor', pirate.tier === 'grunt' ? 0xc0392b : 0xff7a1a)
+  const mesh = buildCraft('interceptor', ARCHETYPE_ACCENT[pirate.archetype])
   mesh.scale.multiplyScalar(scale) // elites bigger, minibosses biggest
   if (emissive !== null) tintModel(mesh, emissive)
   mesh.position.copy(pos)
   scene.add(mesh)
   pirateMeshes.set(pirate.id, mesh)
-  // ELITE & NAMED pirates carry a floating threat readout (tier/name + hull bar). Grunts get nothing.
+  // Every pirate gets a small plate naming its archetype so the player can pick the right fire mode;
+  // elites/named are emphasized (kept class + boss name).
   // The label is added to the scene (not the mesh) so it survives the placeholder→GLB swap below;
   // its position is synced to pirate.position each frame in the pirate update loop.
-  if (pirate.tier === 'elite' || pirate.tier === 'named') {
-    const el = document.createElement('div')
-    el.className = pirate.tier === 'named' ? 'enemyplate named' : 'enemyplate'
-    enemyLabelParts(el).name.textContent = pirate.tier === 'named' ? (pirate.name ?? 'RAIDER').toUpperCase() : 'ELITE'
-    const labelObj = new CSS2DObject(el)
-    labelObj.position.copy(pos)
-    labelObj.position.y += 3.2 * scale
-    scene.add(labelObj)
-    pirateLabels.set(pirate.id, labelObj)
-  }
+  const el = document.createElement('div')
+  el.className = pirate.tier === 'named' ? 'enemyplate named' : 'enemyplate'
+  const tierPrefix = pirate.tier === 'named' ? (pirate.name ?? 'RAIDER').toUpperCase() : pirate.tier === 'elite' ? 'ELITE ' : ''
+  enemyLabelParts(el).name.textContent = pirate.tier === 'named' ? tierPrefix : `${tierPrefix}${ARCHETYPE_LABEL[pirate.archetype]}`
+  const labelObj = new CSS2DObject(el)
+  labelObj.position.copy(pos)
+  labelObj.position.y += 3.2 * scale
+  scene.add(labelObj)
+  pirateLabels.set(pirate.id, labelObj)
   loadPirateModel().then((model) => {
     if (!model) return
     if (pirateMeshes.get(pirate.id) !== mesh) { disposeObject(model); return }
@@ -2126,17 +2128,23 @@ function addPirate(pirate: Pirate, pos: THREE.Vector3): void {
 
 function spawnPirateWave(now: number): void {
   const depth = deepFactor()
-  if (pirates.length >= MAX_PIRATES + Math.round(depth * 2)) return // up to +2 more in deep space
   if (inSafeZone(ship.position)) return
   if (withinInfluence(ship.position)) return // no pirates near the black hole — it's a solo skill run
   if (!allowsPveHostiles(ship.position, MOBILE_COMPANION)) return
-  const pos = spawnPositionAround(ship.position, 600, pirateSpawnCount++)
-  // Deeper space: tankier pirates worth a bigger bounty. 25% of waves are elites.
   const elite = Math.random() < 0.25
   const tier = elite ? ('elite' as const) : ('grunt' as const)
-  const hullMul = (elite ? PIRATE_TIER_HULL_MUL.elite : 1) * (1 + depth * 1.6)
+  const archetype = pickArchetype(Math.random)
+  // SWARM arrives as a cluster of fragile units; grant it headroom on top of the base cap so it
+  // actually reads as a swarm (its units are low-hull, so extra bodies ≠ extra tankiness).
+  const count = archetype === 'swarm' ? 4 + Math.round(depth * 2) : 1
+  const cap = MAX_PIRATES + Math.round(depth * 2) + (archetype === 'swarm' ? count : 0)
+  if (pirates.length >= cap) return
+  const tierHullMul = (elite ? PIRATE_TIER_HULL_MUL.elite : 1) * (1 + depth * 1.6)
   const reward = Math.round((elite ? PIRATE_TIER_REWARD.elite : PIRATE_REWARD) * (1 + depth * 2))
-  addPirate(spawnPirate(`pir-${pirateSpawnCount}`, pos, { hullMul, reward, tier }), pos)
+  for (let i = 0; i < count && pirates.length < cap; i++) {
+    const pos = spawnPositionAround(ship.position, 600, pirateSpawnCount++)
+    addPirate(spawnPirate(`pir-${pirateSpawnCount}`, pos, { hullMul: tierHullMul, reward, tier, archetype, seed: pirateSpawnCount * 0.13 }), pos)
+  }
   void now
 }
 
@@ -4929,14 +4937,14 @@ function frame(now: number): void {
     }
 
     for (const pirate of pirates) {
-      const r = stepPirate(pirate, ship.position, dt)
+      const r = stepPirate(pirate, ship.position, dt, now / 1000)
       if (r.fired) projectiles.push(r.fired) // pirate fire is silent — many at once would be noise
       const mesh = pirateMeshes.get(pirate.id)
       if (mesh) {
         mesh.position.copy(pirate.position)
         mesh.lookAt(ship.position)
       }
-      // Enemy readout (elite/named only): track the ship, fill the hull bar, and distance-fade
+      // Enemy readout (every pirate): track the ship, fill the hull bar, and distance-fade
       // like peer nameplates so distant threats don't clutter the screen.
       const label = pirateLabels.get(pirate.id)
       if (label) {
