@@ -516,6 +516,7 @@ wss.on('connection', (ws) => {
       if (!client.invisible) {
         for (const [ws2, c2] of clients) {
           if (ws2 === ws || !(c2.active || c2.spectating) || ws2.readyState !== ws2.OPEN) continue
+          if (c2.spectating && !c2.active) { ws2.send(out); continue } // spectators have no position → no AOI cull
           const dx = c2.p[0] - px, dy = c2.p[1] - py, dz = c2.p[2] - pz
           if (dx * dx + dy * dy + dz * dz <= AOI_RADIUS2) ws2.send(out)
         }

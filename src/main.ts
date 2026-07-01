@@ -4105,6 +4105,8 @@ function launch(): void {
   // landing has gated on wallet + holder balance. The relay also enforces the gate at `join`. Gating
   // here would wrongly bail (main.ts's holderBalance is still 0 the instant the game module loads).
   spectating = false // clear any prior Browse state so a real launch flies normally
+  // Note: the relay-side `spectating` flag is intentionally NOT cleared on launch — it's idempotent
+  // per-recipient (an active pilot skips the spectator branch) and harmless to leave set.
   browseBannerEl.hidden = true
   const callsign = nicknameEl.value.trim() || 'PILOT'
   localStorage.setItem('callsign', callsign)
