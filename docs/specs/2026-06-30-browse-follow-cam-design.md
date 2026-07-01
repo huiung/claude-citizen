@@ -23,7 +23,15 @@ Browse is the only thing a non-holder experiences, and it's the conversion surfa
 - The showcase bot itself (already always-on via Railway) and its behavior.
 - Landing-page pitch / social proof (a separate funnel piece).
 - Buy/redemption mechanics and the wallet-connect flow (unchanged).
-- Any change to flight, economy, gating, or peer networking.
+- Any change to flight, economy, or gating.
+
+**Networking note (discovered during implementation):** the relay originally fed peer presence/state
+only to `active` (joined) clients, so a Browse viewer's `remotes` stayed empty and the follow-cam had
+nothing to follow. A minimal, opt-in **spectator peer feed** was added: a Browse client sends
+`{t:'spectate', on:true}`, and the relay then sends it the current peers snapshot and includes it in
+the `peer-state` relay. Landing-page viewers never opt in (no change for them); active-pilot and
+economy/gating behavior is untouched; the snapshot strips the same sensitive fields as the join
+welcome (token/authed/pubkey/holderBalance).
 
 ---
 
