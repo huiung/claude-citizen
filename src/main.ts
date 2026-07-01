@@ -1503,6 +1503,7 @@ const blackHoleRun = createBlackHoleRun()
 const pilot = loadPilot(localStorage)
 const campaign = loadCampaign(localStorage)
 let namedRaiderActive = false // guards against double-spawning the campaign's named miniboss
+const enragedBosses = new Set<string>() // ids already given the one-time ENRAGED cue
 
 // Raise the hull cap to the current level's bonus and heal exactly the gained amount, so a level-up
 // is felt immediately. Safe to call when nothing changed (delta 0 → no heal).
@@ -2162,6 +2163,8 @@ function maybeSpawnNamedRaider(now: number): void {
   const pos = spawnPositionAround(ship.position, 700, pirateSpawnCount++)
   addPirate(spawnPirate(`named-${campaign.step}`, pos, {
     tier: 'named', name,
+    archetype: captain ? 'lancer' : 'chaser',
+    bossKey: captain ? 'captain' : 'vex',
     hullMul: captain ? 12 : PIRATE_TIER_HULL_MUL.named,
     reward: PIRATE_TIER_REWARD.named,
   }), pos)
@@ -2367,6 +2370,7 @@ function removePirateMesh(id: string): void {
     label.element.remove() // CSS2D label lives in the DOM — drop it or the bar lingers forever
     pirateLabels.delete(id)
   }
+  enragedBosses.delete(id) // let a re-fought boss re-announce its enrage
   const mesh = pirateMeshes.get(id)
   if (!mesh) return
   scene.remove(mesh)
@@ -4936,9 +4940,25 @@ function frame(now: number): void {
       clearTrainingDrones()
     }
 
+    let bossSummons = 0 // swarm adds requested by bosses this frame, spawned after the loop
     for (const pirate of pirates) {
       const r = stepPirate(pirate, ship.position, dt, now / 1000)
       if (r.fired) projectiles.push(r.fired) // pirate fire is silent — many at once would be noise
+      if (r.volley) for (const v of r.volley) projectiles.push(v)
+      if (r.telegraphStart) {
+        registerKillBanner(combatFeedback, '⚠ INCOMING VOLLEY', pirate.name ?? 'RAIDER', now)
+        audio.blip('nav')
+      }
+      if (r.summon) {
+        registerKillBanner(combatFeedback, `${(pirate.name ?? 'RAIDER').toUpperCase()} CALLS RAIDERS`, `+${r.summon} swarm`, now)
+        audio.blip('nav')
+        bossSummons += r.summon
+      }
+      if (pirate.boss?.enraged && !enragedBosses.has(pirate.id)) {
+        enragedBosses.add(pirate.id)
+        registerKillBanner(combatFeedback, `${(pirate.name ?? 'RAIDER').toUpperCase()} ENRAGED`, 'pushing hard', now)
+        audio.blip('nav')
+      }
       const mesh = pirateMeshes.get(pirate.id)
       if (mesh) {
         mesh.position.copy(pirate.position)
@@ -4956,6 +4976,11 @@ function frame(now: number): void {
         ;(label.element as HTMLElement).style.opacity = String(op)
         updateEnemyLabelHealth(label.element as HTMLElement, hullFraction(pirate.health))
       }
+    }
+
+    for (let i = 0; i < bossSummons && pirates.length < MAX_PIRATES + 8; i++) {
+      const apos = spawnPositionAround(ship.position, 500, pirateSpawnCount++)
+      addPirate(spawnPirate(`add-${pirateSpawnCount}`, apos, { archetype: 'swarm', reward: PIRATE_REWARD }), apos)
     }
 
     stepProjectiles(projectiles, dt)
