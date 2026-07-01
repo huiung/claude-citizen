@@ -19,6 +19,10 @@ describe('pickFollowTarget', () => {
     const peers = [peer('a', 'Ace', 100), peer('z', 'ZBOT', 1)]
     expect(pickFollowTarget(peers, null, 'ZBOT')).toBe('z')
   })
+  it('ignores currentId — always returns the top pick (no stickiness clause)', () => {
+    const peers = [peer('a', 'Ace', 100), peer('c', 'Nova', 250)]
+    expect(pickFollowTarget(peers, 'a')).toBe('c') // 'a' is current but 'c' is more active → still 'c'
+  })
 })
 
 describe('cycleFollowTarget', () => {
@@ -36,6 +40,9 @@ describe('cycleFollowTarget', () => {
   })
   it('returns currentId unchanged when there are no peers', () => {
     expect(cycleFollowTarget([], 'a', 1)).toBe('a')
+  })
+  it('stays put with a single peer (the common bot-only Browse case)', () => {
+    expect(cycleFollowTarget([peer('a', 'A', 1)], 'a', 1)).toBe('a')
   })
 })
 
@@ -63,5 +70,8 @@ describe('describePilotActivity', () => {
   })
   it('treats the radius as an inclusive boundary', () => {
     expect(describePilotActivity([50, 0, 0], [{ label: 'edge', center: [0, 0, 0], radius: 50 }])).toBe('edge')
+  })
+  it('falls back with an empty zone list', () => {
+    expect(describePilotActivity([0, 0, 0], [])).toBe('cruising deep space')
   })
 })

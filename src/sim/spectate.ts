@@ -10,6 +10,7 @@ export interface FollowPeer {
 
 /** Pick whom Browse should follow. Priority: the showcase bot (name === botName) → else the most
  *  recently active peer → else null (caller falls back to the hub orbit). */
+// _currentId: reserved for signature stability; the caller only invokes this when there is no live target to keep, so no stability/anti-thrash clause is needed here.
 export function pickFollowTarget(peers: FollowPeer[], _currentId: string | null, botName = 'CLAUDE'): string | null {
   if (peers.length === 0) return null
   const bot = peers.find((p) => p.name === botName)
