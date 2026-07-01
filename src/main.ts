@@ -1575,7 +1575,7 @@ const projectiles: Projectile[] = []
 const projectileMeshes = new Map<Projectile, THREE.Mesh>()
 const pirates: Pirate[] = []
 const pirateMeshes = new Map<string, THREE.Group>()
-// Enemy readouts (hull bar + tier/name) for ELITE & NAMED pirates only — grunts get nothing.
+// Enemy readouts (hull bar + archetype/tier/name) — every pirate carries one so its class reads.
 // Keyed by pirate.id and added directly to the scene (NOT as a child of the placeholder mesh),
 // so they survive the async placeholder→GLB swap in addPirate. Position is synced each frame.
 const pirateLabels = new Map<string, CSS2DObject>()
@@ -2128,20 +2128,19 @@ function addPirate(pirate: Pirate, pos: THREE.Vector3): void {
 
 function spawnPirateWave(now: number): void {
   const depth = deepFactor()
-  if (pirates.length >= MAX_PIRATES + Math.round(depth * 2)) return // up to +2 more in deep space
   if (inSafeZone(ship.position)) return
   if (withinInfluence(ship.position)) return // no pirates near the black hole — it's a solo skill run
   if (!allowsPveHostiles(ship.position, MOBILE_COMPANION)) return
-  // Deeper space: tankier pirates worth a bigger bounty. 25% of waves are elites (tier is orthogonal
-  // to archetype: tier scales hull/reward, archetype drives behavior).
   const elite = Math.random() < 0.25
   const tier = elite ? ('elite' as const) : ('grunt' as const)
   const archetype = pickArchetype(Math.random)
+  // SWARM arrives as a cluster of fragile units; grant it headroom on top of the base cap so it
+  // actually reads as a swarm (its units are low-hull, so extra bodies ≠ extra tankiness).
+  const count = archetype === 'swarm' ? 4 + Math.round(depth * 2) : 1
+  const cap = MAX_PIRATES + Math.round(depth * 2) + (archetype === 'swarm' ? count : 0)
+  if (pirates.length >= cap) return
   const tierHullMul = (elite ? PIRATE_TIER_HULL_MUL.elite : 1) * (1 + depth * 1.6)
   const reward = Math.round((elite ? PIRATE_TIER_REWARD.elite : PIRATE_REWARD) * (1 + depth * 2))
-  // SWARM arrives as a cluster of fragile units; everything else is a single ship.
-  const count = archetype === 'swarm' ? 4 + Math.round(depth * 2) : 1
-  const cap = MAX_PIRATES + Math.round(depth * 2)
   for (let i = 0; i < count && pirates.length < cap; i++) {
     const pos = spawnPositionAround(ship.position, 600, pirateSpawnCount++)
     addPirate(spawnPirate(`pir-${pirateSpawnCount}`, pos, { hullMul: tierHullMul, reward, tier, archetype, seed: pirateSpawnCount * 0.13 }), pos)
@@ -4945,7 +4944,7 @@ function frame(now: number): void {
         mesh.position.copy(pirate.position)
         mesh.lookAt(ship.position)
       }
-      // Enemy readout (elite/named only): track the ship, fill the hull bar, and distance-fade
+      // Enemy readout (every pirate): track the ship, fill the hull bar, and distance-fade
       // like peer nameplates so distant threats don't clutter the screen.
       const label = pirateLabels.get(pirate.id)
       if (label) {
