@@ -7,6 +7,25 @@ import {
   PIRATE_PROJECTILE_SPEED, PIRATE_REWARD, PIRATE_SPEED, PIRATE_STANDOFF, shouldDespawnPirate,
   spawnPirate, spawnPositionAround, stepPirate,
 } from './pirates'
+import { BOSS_KITS } from './pirates'
+
+describe('BOSS_KITS', () => {
+  it('vex is a summoner; captain is a telegraphed gunner', () => {
+    expect(BOSS_KITS.vex.ability).toBe('summon')
+    expect(BOSS_KITS.vex.summonCount).toBeGreaterThan(0)
+    expect(BOSS_KITS.captain.ability).toBe('volley')
+    expect(BOSS_KITS.captain.telegraphSec).toBeGreaterThan(0)
+    expect(BOSS_KITS.captain.volleyBolts).toBeGreaterThan(1)
+  })
+  it('both enrage below a hull fraction with faster fire + speed', () => {
+    for (const k of [BOSS_KITS.vex, BOSS_KITS.captain]) {
+      expect(k.enrageAtHullFrac).toBeGreaterThan(0)
+      expect(k.enrageAtHullFrac).toBeLessThan(1)
+      expect(k.enrageFireMul).toBeLessThan(1) // faster
+      expect(k.enrageSpeedMul).toBeGreaterThan(1)
+    }
+  })
+})
 
 describe('weaveOffset', () => {
   const forward = new Vector3(0, 0, -1)
@@ -105,6 +124,20 @@ describe('spawnPirate', () => {
   })
 })
 
+describe('spawnPirate boss', () => {
+  it('attaches a boss runtime for a bossKey (kit + timers + not enraged)', () => {
+    const p = spawnPirate('b', new Vector3(0, 0, 100), { tier: 'named', name: 'Vex Marrow', archetype: 'chaser', bossKey: 'vex' })
+    expect(p.boss).toBeDefined()
+    expect(p.boss!.kit).toBe(BOSS_KITS.vex)
+    expect(p.boss!.abilityCd).toBe(BOSS_KITS.vex.abilityIntervalSec)
+    expect(p.boss!.telegraphCd).toBe(0)
+    expect(p.boss!.enraged).toBe(false)
+  })
+  it('is undefined for a normal pirate', () => {
+    expect(spawnPirate('n', new Vector3(0, 0, 100)).boss).toBeUndefined()
+  })
+})
+
 describe('spawnPirate archetype', () => {
   it('defaults to chaser with legacy hull + fire interval', () => {
     const p = spawnPirate('c', new Vector3(0, 0, 100))
@@ -199,6 +232,66 @@ describe('stepPirate archetype behavior', () => {
     const dx = Math.abs(weaved.position.x - straight.position.x)
     const dy = Math.abs(weaved.position.y - straight.position.y)
     expect(dx + dy).toBeGreaterThan(1e-3)
+  })
+})
+
+describe('stepPirate boss abilities', () => {
+  const origin = new Vector3(0, 0, 0)
+  const summoner = () => spawnPirate('v', new Vector3(0, 0, 200), { tier: 'named', name: 'Vex Marrow', archetype: 'chaser', bossKey: 'vex' })
+  const gunner = () => spawnPirate('c', new Vector3(0, 0, 600), { tier: 'named', name: 'Raider Captain', archetype: 'lancer', bossKey: 'captain' })
+
+  it('summoner returns summon count once its interval elapses, not before', () => {
+    const v = summoner()
+    expect(stepPirate(v, origin, 1.0).summon).toBeUndefined()          // 1s < 9s interval
+    v.boss!.abilityCd = 0.001                                          // fast-forward to the trigger
+    expect(stepPirate(v, origin, 0.002).summon).toBe(BOSS_KITS.vex.summonCount)
+  })
+  it('gunner telegraphs first, then fires a volley after the telegraph', () => {
+    const c = gunner()
+    c.boss!.abilityCd = 0.001
+    const t = stepPirate(c, origin, 0.002)                             // ability fires → telegraph starts
+    expect(t.telegraphStart).toBe(true)
+    expect(t.volley).toBeUndefined()
+    // still winding up
+    expect(stepPirate(c, origin, 0.1).volley).toBeUndefined()
+    // finish the telegraph
+    const v = stepPirate(c, origin, BOSS_KITS.captain.telegraphSec)
+    expect(v.volley).toHaveLength(BOSS_KITS.captain.volleyBolts)
+    expect(v.volley!.every((p) => p.faction === 'pirate')).toBe(true)
+    // one volley per windup only
+    expect(stepPirate(c, origin, 0.1).volley).toBeUndefined()
+  })
+  it('enrages below the hull fraction (faster ability interval)', () => {
+    const v = summoner()
+    v.health.hull = v.health.max * 0.3   // < 0.35
+    v.boss!.abilityCd = 0.001
+    stepPirate(v, origin, 0.002)          // triggers summon + resets abilityCd
+    expect(v.boss!.enraged).toBe(true)
+    expect(v.boss!.abilityCd).toBeCloseTo(BOSS_KITS.vex.abilityIntervalSec * BOSS_KITS.vex.enrageFireMul, 3)
+  })
+  it('a normal pirate never returns boss events', () => {
+    const g = spawnPirate('g', new Vector3(0, 0, 100))
+    const r = stepPirate(g, origin, 0.5)
+    expect(r.summon).toBeUndefined()
+    expect(r.volley).toBeUndefined()
+    expect(r.telegraphStart).toBeUndefined()
+  })
+  it('enrage is exclusive: not enraged at exactly the hull fraction or full hull', () => {
+    const boundary = spawnPirate('vb', new Vector3(0, 0, 200), { tier: 'named', name: 'Vex Marrow', archetype: 'chaser', bossKey: 'vex' })
+    boundary.health.hull = boundary.health.max * BOSS_KITS.vex.enrageAtHullFrac // exactly at frac
+    stepPirate(boundary, origin, 0.016)
+    expect(boundary.boss!.enraged).toBe(false)
+    const full = spawnPirate('vf', new Vector3(0, 0, 200), { tier: 'named', name: 'Vex Marrow', archetype: 'chaser', bossKey: 'vex' })
+    stepPirate(full, origin, 0.016)
+    expect(full.boss!.enraged).toBe(false)
+  })
+  it('a summoner never produces a volley or telegraph', () => {
+    const v = summoner()
+    v.boss!.abilityCd = 0.001
+    const r = stepPirate(v, origin, 0.002)
+    expect(r.summon).toBe(BOSS_KITS.vex.summonCount)
+    expect(r.volley).toBeUndefined()
+    expect(r.telegraphStart).toBeUndefined()
   })
 })
 
