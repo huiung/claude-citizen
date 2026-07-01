@@ -224,7 +224,8 @@ export function stepPirate(pirate: Pirate, targetPos: Vector3, dt: number, nowSe
     if (boss.abilityCd <= 0) {
       boss.abilityCd = boss.kit.abilityIntervalSec * enrageFireMul
       if (boss.kit.ability === 'summon') result.summon = boss.kit.summonCount
-      else { boss.telegraphCd = boss.kit.telegraphSec; result.telegraphStart = true }
+      // Only arm a new windup if none is pending (abilityInterval ≫ telegraphSec, but guard against overwrite).
+      else if (boss.telegraphCd <= 0) { boss.telegraphCd = boss.kit.telegraphSec; result.telegraphStart = true }
     }
   }
   return result

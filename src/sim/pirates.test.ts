@@ -276,6 +276,23 @@ describe('stepPirate boss abilities', () => {
     expect(r.volley).toBeUndefined()
     expect(r.telegraphStart).toBeUndefined()
   })
+  it('enrage is exclusive: not enraged at exactly the hull fraction or full hull', () => {
+    const boundary = spawnPirate('vb', new Vector3(0, 0, 200), { tier: 'named', name: 'Vex Marrow', archetype: 'chaser', bossKey: 'vex' })
+    boundary.health.hull = boundary.health.max * BOSS_KITS.vex.enrageAtHullFrac // exactly at frac
+    stepPirate(boundary, origin, 0.016)
+    expect(boundary.boss!.enraged).toBe(false)
+    const full = spawnPirate('vf', new Vector3(0, 0, 200), { tier: 'named', name: 'Vex Marrow', archetype: 'chaser', bossKey: 'vex' })
+    stepPirate(full, origin, 0.016)
+    expect(full.boss!.enraged).toBe(false)
+  })
+  it('a summoner never produces a volley or telegraph', () => {
+    const v = summoner()
+    v.boss!.abilityCd = 0.001
+    const r = stepPirate(v, origin, 0.002)
+    expect(r.summon).toBe(BOSS_KITS.vex.summonCount)
+    expect(r.volley).toBeUndefined()
+    expect(r.telegraphStart).toBeUndefined()
+  })
 })
 
 describe('leash despawn', () => {
