@@ -6,9 +6,33 @@ import {
   spawnPirate, spawnPositionAround, stepPirate,
 } from './pirates'
 import {
-  ARCHETYPE_BEHAVIOR, pickArchetype,
+  ARCHETYPE_BEHAVIOR, pickArchetype, weaveOffset,
   PIRATE_SPEED, PIRATE_FIRE_INTERVAL, PIRATE_DAMAGE, PIRATE_PROJECTILE_SPEED,
 } from './pirates'
+
+describe('weaveOffset', () => {
+  const forward = new Vector3(0, 0, -1)
+  it('returns zero when amplitude is 0 (lancer flies straight)', () => {
+    expect(weaveOffset(1.2, 0, 1, 3).lengthSq()).toBe(0)
+  })
+  it('is perpendicular to forward and bounded by amplitude', () => {
+    for (const t of [0.1, 0.5, 1.0, 2.3]) {
+      const off = weaveOffset(t, 40, 1.5, 7, forward)
+      expect(Math.abs(off.dot(forward))).toBeLessThan(1e-6) // perpendicular
+      expect(off.length()).toBeLessThanOrEqual(40 + 1e-6)   // bounded by amp
+    }
+  })
+  it('oscillates over time (not constant)', () => {
+    const a = weaveOffset(0.0, 40, 1.5, 0, forward)
+    const b = weaveOffset(0.5, 40, 1.5, 0, forward)
+    expect(a.distanceTo(b)).toBeGreaterThan(1e-3)
+  })
+  it('is deterministic for the same inputs', () => {
+    const a = weaveOffset(0.7, 40, 1.5, 2, forward)
+    const b = weaveOffset(0.7, 40, 1.5, 2, forward)
+    expect(a.equals(b)).toBe(true)
+  })
+})
 
 describe('ARCHETYPE_BEHAVIOR', () => {
   it('chaser stats equal the legacy pirate constants (no regression)', () => {

@@ -95,6 +95,20 @@ export function spawnPirate(id: string, position: Vector3, opts: SpawnPirateOpts
   }
 }
 
+const _weavePerp = new Vector3()
+const _weaveUp = new Vector3(0, 1, 0)
+const _weaveAlt = new Vector3(1, 0, 0)
+/** A lateral (perpendicular-to-`forward`) strafe offset that oscillates over time. `seed` shifts the
+ *  phase so units don't weave in sync. amp<=0 → zero vector. Pure (deterministic in its inputs). */
+export function weaveOffset(nowSec: number, amp: number, rate: number, seed: number, forward: Vector3 = new Vector3(0, 0, -1)): Vector3 {
+  if (amp <= 0) return new Vector3()
+  // A perpendicular axis: cross(forward, up), or cross(forward, x-axis) if forward is ~parallel to up.
+  const f = forward.lengthSq() > 1e-9 ? forward.clone().normalize() : new Vector3(0, 0, -1)
+  _weavePerp.crossVectors(f, Math.abs(f.y) < 0.99 ? _weaveUp : _weaveAlt).normalize()
+  const s = Math.sin((nowSec * rate + seed) * Math.PI * 2)
+  return _weavePerp.multiplyScalar(amp * s).clone()
+}
+
 /** True when a pirate at `dist` metres should be culled — too far to threaten or be hit. */
 export function shouldDespawnPirate(dist: number): boolean {
   return dist > PIRATE_LEASH_RANGE
