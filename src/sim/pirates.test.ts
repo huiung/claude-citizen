@@ -107,6 +107,28 @@ describe('spawnPirate', () => {
   })
 })
 
+describe('spawnPirate archetype', () => {
+  it('defaults to chaser with legacy hull + fire interval', () => {
+    const p = spawnPirate('c', new Vector3(0, 0, 100))
+    expect(p.archetype).toBe('chaser')
+    expect(p.weapon.interval).toBe(PIRATE_FIRE_INTERVAL)
+    expect(p.health.hull).toBe(PIRATE_HULL) // chaser hullMul 1
+  })
+  it('applies a lancer: longer fire interval + lower hull', () => {
+    const p = spawnPirate('l', new Vector3(0, 0, 100), { archetype: 'lancer' })
+    expect(p.archetype).toBe('lancer')
+    expect(p.weapon.interval).toBe(ARCHETYPE_BEHAVIOR.lancer.fireInterval)
+    expect(p.health.hull).toBe(Math.round(PIRATE_HULL * ARCHETYPE_BEHAVIOR.lancer.hullMul))
+  })
+  it('combines archetype hullMul with tier hullMul', () => {
+    const p = spawnPirate('s', new Vector3(0, 0, 100), { archetype: 'swarm', hullMul: 2 })
+    expect(p.health.hull).toBe(Math.round(PIRATE_HULL * ARCHETYPE_BEHAVIOR.swarm.hullMul * 2))
+  })
+  it('carries the seed it was given', () => {
+    expect(spawnPirate('x', new Vector3(0, 0, 100), { seed: 5 }).seed).toBe(5)
+  })
+})
+
 describe('stepPirate', () => {
   const origin = new Vector3(0, 0, 0)
 

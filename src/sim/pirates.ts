@@ -66,6 +66,10 @@ export interface Pirate {
   reward: number
   /** Threat tier: grunt (default), elite, or a named sector miniboss. */
   tier: PirateTier
+  /** Behavior archetype — drives the AI in stepPirate (orthogonal to tier). */
+  archetype: PirateArchetype
+  /** Per-unit weave phase so units don't strafe in sync. */
+  seed: number
   /** Display name — set only for named minibosses. */
   name?: string
 }
@@ -76,6 +80,8 @@ export interface SpawnPirateOpts {
   hullMul?: number
   reward?: number
   tier?: PirateTier
+  archetype?: PirateArchetype
+  seed?: number
   name?: string
 }
 
@@ -83,14 +89,18 @@ export interface SpawnPirateOpts {
  *  mark elites and named minibosses. Defaults reproduce the original base grunt. */
 export function spawnPirate(id: string, position: Vector3, opts: SpawnPirateOpts = {}): Pirate {
   const tier = opts.tier ?? 'grunt'
+  const archetype = opts.archetype ?? 'chaser'
+  const behavior = ARCHETYPE_BEHAVIOR[archetype]
   return {
     id,
     position: position.clone(),
     velocity: new Vector3(),
-    health: createHealth(Math.round(PIRATE_HULL * (opts.hullMul ?? 1))),
-    weapon: createWeapon(PIRATE_FIRE_INTERVAL),
+    health: createHealth(Math.round(PIRATE_HULL * behavior.hullMul * (opts.hullMul ?? 1))),
+    weapon: createWeapon(behavior.fireInterval),
     reward: opts.reward ?? PIRATE_REWARD,
     tier,
+    archetype,
+    seed: opts.seed ?? 0,
     name: opts.name,
   }
 }
