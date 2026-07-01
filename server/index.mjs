@@ -384,6 +384,7 @@ wss.on('connection', (ws) => {
         id: Math.random().toString(36).slice(2, 10),
         name: null, color: -1, p: [0, 0, 0], q: [0, 0, 0, 1], token,
         active: false, authed: false, pubkey: null, tier: 0, holderBalance: 0, lastPvpCombatAt: null, visual: 'standard', cosmetics: '', isBot: false,
+        spectating: false,
       }
       resetPvpHull(client, 'hauler')
       applySession(client, msg.sessionId)
@@ -456,6 +457,15 @@ wss.on('connection', (ws) => {
     const client = clients.get(ws)
     if (!client) return
 
+    if (msg.t === 'spectate') {
+      client.spectating = msg.on === true
+      if (client.spectating) {
+        const peers = [...clients.values()].filter((c) => c.active && !c.invisible && c !== client).map(({ token: _t, active: _a, authed: _au, pubkey: _pk, holderBalance: _hb, invisible: _iv, ...rest }) => rest)
+        send(ws, { t: 'peers', peers })
+      }
+      return
+    }
+
     if (msg.t === 'auth-challenge') {
       if (client.authed) return // already verified — don't re-challenge a live identity
       const pubkey = typeof msg.pubkey === 'string' ? msg.pubkey.slice(0, 64) : null
@@ -505,7 +515,7 @@ wss.on('connection', (ws) => {
       const [px, py, pz] = client.p
       if (!client.invisible) {
         for (const [ws2, c2] of clients) {
-          if (ws2 === ws || !c2.active || ws2.readyState !== ws2.OPEN) continue
+          if (ws2 === ws || !(c2.active || c2.spectating) || ws2.readyState !== ws2.OPEN) continue
           const dx = c2.p[0] - px, dy = c2.p[1] - py, dz = c2.p[2] - pz
           if (dx * dx + dy * dy + dz * dz <= AOI_RADIUS2) ws2.send(out)
         }

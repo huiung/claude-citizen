@@ -4096,6 +4096,7 @@ function enterBrowseMode(): void {
   if (statsTimer) clearInterval(statsTimer) // stop the landing-stats poll like launch() does
   if (document.pointerLockElement) document.exitPointerLock()
   browseBannerEl.hidden = false // persistent "connect to fly" banner
+  net.sendSpectate(true) // opt into the spectator peer feed so the follow-cam has live peers
 }
 
 function launch(): void {
@@ -4156,6 +4157,7 @@ nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') launch() 
 browseBtnEl.addEventListener('click', () => enterBrowseMode())
 browseBackEl.addEventListener('click', () => {
   spectating = false
+  net.sendSpectate(false) // leave the spectator peer feed — stop receiving peer spam on the landing
   followId = null
   running = false
   browseBannerEl.hidden = true
