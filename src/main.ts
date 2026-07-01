@@ -93,7 +93,7 @@ import {
   shouldClearPveHostiles,
   trainingDronesActive,
 } from './sim/pvp'
-import { type Pirate, type PirateTier, PIRATE_REWARD, PIRATE_TIER_HULL_MUL, PIRATE_TIER_REWARD, shouldDespawnPirate, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
+import { type Pirate, type PirateArchetype, type PirateTier, pickArchetype, PIRATE_REWARD, PIRATE_TIER_HULL_MUL, PIRATE_TIER_REWARD, shouldDespawnPirate, spawnPirate, spawnPositionAround, stepPirate } from './sim/pirates'
 import { addXp, loadPilot, MAX_LEVEL, savePilot, unlocksForLevel, xpForKill, xpForLevel } from './sim/pilotLevel'
 import { type CampaignAdvance, currentCampaignStep, loadCampaign, recordCampaignEvent, saveCampaign, SECTOR1_CAMPAIGN } from './sim/campaign'
 import {
@@ -2130,13 +2130,20 @@ function spawnPirateWave(now: number): void {
   if (inSafeZone(ship.position)) return
   if (withinInfluence(ship.position)) return // no pirates near the black hole — it's a solo skill run
   if (!allowsPveHostiles(ship.position, MOBILE_COMPANION)) return
-  const pos = spawnPositionAround(ship.position, 600, pirateSpawnCount++)
-  // Deeper space: tankier pirates worth a bigger bounty. 25% of waves are elites.
+  // Deeper space: tankier pirates worth a bigger bounty. 25% of waves are elites (tier is orthogonal
+  // to archetype: tier scales hull/reward, archetype drives behavior).
   const elite = Math.random() < 0.25
   const tier = elite ? ('elite' as const) : ('grunt' as const)
-  const hullMul = (elite ? PIRATE_TIER_HULL_MUL.elite : 1) * (1 + depth * 1.6)
+  const archetype = pickArchetype(Math.random)
+  const tierHullMul = (elite ? PIRATE_TIER_HULL_MUL.elite : 1) * (1 + depth * 1.6)
   const reward = Math.round((elite ? PIRATE_TIER_REWARD.elite : PIRATE_REWARD) * (1 + depth * 2))
-  addPirate(spawnPirate(`pir-${pirateSpawnCount}`, pos, { hullMul, reward, tier }), pos)
+  // SWARM arrives as a cluster of fragile units; everything else is a single ship.
+  const count = archetype === 'swarm' ? 4 + Math.round(depth * 2) : 1
+  const cap = MAX_PIRATES + Math.round(depth * 2)
+  for (let i = 0; i < count && pirates.length < cap; i++) {
+    const pos = spawnPositionAround(ship.position, 600, pirateSpawnCount++)
+    addPirate(spawnPirate(`pir-${pirateSpawnCount}`, pos, { hullMul: tierHullMul, reward, tier, archetype, seed: pirateSpawnCount * 0.13 }), pos)
+  }
   void now
 }
 
