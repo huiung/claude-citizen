@@ -7,6 +7,25 @@ import {
   PIRATE_PROJECTILE_SPEED, PIRATE_REWARD, PIRATE_SPEED, PIRATE_STANDOFF, shouldDespawnPirate,
   spawnPirate, spawnPositionAround, stepPirate,
 } from './pirates'
+import { BOSS_KITS } from './pirates'
+
+describe('BOSS_KITS', () => {
+  it('vex is a summoner; captain is a telegraphed gunner', () => {
+    expect(BOSS_KITS.vex.ability).toBe('summon')
+    expect(BOSS_KITS.vex.summonCount).toBeGreaterThan(0)
+    expect(BOSS_KITS.captain.ability).toBe('volley')
+    expect(BOSS_KITS.captain.telegraphSec).toBeGreaterThan(0)
+    expect(BOSS_KITS.captain.volleyBolts).toBeGreaterThan(1)
+  })
+  it('both enrage below a hull fraction with faster fire + speed', () => {
+    for (const k of [BOSS_KITS.vex, BOSS_KITS.captain]) {
+      expect(k.enrageAtHullFrac).toBeGreaterThan(0)
+      expect(k.enrageAtHullFrac).toBeLessThan(1)
+      expect(k.enrageFireMul).toBeLessThan(1) // faster
+      expect(k.enrageSpeedMul).toBeGreaterThan(1)
+    }
+  })
+})
 
 describe('weaveOffset', () => {
   const forward = new Vector3(0, 0, -1)

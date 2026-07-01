@@ -56,6 +56,32 @@ export function pickArchetype(rng: () => number): PirateArchetype {
   return 'swarm'
 }
 
+export type BossAbility = 'summon' | 'volley'
+
+export interface BossKit {
+  ability: BossAbility
+  abilityIntervalSec: number
+  telegraphSec: number
+  volleyBolts: number
+  volleySpreadRad: number
+  summonCount: number
+  enrageAtHullFrac: number
+  enrageFireMul: number
+  enrageSpeedMul: number
+}
+
+export const BOSS_KITS: Record<'vex' | 'captain', BossKit> = {
+  vex:     { ability: 'summon', abilityIntervalSec: 9,   telegraphSec: 0,   volleyBolts: 0, volleySpreadRad: 0,    summonCount: 3, enrageAtHullFrac: 0.35, enrageFireMul: 0.6, enrageSpeedMul: 1.3 },
+  captain: { ability: 'volley', abilityIntervalSec: 6.5, telegraphSec: 0.8, volleyBolts: 5, volleySpreadRad: 0.16, summonCount: 0, enrageAtHullFrac: 0.35, enrageFireMul: 0.6, enrageSpeedMul: 1.3 },
+}
+
+export interface BossRuntime {
+  kit: BossKit
+  abilityCd: number
+  telegraphCd: number
+  enraged: boolean
+}
+
 export interface Pirate {
   id: string
   position: Vector3
@@ -125,8 +151,10 @@ export function shouldDespawnPirate(dist: number): boolean {
 }
 
 export interface PirateStepResult {
-  /** A projectile the pirate fired this step, or null. */
   fired: Projectile | null
+  volley?: Projectile[]
+  telegraphStart?: boolean
+  summon?: number
 }
 
 const _toTarget = new Vector3()
