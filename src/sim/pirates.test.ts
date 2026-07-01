@@ -124,6 +124,20 @@ describe('spawnPirate', () => {
   })
 })
 
+describe('spawnPirate boss', () => {
+  it('attaches a boss runtime for a bossKey (kit + timers + not enraged)', () => {
+    const p = spawnPirate('b', new Vector3(0, 0, 100), { tier: 'named', name: 'Vex Marrow', archetype: 'chaser', bossKey: 'vex' })
+    expect(p.boss).toBeDefined()
+    expect(p.boss!.kit).toBe(BOSS_KITS.vex)
+    expect(p.boss!.abilityCd).toBe(BOSS_KITS.vex.abilityIntervalSec)
+    expect(p.boss!.telegraphCd).toBe(0)
+    expect(p.boss!.enraged).toBe(false)
+  })
+  it('is undefined for a normal pirate', () => {
+    expect(spawnPirate('n', new Vector3(0, 0, 100)).boss).toBeUndefined()
+  })
+})
+
 describe('spawnPirate archetype', () => {
   it('defaults to chaser with legacy hull + fire interval', () => {
     const p = spawnPirate('c', new Vector3(0, 0, 100))

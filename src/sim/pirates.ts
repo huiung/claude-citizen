@@ -96,6 +96,8 @@ export interface Pirate {
   archetype: PirateArchetype
   /** Per-unit weave phase so units don't strafe in sync. */
   seed: number
+  /** Present only for named campaign bosses — drives the ability kit in stepPirate. */
+  boss?: BossRuntime
   /** Display name — set only for named minibosses. */
   name?: string
 }
@@ -109,6 +111,7 @@ export interface SpawnPirateOpts {
   archetype?: PirateArchetype
   seed?: number
   name?: string
+  bossKey?: 'vex' | 'captain'
 }
 
 /** Spawn a pirate. `opts.hullMul` toughens it, `opts.reward` overrides payout, `opts.tier`/`opts.name`
@@ -117,6 +120,9 @@ export function spawnPirate(id: string, position: Vector3, opts: SpawnPirateOpts
   const tier = opts.tier ?? 'grunt'
   const archetype = opts.archetype ?? 'chaser'
   const behavior = ARCHETYPE_BEHAVIOR[archetype]
+  const boss: BossRuntime | undefined = opts.bossKey
+    ? { kit: BOSS_KITS[opts.bossKey], abilityCd: BOSS_KITS[opts.bossKey].abilityIntervalSec, telegraphCd: 0, enraged: false }
+    : undefined
   return {
     id,
     position: position.clone(),
@@ -128,6 +134,7 @@ export function spawnPirate(id: string, position: Vector3, opts: SpawnPirateOpts
     archetype,
     seed: opts.seed ?? 0,
     name: opts.name,
+    boss,
   }
 }
 
