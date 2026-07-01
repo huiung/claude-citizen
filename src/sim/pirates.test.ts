@@ -2,12 +2,10 @@ import { describe, expect, it } from 'vitest'
 import { Vector3 } from 'three'
 import { isDead, WEAPON_RANGE } from './combat'
 import {
-  PIRATE_ENGAGE_RANGE, PIRATE_HULL, PIRATE_LEASH_RANGE, PIRATE_REWARD, PIRATE_STANDOFF, shouldDespawnPirate,
-  spawnPirate, spawnPositionAround, stepPirate,
-} from './pirates'
-import {
   ARCHETYPE_BEHAVIOR, pickArchetype, weaveOffset,
-  PIRATE_SPEED, PIRATE_FIRE_INTERVAL, PIRATE_DAMAGE, PIRATE_PROJECTILE_SPEED,
+  PIRATE_DAMAGE, PIRATE_ENGAGE_RANGE, PIRATE_FIRE_INTERVAL, PIRATE_HULL, PIRATE_LEASH_RANGE,
+  PIRATE_PROJECTILE_SPEED, PIRATE_REWARD, PIRATE_SPEED, PIRATE_STANDOFF, shouldDespawnPirate,
+  spawnPirate, spawnPositionAround, stepPirate,
 } from './pirates'
 
 describe('weaveOffset', () => {
@@ -190,6 +188,17 @@ describe('stepPirate archetype behavior', () => {
     stepPirate(chaser, origin, 0.5, 0)
     stepPirate(swarm, origin, 0.5, 0)
     expect(swarm.position.distanceTo(origin)).toBeLessThan(chaser.position.distanceTo(origin))
+  })
+  it('a chaser strafes laterally at nowSec>0 (weave wiring is live)', () => {
+    const start = new Vector3(0, 0, 500)
+    const straight = spawnPirate('a', start.clone(), { archetype: 'chaser', seed: 0.25 })
+    const weaved = spawnPirate('b', start.clone(), { archetype: 'chaser', seed: 0.25 })
+    stepPirate(straight, origin, 0.2, 0)     // weave phase 0 → sin=0 → no lateral offset
+    stepPirate(weaved, origin, 0.2, 0.37)    // weave phase != 0 → lateral offset
+    // same radial approach, but the weaved unit is displaced off the z-axis (x or y != straight's)
+    const dx = Math.abs(weaved.position.x - straight.position.x)
+    const dy = Math.abs(weaved.position.y - straight.position.y)
+    expect(dx + dy).toBeGreaterThan(1e-3)
   })
 })
 
