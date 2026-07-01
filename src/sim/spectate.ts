@@ -10,7 +10,7 @@ export interface FollowPeer {
 
 /** Pick whom Browse should follow. Priority: the showcase bot (name === botName) → else the most
  *  recently active peer → else null (caller falls back to the hub orbit). */
-export function pickFollowTarget(peers: FollowPeer[], currentId: string | null, botName = 'CLAUDE'): string | null {
+export function pickFollowTarget(peers: FollowPeer[], _currentId: string | null, botName = 'CLAUDE'): string | null {
   if (peers.length === 0) return null
   const bot = peers.find((p) => p.name === botName)
   if (bot) return bot.id
@@ -27,4 +27,22 @@ export function cycleFollowTarget(peers: FollowPeer[], currentId: string | null,
   const i = currentId ? ids.indexOf(currentId) : -1
   if (i < 0) return ids[0]
   return ids[(i + dir + ids.length) % ids.length]
+}
+
+export interface ActivityZone { label: string; center: [number, number, number]; radius: number }
+
+/** Describe a pilot's activity by fixed-zone proximity: the label of the first zone whose center is
+ *  within its radius (pass zones in priority order), else `fallback`. Mining isn't position-inferable
+ *  (the ore belt streams around each pilot), so the bot's own chat carries that play-by-play. */
+export function describePilotActivity(
+  position: [number, number, number],
+  zones: ActivityZone[],
+  fallback = 'cruising deep space',
+): string {
+  const [x, y, z] = position
+  for (const zone of zones) {
+    const dx = x - zone.center[0], dy = y - zone.center[1], dz = z - zone.center[2]
+    if (dx * dx + dy * dy + dz * dz <= zone.radius * zone.radius) return zone.label
+  }
+  return fallback
 }

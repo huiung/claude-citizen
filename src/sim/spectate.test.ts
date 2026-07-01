@@ -38,3 +38,30 @@ describe('cycleFollowTarget', () => {
     expect(cycleFollowTarget([], 'a', 1)).toBe('a')
   })
 })
+
+import { describePilotActivity, type ActivityZone } from './spectate'
+
+describe('describePilotActivity', () => {
+  const zones: ActivityZone[] = [
+    { label: 'diving the black hole', center: [1000, 0, 0], radius: 100 },
+    { label: 'in the training arena', center: [0, 0, 0], radius: 50 },
+  ]
+  it('returns the label of the zone the position sits inside', () => {
+    expect(describePilotActivity([1000, 0, 40], zones)).toBe('diving the black hole') // 40 < 100
+    expect(describePilotActivity([0, 30, 0], zones)).toBe('in the training arena')      // 30 < 50
+  })
+  it('first matching zone wins on overlap (priority order)', () => {
+    const overlap: ActivityZone[] = [
+      { label: 'first', center: [0, 0, 0], radius: 100 },
+      { label: 'second', center: [0, 0, 0], radius: 100 },
+    ]
+    expect(describePilotActivity([0, 0, 0], overlap)).toBe('first')
+  })
+  it('uses the fallback when no zone matches', () => {
+    expect(describePilotActivity([9999, 9999, 9999], zones)).toBe('cruising deep space')
+    expect(describePilotActivity([9999, 0, 0], zones, 'idle')).toBe('idle')
+  })
+  it('treats the radius as an inclusive boundary', () => {
+    expect(describePilotActivity([50, 0, 0], [{ label: 'edge', center: [0, 0, 0], radius: 50 }])).toBe('edge')
+  })
+})
