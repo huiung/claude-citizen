@@ -4929,7 +4929,7 @@ function frame(now: number): void {
     }
 
     for (const pirate of pirates) {
-      const r = stepPirate(pirate, ship.position, dt)
+      const r = stepPirate(pirate, ship.position, dt, now / 1000)
       if (r.fired) projectiles.push(r.fired) // pirate fire is silent — many at once would be noise
       const mesh = pirateMeshes.get(pirate.id)
       if (mesh) {

@@ -168,6 +168,31 @@ describe('stepPirate', () => {
   })
 })
 
+describe('stepPirate archetype behavior', () => {
+  const origin = new Vector3(0, 0, 0)
+  it('a lancer fires from long range where a chaser cannot', () => {
+    const far = () => new Vector3(0, 0, 600) // 600u: > chaser engage (320), < lancer engage (900)
+    const chaser = spawnPirate('c', far(), { archetype: 'chaser' })
+    const lancer = spawnPirate('l', far(), { archetype: 'lancer' })
+    expect(stepPirate(chaser, origin, 0.016).fired).toBeNull()      // out of chaser range
+    expect(stepPirate(lancer, origin, 0.016).fired).not.toBeNull()  // in lancer range
+  })
+  it('a lancer bolt carries the lancer damage + speed', () => {
+    const l = spawnPirate('l', new Vector3(0, 0, 600), { archetype: 'lancer' })
+    const r = stepPirate(l, origin, 0.016)
+    expect(r.fired!.damage).toBe(ARCHETYPE_BEHAVIOR.lancer.damage)
+    expect(r.fired!.velocity.length()).toBeCloseTo(ARCHETYPE_BEHAVIOR.lancer.projSpeed, 3)
+  })
+  it('a swarm unit closes faster than a chaser over the same step', () => {
+    const start = new Vector3(0, 0, 500)
+    const chaser = spawnPirate('c', start.clone(), { archetype: 'chaser' })
+    const swarm = spawnPirate('s', start.clone(), { archetype: 'swarm' })
+    stepPirate(chaser, origin, 0.5, 0)
+    stepPirate(swarm, origin, 0.5, 0)
+    expect(swarm.position.distanceTo(origin)).toBeLessThan(chaser.position.distanceTo(origin))
+  })
+})
+
 describe('leash despawn', () => {
   it('PIRATE_LEASH_RANGE sits beyond weapon range so a dogfight never culls a pirate', () => {
     expect(PIRATE_LEASH_RANGE).toBeGreaterThan(WEAPON_RANGE)

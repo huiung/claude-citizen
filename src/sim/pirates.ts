@@ -138,7 +138,8 @@ const _toTarget = new Vector3()
  *  - inside standoff: back off (avoid hugging the player)
  * Mutates the pirate's position/velocity/weapon. Returns any shot fired.
  */
-export function stepPirate(pirate: Pirate, targetPos: Vector3, dt: number): PirateStepResult {
+export function stepPirate(pirate: Pirate, targetPos: Vector3, dt: number, nowSec = 0): PirateStepResult {
+  const b = ARCHETYPE_BEHAVIOR[pirate.archetype]
   pirate.weapon.cooldown = Math.max(0, pirate.weapon.cooldown - dt)
 
   _toTarget.subVectors(targetPos, pirate.position)
@@ -146,16 +147,21 @@ export function stepPirate(pirate: Pirate, targetPos: Vector3, dt: number): Pira
   const dir = dist > 1e-6 ? _toTarget.clone().multiplyScalar(1 / dist) : new Vector3(0, 0, -1)
 
   let speed: number
-  if (dist > PIRATE_ENGAGE_RANGE) speed = PIRATE_SPEED
-  else if (dist < PIRATE_STANDOFF) speed = -PIRATE_SPEED * 0.6 // back off
-  else speed = PIRATE_SPEED * 0.25 // hold and harass
+  if (dist > b.engageRange) speed = b.speed
+  else if (dist < b.standoff) speed = -b.speed * 0.6 // back off
+  else speed = b.speed * 0.25 // hold and harass
 
+  // Radial move toward/away from the target, plus a perpendicular weave strafe (chaser/swarm).
   pirate.velocity.copy(dir).multiplyScalar(speed)
   pirate.position.addScaledVector(pirate.velocity, dt)
+  if (b.weaveAmp > 0) {
+    const w = weaveOffset(nowSec, b.weaveAmp, b.weaveRate, pirate.seed, dir)
+    pirate.position.addScaledVector(w, dt)
+  }
 
   let fired: Projectile | null = null
-  if (dist <= PIRATE_ENGAGE_RANGE && pirate.weapon.cooldown <= 0) {
-    fired = spawnProjectile(pirate.position, dir, 'pirate', PIRATE_PROJECTILE_SPEED, PIRATE_DAMAGE)
+  if (dist <= b.engageRange && pirate.weapon.cooldown <= 0) {
+    fired = spawnProjectile(pirate.position, dir, 'pirate', b.projSpeed, b.damage) // aim stays straight at target
     pirate.weapon.cooldown = pirate.weapon.interval
   }
   return { fired }
