@@ -104,6 +104,7 @@ import { BLACK_HOLE_APPROACH_DESTINATION, BLACK_HOLE_CENTER, distanceToCenter, g
 import { createBlackHoleRun, enterRun, sampleRun, exitRunAlive, dieRun } from './sim/blackHoleRun'
 import { type DailyState, type Objective, type ObjectiveKind, OBJECTIVE_REWARD, SET_BONUS, STREAK_REWARD_CAP, dailyObjectives, dayKey, emptyDaily, rollStreak } from './sim/daily'
 import { nextJourneyGoal } from './sim/journey'
+import { pickFollowTarget, cycleFollowTarget, type FollowPeer } from './sim/spectate'
 import { GameAudio, type RegionalAmbienceKind } from './audio/sound'
 import { StationMenu } from './ui/stationMenu'
 import { InventoryPanel } from './ui/inventory'
@@ -3274,6 +3275,11 @@ addEventListener('keydown', (e) => {
     return
   }
   keys.add(e.code)
+  if (e.code === 'Tab' && running && spectating) {
+    e.preventDefault() // don't let Tab move DOM focus out of the canvas
+    followId = cycleFollowTarget(browseFollowPeers(), followId, e.shiftKey ? -1 : 1)
+    return
+  }
   if (e.code === 'KeyV') {
     assist = !assist
     assistEl.textContent = assist ? 'COUPLED' : 'DECOUPLED'
@@ -3978,8 +3984,23 @@ const G_SWAY_RESP = 6   // spring stiffness
 // No player ship exists in Browse, so we never read ship.*.
 const SPECTATE_ANCHOR = new THREE.Vector3(0, 0, 0)
 const SPECTATE_ORBIT_DISTANCE = 600 // frames the station ring + nearby spawned pilots
+let followId: string | null = null
+function browseFollowPeers(): FollowPeer[] {
+  return [...remotes.values()].map((r) => ({
+    id: r.peer.id,
+    name: r.peer.name,
+    position: [r.mesh.position.x, r.mesh.position.y, r.mesh.position.z],
+    lastActiveAt: r.peer.receivedAt,
+  }))
+}
 function updateCamera(dt: number): void {
   if (spectating) {
+    // Auto-pick a live pilot to follow when we have none or the current one left (a manual Tab pick
+    // sticks until that peer despawns). The CLAUDE bot is the reliable default; a real player else.
+    if (followId === null || !remotes.has(followId)) followId = pickFollowTarget(browseFollowPeers(), followId)
+    const followed = followId ? remotes.get(followId) : null
+    const anchorTarget = followed ? followed.mesh.position : station.position // no one online → ease back to the hub
+    SPECTATE_ANCHOR.lerp(anchorTarget, 1 - Math.exp(-3 * dt)) // smooth: absorbs interpolated-peer jitter
     cameraOrbitElapsed += dt
     camera.position.copy(SPECTATE_ANCHOR).add(orbitCameraOffset(cameraOrbitElapsed, 0, SPECTATE_ORBIT_DISTANCE))
     camera.lookAt(SPECTATE_ANCHOR)
@@ -4057,6 +4078,7 @@ function enterBrowseMode(): void {
   running = true // needed so the frame loop renders + peers interpolate
   // station is a module-level Group (buildStation) created at load, so .position is always present.
   SPECTATE_ANCHOR.copy(station.position) // orbit the refinery hub — visible content + where pilots spawn/cluster
+  followId = null // fresh Browse: re-pick a target next frame
   cameraOrbitElapsed = 0 // start the orbit fresh so the first Browse frame faces the hub
   scene.remove(shipMesh) // no player ship in Browse
   if (statsTimer) clearInterval(statsTimer) // stop the landing-stats poll like launch() does
@@ -4122,6 +4144,7 @@ nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') launch() 
 browseBtnEl.addEventListener('click', () => enterBrowseMode())
 browseBackEl.addEventListener('click', () => {
   spectating = false
+  followId = null
   running = false
   browseBannerEl.hidden = true
   overlayEl.classList.remove('hidden')
