@@ -720,6 +720,7 @@ export function buildSolarPlanet(
       }),
     )
     ring.rotation.x = Math.PI / 2.3
+    ring.renderOrder = 1 // draw after the atmosphere shell — don't rely on object-id tie-breaking
     group.add(ring)
   }
   return group

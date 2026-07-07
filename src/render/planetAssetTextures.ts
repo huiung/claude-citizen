@@ -3,6 +3,8 @@ import * as THREE from 'three'
 // Real-imagery maps for the named solar system (NASA-derived, public domain).
 // Earth is deliberately absent: its orbit view must stay consistent with the
 // procedural landing terrain, so it keeps the generated texture.
+// Saturn is also absent: no public-domain surface map exists; it stays procedural
+// with banded rings instead.
 const ASSET_ROOT = '/textures/planets'
 
 export interface PlanetAssetUrls {
@@ -15,7 +17,6 @@ const PLANET_ASSET_URLS: Readonly<Record<string, PlanetAssetUrls>> = {
   Venus: { map: `${ASSET_ROOT}/venus.jpg` },
   Mars: { map: `${ASSET_ROOT}/mars.jpg` },
   Jupiter: { map: `${ASSET_ROOT}/jupiter.jpg` },
-  Saturn: { map: `${ASSET_ROOT}/saturn.jpg` },
 }
 
 export function planetAssetUrls(name: string): PlanetAssetUrls | null {
@@ -34,23 +35,29 @@ export async function loadPlanetAssetTextures(name: string, anisotropy = 8): Pro
   const urls = planetAssetUrls(name)
   if (!urls) return null
   const loader = new THREE.TextureLoader()
+  let map: THREE.Texture | undefined
   try {
-    const [map, normalMap] = await Promise.all([
+    const [loadedMap, normalMap] = await Promise.all([
       loader.loadAsync(urls.map),
       urls.normalMap ? loader.loadAsync(urls.normalMap) : Promise.resolve(undefined),
     ])
+    map = loadedMap
     map.colorSpace = THREE.SRGBColorSpace
     map.anisotropy = anisotropy
     if (normalMap) normalMap.anisotropy = anisotropy
     return { map, normalMap }
   } catch {
+    map?.dispose()
     return null
   }
 }
 
 /** Swap a built solar-planet group's surfaces over to real-imagery maps. Surface meshes are
  *  the MeshStandardMaterial ones — atmosphere/clouds/rings use Basic/Shader materials.
- *  Returns how many materials were updated (every LOD level counts). */
+ *  Returns how many materials were updated (every LOD level counts).
+ *  NOTE: the replaced procedural maps must NOT be disposed here — they belong to the shared
+ *  texture caches in planetTextures.ts; disposing them would corrupt cache entries reused
+ *  by other builds. */
 export function applyPlanetAssetTextures(group: THREE.Object3D, assets: PlanetAssetTextures): number {
   let applied = 0
   group.traverse((obj) => {

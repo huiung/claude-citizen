@@ -3,17 +3,18 @@ import * as THREE from 'three'
 import { applyPlanetAssetTextures, planetAssetUrls } from './planetAssetTextures'
 
 describe('planetAssetUrls', () => {
-  it('maps the five real-imagery planets to /textures/planets files', () => {
+  it('maps the four real-imagery planets to /textures/planets files', () => {
     expect(planetAssetUrls('Mercury')?.map).toBe('/textures/planets/mercury.jpg')
     expect(planetAssetUrls('Venus')?.map).toBe('/textures/planets/venus.jpg')
     expect(planetAssetUrls('Mars')?.map).toBe('/textures/planets/mars.jpg')
     expect(planetAssetUrls('Jupiter')?.map).toBe('/textures/planets/jupiter.jpg')
-    expect(planetAssetUrls('Saturn')?.map).toBe('/textures/planets/saturn.jpg')
   })
 
   it('returns null for Earth (orbit view must match procedural landing terrain) and unknown bodies', () => {
     expect(planetAssetUrls('Earth')).toBeNull()
     expect(planetAssetUrls('XQ-77')).toBeNull()
+    // no public-domain Saturn map exists — stays procedural
+    expect(planetAssetUrls('Saturn')).toBeNull()
   })
 })
 
