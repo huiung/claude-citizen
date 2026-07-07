@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three'
-import { applyPlanetAssetTextures, planetAssetUrls } from './planetAssetTextures'
+import { applyPlanetAssetTextures, loadPlanetAssetTextures, planetAssetUrls } from './planetAssetTextures'
 
 describe('planetAssetUrls', () => {
   it('maps the five real-imagery planets to /textures/planets files', () => {
@@ -22,6 +22,30 @@ describe('planetAssetUrls', () => {
     expect(planetAssetUrls('Mars')?.normalMap).toBe('/textures/planets/mars-normal.jpg')
     expect(planetAssetUrls('Earth')?.normalMap).toBeUndefined()
     expect(planetAssetUrls('Jupiter')?.normalMap).toBeUndefined()
+  })
+})
+
+describe('loadPlanetAssetTextures failure paths', () => {
+  it('a failed normal map is non-fatal — albedo still applies (matches pre-normal behavior)', async () => {
+    const map = new THREE.Texture()
+    const spy = vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockImplementation((url: string) =>
+      url.includes('-normal') ? Promise.reject(new Error('404')) : Promise.resolve(map),
+    )
+    const result = await loadPlanetAssetTextures('Mercury')
+    expect(result?.map).toBe(map)
+    expect(result?.normalMap).toBeUndefined()
+    spy.mockRestore()
+  })
+
+  it('a failed albedo is fatal — any loaded normal is disposed and null returned', async () => {
+    const normal = new THREE.Texture()
+    const disposeSpy = vi.spyOn(normal, 'dispose')
+    const spy = vi.spyOn(THREE.TextureLoader.prototype, 'loadAsync').mockImplementation((url: string) =>
+      url.includes('-normal') ? Promise.resolve(normal) : Promise.reject(new Error('404')),
+    )
+    expect(await loadPlanetAssetTextures('Mercury')).toBeNull()
+    expect(disposeSpy).toHaveBeenCalled()
+    spy.mockRestore()
   })
 })
 

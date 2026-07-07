@@ -30,8 +30,9 @@ export interface PlanetAssetTextures {
 }
 
 /** Load the real-imagery maps for a named planet. Resolves null when the planet has no
- *  assets (procedural bodies) or a file fails to load — the caller keeps the
- *  procedural look, so a 404/offline can never break the scene. */
+ *  assets (procedural bodies) or the albedo fails to load — the caller keeps the
+ *  procedural look, so a 404/offline can never break the scene. A failed normal map is
+ *  non-fatal: the albedo still applies, matching the pre-normal behavior. */
 export async function loadPlanetAssetTextures(name: string, anisotropy = 8): Promise<PlanetAssetTextures | null> {
   const urls = planetAssetUrls(name)
   if (!urls) return null
@@ -42,12 +43,12 @@ export async function loadPlanetAssetTextures(name: string, anisotropy = 8): Pro
   ])
   const map = mapResult.status === 'fulfilled' ? mapResult.value : undefined
   const normalMap = normalResult.status === 'fulfilled' ? normalResult.value : undefined
-  if (mapResult.status === 'rejected' || normalResult.status === 'rejected') {
-    // one file failed — dispose whatever did load and keep the procedural look
-    map?.dispose()
+  if (mapResult.status === 'rejected') {
+    // albedo is mandatory — dispose any loaded normal and keep the procedural look
     normalMap?.dispose()
     return null
   }
+  // a missing/failed normal map is non-fatal: albedo alone matches the pre-normal behavior
   if (!map) return null
   map.colorSpace = THREE.SRGBColorSpace
   map.anisotropy = anisotropy
