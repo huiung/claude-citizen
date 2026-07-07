@@ -7,7 +7,7 @@ import {
 } from './planetTextures'
 import { createRingTexture, remapRingUVs } from './planetRings'
 import { makeAsteroidMaterial, makeOreMaterial } from './asteroidTextures'
-import { buildStarSky } from './starSky'
+import { buildStarSky, MILKY_WAY_NORMAL } from './starSky'
 
 /** Deterministic pseudo-random — same world for every visitor, no assets. */
 function mulberry32(seed: number) {
@@ -25,8 +25,8 @@ export function buildStarfield(): THREE.Points {
 }
 
 /** Procedural deep-space backdrop: a huge inward-facing sphere whose fragment shader
- *  paints fbm "nebula" clouds and a brighter Milky-Way band. Additive + depth-disabled
- *  so it always reads as the sky behind everything. Caller keeps it centred on the player. */
+ *  paints domain-warped fbm nebulosity anchored to the shared milky-way plane, with
+ *  dark dust lanes carving the band core. Additive + depth-disabled sky. */
 export function buildNebula(): THREE.Mesh {
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
@@ -35,9 +35,10 @@ export function buildNebula(): THREE.Mesh {
     transparent: true,
     blending: THREE.AdditiveBlending,
     uniforms: {
-      uColorA: { value: new THREE.Color(0x2a1a4a) }, // violet
-      uColorB: { value: new THREE.Color(0x103a5a) }, // teal-blue
-      uColorC: { value: new THREE.Color(0x4a1c34) }, // dim magenta
+      uColorA: { value: new THREE.Color(0x232838) }, // slate
+      uColorB: { value: new THREE.Color(0x1a3040) }, // dim teal
+      uColorC: { value: new THREE.Color(0x3a2c34) }, // dusty rose
+      uBandNormal: { value: MILKY_WAY_NORMAL.clone() },
     },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
@@ -50,6 +51,7 @@ export function buildNebula(): THREE.Mesh {
       precision highp float;
       varying vec3 vDir;
       uniform vec3 uColorA, uColorB, uColorC;
+      uniform vec3 uBandNormal;
       float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
       float noise(vec3 x){
         vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
@@ -59,16 +61,23 @@ export function buildNebula(): THREE.Mesh {
                        mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
       }
       float fbm(vec3 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ s += a * noise(p); p *= 2.03; a *= 0.5; } return s; }
+      float fbm6(vec3 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 6; i++){ s += a * noise(p); p *= 2.03; a *= 0.5; } return s; }
       void main(){
         vec3 d = normalize(vDir);
-        float n = fbm(d * 3.0);
-        float n2 = fbm(d * 6.0 + 4.0);
-        float band = pow(1.0 - abs(d.y), 3.0); // bright belt across the y=0 plane
-        float cloud = smoothstep(0.45, 0.95, n) * 0.8 + band * 0.5 * smoothstep(0.3, 0.8, n2);
+        // Domain warp — bends the fbm field into filaments/swirls instead of round blobs.
+        vec3 w = vec3(fbm(d * 2.4 + 17.3), fbm(d * 2.4 + 9.2), fbm(d * 2.4 + 31.7));
+        vec3 q = d + 0.55 * (w - vec3(0.5));
+        float n = fbm6(q * 3.0);
+        float n2 = fbm(q * 6.0 + 4.0);
+        // Bright belt hugs the shared galactic plane; dust lanes carve its core.
+        float band = pow(1.0 - abs(dot(d, uBandNormal)), 4.0);
+        float dust = smoothstep(0.55, 0.8, fbm(d * 5.0 + 47.0)) * band;
+        float cloud = smoothstep(0.5, 0.95, n) * 0.5 + band * 0.55 * smoothstep(0.3, 0.8, n2);
+        cloud *= 1.0 - 0.75 * dust;
         vec3 col = mix(uColorA, uColorB, n2);
-        col = mix(col, uColorC, smoothstep(0.5, 1.0, n));
-        col += vec3(0.55, 0.65, 0.9) * band * 0.3;
-        float intensity = cloud * 0.55;
+        col = mix(col, uColorC, smoothstep(0.55, 1.0, n));
+        col += vec3(0.62, 0.66, 0.72) * band * 0.35 * (1.0 - dust);
+        float intensity = cloud * 0.5;
         gl_FragColor = vec4(col * intensity, intensity);
       }
     `,
