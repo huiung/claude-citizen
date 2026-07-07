@@ -1246,7 +1246,7 @@ function upgradeNextPlanet(now: number): void {
       upgraded.rotation.copy(old.rotation)
       upgraded.userData.spin = old.userData.spin
       upgraded.userData.planetIdx = next.idx
-      if (assets) applyPlanetAssetTextures(upgraded, assets)
+      if (assets) applyPlanetAssetTextures(upgraded, assets, { keepProceduralCloseup: next.planet.surface === 'earth' })
       scene.remove(old)
       disposeObject(old)
       scene.add(upgraded)

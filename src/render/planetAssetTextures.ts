@@ -1,10 +1,10 @@
 import * as THREE from 'three'
 
-// Real-imagery maps for the named solar system (NASA-derived, public domain).
-// Earth is deliberately absent: its orbit view must stay consistent with the
-// procedural landing terrain, so it keeps the generated texture.
-// Saturn is also absent: no public-domain surface map exists; it stays procedural
-// with banded rings instead.
+// Real-imagery maps for the named solar system (NASA/USGS-derived, public domain).
+// Earth is LOD-limited: the closest level keeps the procedural texture so the up-close
+// look stays consistent with the procedural landing terrain and collision (see
+// applyPlanetAssetTextures's keepProceduralCloseup). Saturn is absent: no public-domain
+// surface map exists; it stays procedural with banded rings instead.
 const ASSET_ROOT = '/textures/planets'
 
 export interface PlanetAssetUrls {
@@ -13,9 +13,10 @@ export interface PlanetAssetUrls {
 }
 
 const PLANET_ASSET_URLS: Readonly<Record<string, PlanetAssetUrls>> = {
-  Mercury: { map: `${ASSET_ROOT}/mercury.jpg` },
+  Mercury: { map: `${ASSET_ROOT}/mercury.jpg`, normalMap: `${ASSET_ROOT}/mercury-normal.jpg` },
   Venus: { map: `${ASSET_ROOT}/venus.jpg` },
-  Mars: { map: `${ASSET_ROOT}/mars.jpg` },
+  Earth: { map: `${ASSET_ROOT}/earth.jpg` },
+  Mars: { map: `${ASSET_ROOT}/mars.jpg`, normalMap: `${ASSET_ROOT}/mars-normal.jpg` },
   Jupiter: { map: `${ASSET_ROOT}/jupiter.jpg` },
 }
 
@@ -29,7 +30,7 @@ export interface PlanetAssetTextures {
 }
 
 /** Load the real-imagery maps for a named planet. Resolves null when the planet has no
- *  assets (Earth, procedural bodies) or a file fails to load — the caller keeps the
+ *  assets (procedural bodies) or a file fails to load — the caller keeps the
  *  procedural look, so a 404/offline can never break the scene. */
 export async function loadPlanetAssetTextures(name: string, anisotropy = 8): Promise<PlanetAssetTextures | null> {
   const urls = planetAssetUrls(name)
@@ -54,16 +55,32 @@ export async function loadPlanetAssetTextures(name: string, anisotropy = 8): Pro
   return { map, normalMap }
 }
 
+export interface ApplyPlanetAssetOptions {
+  /** Earth: keep the procedural map on the CLOSEST LOD level so the up-close look stays
+   *  consistent with the procedural landing terrain and collision heights. */
+  keepProceduralCloseup?: boolean
+}
+
 /** Swap a built solar-planet group's surfaces over to real-imagery maps. Surface meshes are
  *  the MeshStandardMaterial ones — atmosphere/clouds/rings use Basic/Shader materials.
- *  Returns how many materials were updated (every LOD level counts).
+ *  Returns how many materials were updated (every LOD level counts unless skipped).
  *  NOTE: the replaced procedural maps must NOT be disposed here — they belong to the shared
  *  texture caches in planetTextures.ts; disposing them would corrupt cache entries reused
  *  by other builds. */
-export function applyPlanetAssetTextures(group: THREE.Object3D, assets: PlanetAssetTextures): number {
+export function applyPlanetAssetTextures(
+  group: THREE.Object3D,
+  assets: PlanetAssetTextures,
+  options: ApplyPlanetAssetOptions = {},
+): number {
+  const skip = new Set<THREE.Object3D>()
+  if (options.keepProceduralCloseup) {
+    group.traverse((obj) => {
+      if (obj instanceof THREE.LOD && obj.levels.length > 0) skip.add(obj.levels[0].object)
+    })
+  }
   let applied = 0
   group.traverse((obj) => {
-    if (!(obj instanceof THREE.Mesh)) return
+    if (!(obj instanceof THREE.Mesh) || skip.has(obj)) return
     const material = obj.material
     if (!(material instanceof THREE.MeshStandardMaterial)) return
     material.map = assets.map
