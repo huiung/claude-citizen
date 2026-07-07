@@ -51,6 +51,7 @@ import { makeAsteroidMaterial } from './render/asteroidTextures'
 import { engineGlowStyle, type EngineGlowStyle } from './render/engineGlow'
 import { createSeasonHubLifeRig, updateSeasonHubLifeRig } from './render/seasonHub'
 import { buildBlackHole } from './render/blackHole'
+import { applyPlanetAssetTextures, loadPlanetAssetTextures } from './render/planetAssetTextures'
 import { cancelTravel, catchUpQuantum, createQuantum, cycleQuantumDestinationIndex, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
   createTimeTrial,
@@ -1220,9 +1221,12 @@ function upgradeNextPlanet(now: number): void {
   planetUpgradeInFlight = true
   nextPlanetUpgradeAt = Infinity
   void (async () => {
-    // Compute the heavy 2K texture off the main thread first, so the synchronous build below is all
-    // cache hits (a ~20ms geometry pass) instead of a ~2s freeze.
-    await prewarmHighPlanetTextures(next.planet.radius, next.planet.surface, next.planet.seed, next.planet.color)
+    // Fetch the real-imagery maps (if this planet has them) while the worker prewarms the
+    // procedural fallback — whichever the swap ends up using, nothing blocks the main thread.
+    const [assets] = await Promise.all([
+      loadPlanetAssetTextures(next.planet.name, renderer.capabilities.getMaxAnisotropy()),
+      prewarmHighPlanetTextures(next.planet.radius, next.planet.surface, next.planet.seed, next.planet.color),
+    ])
     const old = planetGroups[next.idx]
     const upgraded = buildSolarPlanet(
       next.planet.radius,
@@ -1236,6 +1240,7 @@ function upgradeNextPlanet(now: number): void {
     upgraded.rotation.copy(old.rotation)
     upgraded.userData.spin = old.userData.spin
     upgraded.userData.planetIdx = next.idx
+    if (assets) applyPlanetAssetTextures(upgraded, assets)
     scene.remove(old)
     disposeObject(old)
     scene.add(upgraded)
