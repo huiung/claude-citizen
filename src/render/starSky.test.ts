@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { MILKY_WAY_NORMAL, buildStarSky, computeStarAttributes, starTemperatureColor } from './starSky'
+import { MILKY_WAY_NORMAL, buildStarSky, computeStarAttributes, setStarSkyScale, starTemperatureColor } from './starSky'
 
 describe('starTemperatureColor', () => {
   it('is warm (r>g>b) at t=0 and blue-leaning (b>r) at t=1', () => {
@@ -74,5 +74,11 @@ describe('buildStarSky', () => {
     expect(mat.blending).toBe(THREE.AdditiveBlending)
     expect(mat.vertexColors).toBe(true)
     expect(mat.uniforms.uScale.value).toBe(900)
+  })
+
+  it('setStarSkyScale keys point attenuation to half the drawing-buffer height (DPR-aware)', () => {
+    const points = buildStarSky(10, 1)
+    setStarSkyScale(points, 2100) // e.g. 1050px CSS height at dpr 2
+    expect((points.material as THREE.ShaderMaterial).uniforms.uScale.value).toBe(1050)
   })
 })

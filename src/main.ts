@@ -28,6 +28,7 @@ import {
   buildCapitalShip, buildDustField, buildLootCrate, buildNebula, buildSolarPlanet, buildStarfield, buildStation,
   buildMuchLaunchTower, buildRareFrogShrine, buildSun, buildWarpField, COLONY_POS, prewarmHighPlanetTextures, REFINERY_POS, SPAWN_PLANET, updateDustField, updateWarpField,
 } from './render/world'
+import { setStarSkyScale } from './render/starSky'
 import { PLANETS, planetDockPosition, SUN_COLOR, SUN_POSITION, SUN_RADIUS, type SurfaceKind } from './sim/solarSystem'
 import { NetClient, type MarketActionResult, type MarketIntentResult, type MarketListing, type PeerState, type PlayerProgress } from './net/client'
 import { dockableTarget, DOCK_RANGE, type DockTarget } from './sim/docking'
@@ -886,6 +887,10 @@ composer.addPass(bloomPass)
 const nebula = buildNebula()
 scene.add(nebula)
 const starfield = buildStarfield()
+// Star point attenuation tracks the physical drawing buffer (incl. devicePixelRatio),
+// matching the old PointsMaterial sizing. Re-keyed on every resize below.
+const starBufSize = new THREE.Vector2()
+setStarSkyScale(starfield, renderer.getDrawingBufferSize(starBufSize).y)
 scene.add(starfield, buildPlanet(), buildAsteroids())
 
 const dustField = buildDustField() // parallax motes — sense of speed in flight
@@ -4304,6 +4309,7 @@ addEventListener('resize', () => {
   labelRenderer.setSize(innerWidth, innerHeight)
   combatCanvas.width = innerWidth
   combatCanvas.height = innerHeight
+  setStarSkyScale(starfield, renderer.getDrawingBufferSize(starBufSize).y)
 })
 
 // --- Main loop

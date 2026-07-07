@@ -99,7 +99,7 @@ export function buildStarSky(count = 18000, seed = 42): THREE.Points {
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     vertexColors: true, // injects the `color` attribute declaration into the shader
-    uniforms: { uScale: { value: 900 } }, // ≈ half the drawing-buffer height, matches PointsMaterial attenuation
+    uniforms: { uScale: { value: 900 } }, // fallback only — replaced via setStarSkyScale on init/resize
     vertexShader: /* glsl */ `
       attribute float aSize;
       varying vec3 vColor;
@@ -120,4 +120,11 @@ export function buildStarSky(count = 18000, seed = 42): THREE.Points {
     `,
   })
   return new THREE.Points(geo, mat)
+}
+
+/** Match the old PointsMaterial attenuation: point scale is half the DRAWING BUFFER height
+ *  (physical pixels, so devicePixelRatio is included). Call on init and on every resize. */
+export function setStarSkyScale(sky: THREE.Points, drawingBufferHeight: number): void {
+  const mat = sky.material as THREE.ShaderMaterial
+  mat.uniforms.uScale.value = drawingBufferHeight * 0.5
 }
