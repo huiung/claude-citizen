@@ -1221,35 +1221,40 @@ function upgradeNextPlanet(now: number): void {
   planetUpgradeInFlight = true
   nextPlanetUpgradeAt = Infinity
   void (async () => {
-    // Fetch the real-imagery maps (if this planet has them) while the worker prewarms the
-    // procedural fallback — whichever the swap ends up using, nothing blocks the main thread.
-    const [assets] = await Promise.all([
-      loadPlanetAssetTextures(next.planet.name, renderer.capabilities.getMaxAnisotropy()),
-      prewarmHighPlanetTextures(next.planet.radius, next.planet.surface, next.planet.seed, next.planet.color),
-    ])
-    const old = planetGroups[next.idx]
-    const upgraded = buildSolarPlanet(
-      next.planet.radius,
-      next.planet.color,
-      next.planet.hasRings,
-      next.planet.surface,
-      next.planet.seed,
-      { quality: 'high' },
-    )
-    upgraded.position.copy(next.planet.position)
-    upgraded.rotation.copy(old.rotation)
-    upgraded.userData.spin = old.userData.spin
-    upgraded.userData.planetIdx = next.idx
-    if (assets) applyPlanetAssetTextures(upgraded, assets)
-    scene.remove(old)
-    disposeObject(old)
-    scene.add(upgraded)
-    planetGroups[next.idx] = upgraded
-    planetUpgraded.add(next.idx)
-    rebuildPlanetLODs()
-    planetUpgradeInFlight = false
-    planetUpgradeIdleSince = 0
-    nextPlanetUpgradeAt = performance.now() + PLANET_UPGRADE_BETWEEN_MS
+    try {
+      // Fetch the real-imagery maps (if this planet has them) while the worker prewarms the
+      // procedural fallback — whichever the swap ends up using, nothing blocks the main thread.
+      const [assets] = await Promise.all([
+        loadPlanetAssetTextures(next.planet.name, renderer.capabilities.getMaxAnisotropy()),
+        prewarmHighPlanetTextures(next.planet.radius, next.planet.surface, next.planet.seed, next.planet.color),
+      ])
+      const old = planetGroups[next.idx]
+      const upgraded = buildSolarPlanet(
+        next.planet.radius,
+        next.planet.color,
+        next.planet.hasRings,
+        next.planet.surface,
+        next.planet.seed,
+        { quality: 'high' },
+      )
+      upgraded.position.copy(next.planet.position)
+      upgraded.rotation.copy(old.rotation)
+      upgraded.userData.spin = old.userData.spin
+      upgraded.userData.planetIdx = next.idx
+      if (assets) applyPlanetAssetTextures(upgraded, assets)
+      scene.remove(old)
+      disposeObject(old)
+      scene.add(upgraded)
+      planetGroups[next.idx] = upgraded
+      planetUpgraded.add(next.idx)
+      rebuildPlanetLODs()
+      planetUpgradeIdleSince = 0
+    } finally {
+      // Always release the in-flight flag and reschedule — a prewarm/build failure must not
+      // leave nextPlanetUpgradeAt at Infinity and kill the upgrade loop forever.
+      planetUpgradeInFlight = false
+      nextPlanetUpgradeAt = performance.now() + PLANET_UPGRADE_BETWEEN_MS
+    }
   })()
 }
 

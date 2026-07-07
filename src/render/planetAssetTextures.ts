@@ -35,21 +35,23 @@ export async function loadPlanetAssetTextures(name: string, anisotropy = 8): Pro
   const urls = planetAssetUrls(name)
   if (!urls) return null
   const loader = new THREE.TextureLoader()
-  let map: THREE.Texture | undefined
-  try {
-    const [loadedMap, normalMap] = await Promise.all([
-      loader.loadAsync(urls.map),
-      urls.normalMap ? loader.loadAsync(urls.normalMap) : Promise.resolve(undefined),
-    ])
-    map = loadedMap
-    map.colorSpace = THREE.SRGBColorSpace
-    map.anisotropy = anisotropy
-    if (normalMap) normalMap.anisotropy = anisotropy
-    return { map, normalMap }
-  } catch {
+  const [mapResult, normalResult] = await Promise.allSettled([
+    loader.loadAsync(urls.map),
+    urls.normalMap ? loader.loadAsync(urls.normalMap) : Promise.resolve(undefined),
+  ])
+  const map = mapResult.status === 'fulfilled' ? mapResult.value : undefined
+  const normalMap = normalResult.status === 'fulfilled' ? normalResult.value : undefined
+  if (mapResult.status === 'rejected' || normalResult.status === 'rejected') {
+    // one file failed — dispose whatever did load and keep the procedural look
     map?.dispose()
+    normalMap?.dispose()
     return null
   }
+  if (!map) return null
+  map.colorSpace = THREE.SRGBColorSpace
+  map.anisotropy = anisotropy
+  if (normalMap) normalMap.anisotropy = anisotropy
+  return { map, normalMap }
 }
 
 /** Swap a built solar-planet group's surfaces over to real-imagery maps. Surface meshes are
