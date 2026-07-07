@@ -4,6 +4,7 @@ import { SUN_POSITION } from '../sim/solarSystem'
 import {
   generateCloudTexture, generateCloudTextureAsync, generatePlanetTextures, generatePlanetTexturesAsync, samplePlanetSurface,
 } from './planetTextures'
+import { createRingTexture, remapRingUVs } from './planetRings'
 import { makeAsteroidMaterial, makeOreMaterial } from './asteroidTextures'
 
 /** Deterministic pseudo-random — same world for every visitor, no assets. */
@@ -653,7 +654,7 @@ function makePlanetSurface(
   const material = new THREE.MeshStandardMaterial({
     map: maps.colorMap,
     bumpMap: maps.bumpMap,
-    bumpScale: radius * 0.018,
+    bumpScale: radius * 0.032,
     roughness: isGas ? 0.72 : 0.96,
     metalness: 0,
   })
@@ -677,7 +678,7 @@ export function buildSolarPlanet(
   const quality = options.quality ?? 'startup'
   const startupTextureSize = options.startupTextureSize ?? 512
   if (isGas) {
-    group.add(makePlanetSurface(radius, color, surface, seed, 4, 1, quality === 'high' ? undefined : startupTextureSize))
+    group.add(makePlanetSurface(radius, color, surface, seed, 6, 1, quality === 'high' ? undefined : startupTextureSize))
   } else if (quality === 'high') {
     const lod = new THREE.LOD()
     lod.addLevel(makePlanetSurface(radius, color, surface, seed, 8, 1.6), 0) // up close: highest tessellation + tallest terrain
@@ -685,7 +686,7 @@ export function buildSolarPlanet(
     lod.addLevel(makePlanetSurface(radius, color, surface, seed, 4, 0.5), radius * 4.5) // far: low-poly, flatter
     group.add(lod)
   } else {
-    group.add(makePlanetSurface(radius, color, surface, seed, 4, 0.8, startupTextureSize))
+    group.add(makePlanetSurface(radius, color, surface, seed, 6, 0.8, startupTextureSize))
   }
 
   // Fresnel atmosphere — glowing limb tinted by kind (denser air ⇒ softer, wider falloff)
@@ -704,9 +705,19 @@ export function buildSolarPlanet(
   }
 
   if (hasRings) {
+    const inner = radius * 1.4
+    const outer = radius * 2.3
+    const ringGeo = new THREE.RingGeometry(inner, outer, 96)
+    remapRingUVs(ringGeo, inner, outer)
     const ring = new THREE.Mesh(
-      new THREE.RingGeometry(radius * 1.4, radius * 2.3, 96),
-      new THREE.MeshBasicMaterial({ color: 0xccbb99, transparent: true, opacity: 0.5, side: THREE.DoubleSide }),
+      ringGeo,
+      new THREE.MeshBasicMaterial({
+        map: createRingTexture(512, seed),
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
     )
     ring.rotation.x = Math.PI / 2.3
     group.add(ring)
