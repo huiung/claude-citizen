@@ -6,6 +6,7 @@ import {
 } from './planetTextures'
 import { createRingTexture, remapRingUVs } from './planetRings'
 import { makeAsteroidMaterial, makeOreMaterial } from './asteroidTextures'
+import { buildStarSky } from './starSky'
 
 /** Deterministic pseudo-random — same world for every visitor, no assets. */
 function mulberry32(seed: number) {
@@ -18,28 +19,8 @@ function mulberry32(seed: number) {
 }
 
 export function buildStarfield(): THREE.Points {
-  const rand = mulberry32(42)
-  const count = 6000
-  const positions = new Float32Array(count * 3)
-  const colors = new Float32Array(count * 3)
-  const color = new THREE.Color()
-  for (let i = 0; i < count; i++) {
-    // Uniform on sphere shell, far away
-    const r = 18000 + rand() * 4000
-    const theta = rand() * Math.PI * 2
-    const z = rand() * 2 - 1
-    const s = Math.sqrt(1 - z * z)
-    positions[i * 3] = r * s * Math.cos(theta)
-    positions[i * 3 + 1] = r * s * Math.sin(theta)
-    positions[i * 3 + 2] = r * z
-    color.setHSL(0.55 + rand() * 0.15, rand() * 0.4, 0.6 + rand() * 0.4)
-    colors[i * 3] = color.r; colors[i * 3 + 1] = color.g; colors[i * 3 + 2] = color.b
-  }
-  const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-  const mat = new THREE.PointsMaterial({ size: 18, vertexColors: true, sizeAttenuation: true, fog: false })
-  return new THREE.Points(geo, mat)
+  // Magnitude-distributed, blackbody-tinted, milky-way-concentrated — see starSky.ts.
+  return buildStarSky()
 }
 
 /** Procedural deep-space backdrop: a huge inward-facing sphere whose fragment shader
