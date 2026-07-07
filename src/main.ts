@@ -1249,6 +1249,8 @@ function upgradeNextPlanet(now: number): void {
       planetUpgraded.add(next.idx)
       rebuildPlanetLODs()
       planetUpgradeIdleSince = 0
+    } catch (err) {
+      console.warn(`[planet-upgrade] ${next.planet.name} failed — retrying next idle window`, err)
     } finally {
       // Always release the in-flight flag and reschedule — a prewarm/build failure must not
       // leave nextPlanetUpgradeAt at Infinity and kill the upgrade loop forever.
