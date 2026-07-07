@@ -81,12 +81,12 @@ function normalPng(grid, strength) {
       const xm = (x - 1 + W) % W, xp = (x + 1) % W
       const ym = Math.max(0, y - 1), yp = Math.min(H - 1, y + 1)
       const dx = (grid[y * W + xp] - grid[y * W + xm]) * strength
-      // image y grows southward while UV v grows northward — negate for green-up (OpenGL/three).
+      // dy is +H_v (the image-row flip is baked in); the normal formula needs -H_v for green: n = normalize(-H_u, -H_v, 1)
       const dy = (grid[ym * W + x] - grid[yp * W + x]) * strength
       const inv = 1 / Math.hypot(dx, dy, 1)
       const i = (y * W + x) * 4
       png.data[i] = Math.round((-dx * inv * 0.5 + 0.5) * 255)
-      png.data[i + 1] = Math.round((dy * inv * 0.5 + 0.5) * 255)
+      png.data[i + 1] = Math.round((-dy * inv * 0.5 + 0.5) * 255)
       png.data[i + 2] = Math.round((inv * 0.5 + 0.5) * 255)
       png.data[i + 3] = 255
     }
