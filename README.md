@@ -15,6 +15,8 @@ https://github.com/huiung/claude-citizen/releases/download/v0.7-cinematic/claude
 > as a comparison target. No assets, names, lore, or code from the original are used —
 > everything here is procedurally generated, hand-made, or CC0-licensed.
 
+> Named-planet surface imagery: NASA/USGS (public domain) — MESSENGER (Mercury), Magellan (Venus), Viking (Mars), Cassini (Jupiter).
+
 ## Play now
 
 **▶ Play now: [claudecitizen.com](https://claudecitizen.com)** — no download, no account. Click → fly, in seconds.
