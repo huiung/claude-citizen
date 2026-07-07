@@ -4,7 +4,7 @@ import * as THREE from 'three'
  *  bright bands, two hard gaps read as Cassini-like divisions, and both edges fade out.
  *  Pure — one RGBA row, so it unit-tests without a canvas. */
 export function computeRingBands(width = 512, seed = 7): Uint8Array<ArrayBuffer> {
-  const data = new Uint8Array(width * 4) as Uint8Array<ArrayBuffer>
+  const data = new Uint8Array(width * 4)
   for (let i = 0; i < width; i++) {
     const t = i / (width - 1)
     const bands =
@@ -24,15 +24,21 @@ export function computeRingBands(width = 512, seed = 7): Uint8Array<ArrayBuffer>
   return data
 }
 
+/** Wraps the band row in a 1-pixel-tall sRGB DataTexture. Linear filtering is set explicitly:
+ *  DataTexture defaults to NearestFilter, which reads as blocky concentric steps once the
+ *  512-wide strip is magnified across a planet-scale ring. */
 export function createRingTexture(width = 512, seed = 7): THREE.DataTexture {
   const texture = new THREE.DataTexture(computeRingBands(width, seed), width, 1, THREE.RGBAFormat)
   texture.colorSpace = THREE.SRGBColorSpace
+  texture.magFilter = THREE.LinearFilter
+  texture.minFilter = THREE.LinearFilter
   texture.needsUpdate = true
   return texture
 }
 
 /** RingGeometry ships planar UVs; rewrite them so u runs inner→outer radius, letting the
- *  1-pixel-tall band texture wrap the annulus radially. */
+ *  1-pixel-tall band texture wrap the annulus radially.
+ *  Caller must pass innerRadius < outerRadius (equal radii would divide by zero). */
 export function remapRingUVs(geometry: THREE.RingGeometry, innerRadius: number, outerRadius: number): void {
   const pos = geometry.getAttribute('position') as THREE.BufferAttribute
   const uv = geometry.getAttribute('uv') as THREE.BufferAttribute

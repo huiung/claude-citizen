@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { computeRingBands, remapRingUVs } from './planetRings'
+import { computeRingBands, createRingTexture, remapRingUVs } from './planetRings'
 
 describe('computeRingBands', () => {
   it('produces a full-width RGBA row with alpha fading to zero at both edges', () => {
@@ -15,6 +15,16 @@ describe('computeRingBands', () => {
     const alphas = Array.from({ length: 512 }, (_, i) => row[i * 4 + 3])
     expect(Math.max(...alphas)).toBeGreaterThan(150)
     expect(Math.min(...alphas.slice(40, 472))).toBeLessThan(80)
+  })
+})
+
+describe('createRingTexture', () => {
+  it('creates a linear-filtered sRGB strip texture (DataTexture defaults to Nearest, which bands)', () => {
+    const tex = createRingTexture(512, 7)
+    expect(tex.magFilter).toBe(THREE.LinearFilter)
+    expect(tex.minFilter).toBe(THREE.LinearFilter)
+    expect(tex.colorSpace).toBe(THREE.SRGBColorSpace)
+    expect(tex.image.width).toBe(512)
   })
 })
 
