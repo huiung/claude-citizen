@@ -26,8 +26,10 @@ import {
   marketplaceRowsFor,
   marketplaceSnapshot,
   publicMarketplaceRow,
+  releaseReservation,
   reserveListing,
   settleTokenListing,
+  touchReservation,
 } from './marketplace.mjs'
 import { verifyTokenPayment } from './solanaPay.mjs'
 import { buildTokenPaymentTx } from './tokenTx.mjs'
@@ -138,6 +140,16 @@ async function simulateTokenTx(txBase64) {
     return { ok: true, infra: true, err: String(e) }
   }
 }
+/** Persist one store file; a failed write must never pass silently — it means player
+ *  progress or marketplace state is being lost while the relay looks healthy. */
+function persistToDisk(file, data, label) {
+  try {
+    writeFileSync(file, data)
+  } catch (err) {
+    console.error(`[persist] ${label} write FAILED (${file}): ${err?.code ?? ''} ${err?.message ?? err}`)
+  }
+}
+
 const holderCache = createHolderCache()
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN ?? ''
 const HOLDER_SHIP_VISUALS = new Set(['standard', 'doge-runner', 'void-interceptor', 'sovereign-wraith', 'eclipse-corvette'])
@@ -154,7 +166,7 @@ function flushPvpKillAuditLog() {
   if (pvpKillFlushTimer) return
   pvpKillFlushTimer = setTimeout(() => {
     pvpKillFlushTimer = null
-    try { writeFileSync(PVP_KILL_LOG_FILE, JSON.stringify(pvpKillAuditLog.snapshot())) } catch { /* disk unavailable */ }
+    persistToDisk(PVP_KILL_LOG_FILE, JSON.stringify(pvpKillAuditLog.snapshot()), 'pvp-kills')
   }, 500)
 }
 
@@ -273,13 +285,13 @@ let sessionSeed = {}
 try { sessionSeed = JSON.parse(readFileSync(SESSION_FILE, 'utf8')) } catch { sessionSeed = {} }
 const sessions = createSessionStore(sessionSeed)
 function flushSessions() {
-  try { writeFileSync(SESSION_FILE, JSON.stringify(sessions.snapshot())) } catch { /* disk unavailable */ }
+  persistToDisk(SESSION_FILE, JSON.stringify(sessions.snapshot()), 'sessions')
 }
 let claimedAnonSeed = []
 try { claimedAnonSeed = JSON.parse(readFileSync(CLAIMED_ANON_FILE, 'utf8')) } catch { claimedAnonSeed = [] }
 const claimedAnonTokens = createClaimedAnonStore(claimedAnonSeed)
 function flushClaimedAnonTokens() {
-  try { writeFileSync(CLAIMED_ANON_FILE, JSON.stringify(claimedAnonTokens.snapshot())) } catch { /* disk unavailable */ }
+  persistToDisk(CLAIMED_ANON_FILE, JSON.stringify(claimedAnonTokens.snapshot()), 'claimed-anon')
 }
 
 // --- Token-keyed progress store (anonymous, no accounts)
@@ -299,7 +311,7 @@ function flush() {
   if (flushTimer) return
   flushTimer = setTimeout(() => {
     flushTimer = null
-    try { writeFileSync(STORE_FILE, JSON.stringify(store)) } catch { /* disk unavailable */ }
+    persistToDisk(STORE_FILE, JSON.stringify(store), 'progress')
   }, 2000)
 }
 
@@ -347,7 +359,7 @@ function flushMarketplace() {
   if (marketplaceFlushTimer) return
   marketplaceFlushTimer = setTimeout(() => {
     marketplaceFlushTimer = null
-    try { writeFileSync(MARKETPLACE_FILE, JSON.stringify(marketplaceSnapshot(marketplace))) } catch { /* disk unavailable */ }
+    persistToDisk(MARKETPLACE_FILE, JSON.stringify(marketplaceSnapshot(marketplace)), 'marketplace')
   }, 500)
 }
 
@@ -696,20 +708,20 @@ wss.on('connection', (ws) => {
         const { feeRaw, sellerRaw } = splitFee(totalRaw, FEE_BPS)
         const txBase64 = await buildTokenPaymentTx(heliusRpc, {
           buyer: key, seller: reserved.listing.sellerKey, treasury: TREASURY_WALLET, mint: HOLDER_MINT,
-          decimals, sellerRaw, feeRaw, nonce, tokenProgram: programId ? programId.toBase58() : undefined,
+          decimals, sellerRaw, feeRaw, nonce: reserved.nonce, tokenProgram: programId ? programId.toBase58() : undefined,
         })
         const sim = await simulateTokenTx(txBase64)
         if (sim.infra) {
           console.warn(`[market-intent] pre-sim RPC unavailable, proceeding: listing=${msg.listingId}`, sim.err)
         } else if (!sim.ok) {
           console.warn(`[market-intent] sim failed listing=${msg.listingId} buyer=${key}:`, JSON.stringify(sim.err), (sim.logs || []).slice(-6))
-          marketplace.reservations.delete(msg.listingId)
+          releaseReservation(marketplace, msg.listingId, reserved.nonce)
           send(ws, { t: 'market-intent-result', ok: false, reason: 'sim-failed', listingId: msg.listingId })
           return
         }
         send(ws, { t: 'market-intent-result', ok: true, listingId: msg.listingId, txBase64 })
       } catch {
-        marketplace.reservations.delete(msg.listingId)
+        releaseReservation(marketplace, msg.listingId, reserved.nonce)
         send(ws, { t: 'market-intent-result', ok: false, reason: 'build-failed', listingId: msg.listingId })
       }
       return
@@ -729,6 +741,9 @@ wss.on('connection', (ws) => {
         if (!reservation || reservation.buyerKey !== key || reservation.expiresAt <= Date.now()) {
           result = { ok: false, reason: 'not-reserved' }
         } else {
+          // Payment verification polls the chain for up to ~30s — keep the reservation
+          // alive through it so a payment confirmed near the TTL boundary still settles.
+          touchReservation(marketplace, key, msg.listingId, Date.now)
           const totalRaw = toBaseUnits(target.price, decimals)
           const { feeRaw, sellerRaw } = splitFee(totalRaw, FEE_BPS)
           const paid = await verifyTokenPayment(msg.txSig, {
@@ -817,3 +832,26 @@ wss.on('connection', (ws) => {
 httpServer.listen(PORT, () => {
   console.log(`star-citizen-caliber relay listening on :${PORT} (store: ${STORE_FILE})`)
 })
+
+// Graceful shutdown: a deploy/restart must not drop the last ~2s of saves sitting in
+// flush timers — write every store synchronously before exiting.
+let shuttingDown = false
+function shutdown(signal) {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`[shutdown] ${signal} received — flushing stores, closing relay (${clients.size} online)`)
+  try { wss.close() } catch { /* already closing */ }
+  try { httpServer.close() } catch { /* already closing */ }
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null }
+  if (marketplaceFlushTimer) { clearTimeout(marketplaceFlushTimer); marketplaceFlushTimer = null }
+  if (pvpKillFlushTimer) { clearTimeout(pvpKillFlushTimer); pvpKillFlushTimer = null }
+  persistToDisk(STORE_FILE, JSON.stringify(store), 'progress')
+  persistToDisk(SESSION_FILE, JSON.stringify(sessions.snapshot()), 'sessions')
+  persistToDisk(MARKETPLACE_FILE, JSON.stringify(marketplaceSnapshot(marketplace)), 'marketplace')
+  persistToDisk(PVP_KILL_LOG_FILE, JSON.stringify(pvpKillAuditLog.snapshot()), 'pvp-kills')
+  persistToDisk(CLAIMED_ANON_FILE, JSON.stringify(claimedAnonTokens.snapshot()), 'claimed-anon')
+  console.log('[shutdown] stores flushed — exiting')
+  process.exit(0)
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))

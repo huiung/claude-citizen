@@ -175,7 +175,9 @@ export function cancelListing(marketplace, store, sellerKey, listingId, now = Da
 }
 
 /** Reserve a TOKEN listing for one buyer for RESERVATION_TTL_MS, binding a one-time memo nonce.
- *  Rejects credits listings, inactive listings, or a listing already reserved (unexpired) by another buyer. */
+ *  Rejects credits listings, inactive listings, or a listing already reserved (unexpired) by another buyer.
+ *  A same-buyer re-reserve keeps the bound nonce (an already-built payment TX carries it in its memo)
+ *  and only refreshes the expiry. */
 export function reserveListing(marketplace, buyerKey, listingId, nonce, now = Date.now) {
   const active = findActive(marketplace, safeText(listingId, '', 96))
   if (!active.ok) return active
@@ -184,10 +186,32 @@ export function reserveListing(marketplace, buyerKey, listingId, nonce, now = Da
   if (listing.sellerKey === buyerKey) return { ok: false, reason: 'own-listing' }
   const t = nowValue(now)
   const existing = marketplace.reservations.get(listingId)
-  if (existing && existing.expiresAt > t && existing.buyerKey !== buyerKey) return { ok: false, reason: 'reserved' }
+  if (existing && existing.expiresAt > t) {
+    if (existing.buyerKey !== buyerKey) return { ok: false, reason: 'reserved' }
+    existing.expiresAt = t + RESERVATION_TTL_MS
+    return { ok: true, nonce: existing.nonce, listing: { ...listing, item: cloneItem(listing.item) } }
+  }
   const reservation = { buyerKey: safeText(buyerKey, '', 96), nonce: safeText(nonce, '', 96), expiresAt: t + RESERVATION_TTL_MS }
   marketplace.reservations.set(listingId, reservation)
   return { ok: true, nonce: reservation.nonce, listing: { ...listing, item: cloneItem(listing.item) } }
+}
+
+/** Drop a reservation only if it still carries the given nonce — a failed intent must not
+ *  clean away a reservation that has since been re-issued to another buyer. */
+export function releaseReservation(marketplace, listingId, nonce) {
+  const key = safeText(listingId, '', 96)
+  const existing = marketplace.reservations.get(key)
+  if (existing && existing.nonce === safeText(nonce, '', 96)) marketplace.reservations.delete(key)
+}
+
+/** Refresh the holder's reservation expiry before a slow on-chain verification, so a payment
+ *  confirmed near the TTL boundary can still settle. Returns false for a non-holder. */
+export function touchReservation(marketplace, buyerKey, listingId, now = Date.now) {
+  const existing = marketplace.reservations.get(safeText(listingId, '', 96))
+  const t = nowValue(now)
+  if (!existing || existing.buyerKey !== buyerKey || existing.expiresAt <= t) return false
+  existing.expiresAt = t + RESERVATION_TTL_MS
+  return true
 }
 
 /** Finalize a TOKEN purchase after on-chain payment was verified by the caller. Moves the item to

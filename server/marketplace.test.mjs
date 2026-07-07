@@ -7,8 +7,10 @@ import {
   marketplaceList,
   marketplaceRowsFor,
   publicMarketplaceRow,
+  releaseReservation,
   reserveListing,
   settleTokenListing,
+  touchReservation,
 } from './marketplace.mjs'
 
 const item = {
@@ -197,5 +199,74 @@ describe('marketplace currency', () => {
     const { listing } = createListing(market, store, 'seller', 'ACE', 'item-1', 1250, () => 1000, 'token')
     reserveListing(market, 'buyerA', listing.id, 'nonce-a', () => 2000)
     expect(settleTokenListing(market, store, 'buyerB', listing.id, () => 3000)).toEqual({ ok: false, reason: 'not-reserved' })
+  })
+})
+
+describe('marketplace reservation safety', () => {
+  function tokenListing() {
+    const store = {
+      seller: { credits: 0, crafting: { cores: 0, items: [cloneItem()] } },
+      buyerA: { credits: 0, crafting: { cores: 0, items: [] } },
+    }
+    const market = createMarketplace()
+    const { listing } = createListing(market, store, 'seller', 'ACE', 'item-1', 1250, () => 1000, 'token')
+    return { store, market, listing }
+  }
+
+  it('keeps the original nonce when the same buyer re-reserves, so an in-flight payment stays valid', () => {
+    const { market, listing } = tokenListing()
+    reserveListing(market, 'buyerA', listing.id, 'nonce-a', () => 2000)
+    const again = reserveListing(market, 'buyerA', listing.id, 'nonce-fresh', () => 60_000)
+    expect(again.ok).toBe(true)
+    expect(again.nonce).toBe('nonce-a')
+    expect(market.reservations.get(listing.id).nonce).toBe('nonce-a')
+  })
+
+  it('extends the expiry when the same buyer re-reserves', () => {
+    const { market, listing } = tokenListing()
+    reserveListing(market, 'buyerA', listing.id, 'nonce-a', () => 2000)
+    reserveListing(market, 'buyerA', listing.id, 'nonce-fresh', () => 100_000)
+    expect(market.reservations.get(listing.id).expiresAt).toBe(100_000 + 120_000)
+  })
+
+  it('issues a fresh nonce when the same buyer re-reserves after expiry', () => {
+    const { market, listing } = tokenListing()
+    reserveListing(market, 'buyerA', listing.id, 'nonce-a', () => 2000)
+    const again = reserveListing(market, 'buyerA', listing.id, 'nonce-fresh', () => 2000 + 120_001)
+    expect(again.ok).toBe(true)
+    expect(again.nonce).toBe('nonce-fresh')
+  })
+
+  it('releaseReservation removes only a reservation holding the matching nonce', () => {
+    const { market, listing } = tokenListing()
+    reserveListing(market, 'buyerA', listing.id, 'nonce-a', () => 2000)
+    releaseReservation(market, listing.id, 'nonce-a')
+    expect(market.reservations.has(listing.id)).toBe(false)
+  })
+
+  it('releaseReservation leaves a newer reservation from another buyer intact', () => {
+    const { market, listing } = tokenListing()
+    reserveListing(market, 'buyerA', listing.id, 'nonce-a', () => 2000)
+    // buyerA's reservation expires; buyerB reserves the listing
+    reserveListing(market, 'buyerB', listing.id, 'nonce-b', () => 2000 + 120_001)
+    // buyerA's failed intent tries to clean up with its stale nonce
+    releaseReservation(market, listing.id, 'nonce-a')
+    expect(market.reservations.get(listing.id).nonce).toBe('nonce-b')
+  })
+
+  it('touchReservation extends the holder expiry so settlement survives slow payment verification', () => {
+    const { store, market, listing } = tokenListing()
+    reserveListing(market, 'buyerA', listing.id, 'nonce-a', () => 2000)
+    // just before expiry, market-buy touches the reservation, then verification takes ~30s
+    expect(touchReservation(market, 'buyerA', listing.id, () => 121_000)).toBe(true)
+    const r = settleTokenListing(market, store, 'buyerA', listing.id, () => 150_000)
+    expect(r.ok).toBe(true)
+  })
+
+  it('touchReservation refuses a client that does not hold the reservation', () => {
+    const { market, listing } = tokenListing()
+    reserveListing(market, 'buyerA', listing.id, 'nonce-a', () => 2000)
+    expect(touchReservation(market, 'buyerB', listing.id, () => 3000)).toBe(false)
+    expect(market.reservations.get(listing.id).expiresAt).toBe(2000 + 120_000)
   })
 })
