@@ -1,11 +1,13 @@
 import * as THREE from 'three'
 import type { SurfaceKind } from '../sim/solarSystem'
 import { SUN_POSITION } from '../sim/solarSystem'
+import { ATMOSPHERE_PARAMS } from './atmosphereParams'
 import {
   generateCloudTexture, generateCloudTextureAsync, generatePlanetTextures, generatePlanetTexturesAsync, samplePlanetSurface,
 } from './planetTextures'
 import { createRingTexture, remapRingUVs } from './planetRings'
 import { makeAsteroidMaterial, makeOreMaterial } from './asteroidTextures'
+import { buildStarSky, MILKY_WAY_NORMAL } from './starSky'
 
 /** Deterministic pseudo-random — same world for every visitor, no assets. */
 function mulberry32(seed: number) {
@@ -18,33 +20,13 @@ function mulberry32(seed: number) {
 }
 
 export function buildStarfield(): THREE.Points {
-  const rand = mulberry32(42)
-  const count = 6000
-  const positions = new Float32Array(count * 3)
-  const colors = new Float32Array(count * 3)
-  const color = new THREE.Color()
-  for (let i = 0; i < count; i++) {
-    // Uniform on sphere shell, far away
-    const r = 18000 + rand() * 4000
-    const theta = rand() * Math.PI * 2
-    const z = rand() * 2 - 1
-    const s = Math.sqrt(1 - z * z)
-    positions[i * 3] = r * s * Math.cos(theta)
-    positions[i * 3 + 1] = r * s * Math.sin(theta)
-    positions[i * 3 + 2] = r * z
-    color.setHSL(0.55 + rand() * 0.15, rand() * 0.4, 0.6 + rand() * 0.4)
-    colors[i * 3] = color.r; colors[i * 3 + 1] = color.g; colors[i * 3 + 2] = color.b
-  }
-  const geo = new THREE.BufferGeometry()
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3))
-  const mat = new THREE.PointsMaterial({ size: 18, vertexColors: true, sizeAttenuation: true, fog: false })
-  return new THREE.Points(geo, mat)
+  // Magnitude-distributed, blackbody-tinted, milky-way-concentrated — see starSky.ts.
+  return buildStarSky()
 }
 
 /** Procedural deep-space backdrop: a huge inward-facing sphere whose fragment shader
- *  paints fbm "nebula" clouds and a brighter Milky-Way band. Additive + depth-disabled
- *  so it always reads as the sky behind everything. Caller keeps it centred on the player. */
+ *  paints domain-warped fbm nebulosity anchored to the shared milky-way plane, with
+ *  dark dust lanes carving the band core. Additive + depth-disabled sky. */
 export function buildNebula(): THREE.Mesh {
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
@@ -53,9 +35,10 @@ export function buildNebula(): THREE.Mesh {
     transparent: true,
     blending: THREE.AdditiveBlending,
     uniforms: {
-      uColorA: { value: new THREE.Color(0x2a1a4a) }, // violet
-      uColorB: { value: new THREE.Color(0x103a5a) }, // teal-blue
-      uColorC: { value: new THREE.Color(0x4a1c34) }, // dim magenta
+      uColorA: { value: new THREE.Color(0x232838) }, // slate
+      uColorB: { value: new THREE.Color(0x1a3040) }, // dim teal
+      uColorC: { value: new THREE.Color(0x3a2c34) }, // dusty rose
+      uBandNormal: { value: MILKY_WAY_NORMAL.clone() },
     },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
@@ -68,6 +51,7 @@ export function buildNebula(): THREE.Mesh {
       precision highp float;
       varying vec3 vDir;
       uniform vec3 uColorA, uColorB, uColorC;
+      uniform vec3 uBandNormal;
       float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
       float noise(vec3 x){
         vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
@@ -77,16 +61,23 @@ export function buildNebula(): THREE.Mesh {
                        mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
       }
       float fbm(vec3 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++){ s += a * noise(p); p *= 2.03; a *= 0.5; } return s; }
+      float fbm6(vec3 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 6; i++){ s += a * noise(p); p *= 2.03; a *= 0.5; } return s; }
       void main(){
         vec3 d = normalize(vDir);
-        float n = fbm(d * 3.0);
-        float n2 = fbm(d * 6.0 + 4.0);
-        float band = pow(1.0 - abs(d.y), 3.0); // bright belt across the y=0 plane
-        float cloud = smoothstep(0.45, 0.95, n) * 0.8 + band * 0.5 * smoothstep(0.3, 0.8, n2);
+        // Domain warp — bends the fbm field into filaments/swirls instead of round blobs.
+        vec3 w = vec3(fbm(d * 2.4 + 17.3), fbm(d * 2.4 + 9.2), fbm(d * 2.4 + 31.7));
+        vec3 q = d + 0.55 * (w - vec3(0.5));
+        float n = fbm6(q * 3.0);
+        float n2 = fbm(q * 6.0 + 4.0);
+        // Bright belt hugs the shared galactic plane; dust lanes carve its core.
+        float band = pow(max(1.0 - abs(dot(d, uBandNormal)), 0.0), 4.0);
+        float dust = smoothstep(0.55, 0.8, fbm(d * 5.0 + 47.0)) * band;
+        float cloud = smoothstep(0.5, 0.95, n) * 0.5 + band * 0.55 * smoothstep(0.3, 0.8, n2);
+        cloud *= 1.0 - 0.75 * dust;
         vec3 col = mix(uColorA, uColorB, n2);
-        col = mix(col, uColorC, smoothstep(0.5, 1.0, n));
-        col += vec3(0.55, 0.65, 0.9) * band * 0.3;
-        float intensity = cloud * 0.55;
+        col = mix(col, uColorC, smoothstep(0.55, 1.0, n));
+        col += vec3(0.62, 0.66, 0.72) * band * 0.35 * (1.0 - dust);
+        float intensity = cloud * 0.5;
         gl_FragColor = vec4(col * intensity, intensity);
       }
     `,
@@ -96,19 +87,23 @@ export function buildNebula(): THREE.Mesh {
   return mesh
 }
 
-/** Fresnel atmosphere shell — glows along the limb (edge), fades to clear over the disc.
- *  BackSide + additive so it reads as light scattering around the planet, not a painted skin. */
-function makeAtmosphere(radius: number, atmoColor: number, power: number, dayColor = 0xffb070): THREE.Mesh {
+/** Fresnel atmosphere shell — brightest along the limb, tinted by per-kind params:
+ *  lit limb shifts toward the Rayleigh tint, a sunset band crosses the terminator,
+ *  the night limb nearly fades out. BackSide + additive so it reads as scattering. */
+function makeAtmosphere(radius: number, surface: SurfaceKind): THREE.Mesh {
+  const p = ATMOSPHERE_PARAMS[surface]
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     uniforms: {
-      uColor: { value: new THREE.Color(atmoColor) },
-      uDayColor: { value: new THREE.Color(dayColor) },
-      uPower: { value: power },
-      uSunPos: { value: SUN_POSITION.clone() }, // world-space sun — drives the day/night limb
+      uBase: { value: new THREE.Color(p.baseColor) },
+      uRayleigh: { value: new THREE.Color(p.rayleighColor) },
+      uSunset: { value: new THREE.Color(p.sunsetColor) },
+      uPower: { value: p.power },
+      uIntensity: { value: p.intensity },
+      uSunPos: { value: SUN_POSITION.clone() },
     },
     vertexShader: /* glsl */ `
       varying vec3 vNormalV;
@@ -129,22 +124,25 @@ function makeAtmosphere(radius: number, atmoColor: number, power: number, dayCol
       varying vec3 vView;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPos;
-      uniform vec3 uColor;
-      uniform vec3 uDayColor;
+      uniform vec3 uBase;
+      uniform vec3 uRayleigh;
+      uniform vec3 uSunset;
       uniform float uPower;
+      uniform float uIntensity;
       uniform vec3 uSunPos;
       void main(){
-        // Limb glow (Fresnel) — brightest where the shell grazes the view ray.
-        float fres = pow(1.0 - abs(dot(normalize(vNormalV), normalize(vView))), uPower);
+        // Limb density: Fresnel falloff shaped by how long the view ray grazes the shell.
+        float grazing = 1.0 - abs(dot(normalize(vNormalV), normalize(vView)));
+        float density = pow(grazing, uPower) * (0.65 + 0.35 * grazing);
         // Day/night from the sun direction at this point on the shell.
         vec3 sunDir = normalize(uSunPos - vWorldPos);
         float ndl = dot(normalize(vWorldNormal), sunDir); // -1 night .. +1 day
-        float day = smoothstep(-0.3, 0.25, ndl);          // soft terminator
-        // Warm sunset band peaks across the terminator, on the lit side.
+        float day = smoothstep(-0.3, 0.25, ndl);
+        // Lit limb leans toward the Rayleigh tint; a sunset band peaks across the terminator.
         float sunset = pow(clamp(1.0 - abs(ndl), 0.0, 1.0), 2.0) * day;
-        vec3 col = mix(uColor, uDayColor, sunset);
-        float lit = mix(0.04, 1.0, day);                  // night limb nearly fades out
-        gl_FragColor = vec4(col * fres * lit, fres * lit);
+        vec3 col = mix(mix(uBase, uRayleigh, day), uSunset, sunset);
+        float lit = mix(0.04, 1.0, day) * uIntensity;
+        gl_FragColor = vec4(col * density * lit, density * lit);
       }
     `,
   })
@@ -159,7 +157,7 @@ export const SPAWN_PLANET = { position: new THREE.Vector3(12800, 5400, 400), rad
 export function buildPlanet(): THREE.Group {
   const group = new THREE.Group()
   group.add(makePlanetSurface(SPAWN_PLANET.radius, 0xc25433, SPAWN_PLANET.surface, 7, 4, 0.8, 1024))
-  group.add(makeAtmosphere(SPAWN_PLANET.radius, 0x9fb4c8, 3.2))
+  group.add(makeAtmosphere(SPAWN_PLANET.radius, SPAWN_PLANET.surface))
   group.position.copy(SPAWN_PLANET.position)
   return group
 }
@@ -689,10 +687,8 @@ export function buildSolarPlanet(
     group.add(makePlanetSurface(radius, color, surface, seed, 6, 0.8, startupTextureSize))
   }
 
-  // Fresnel atmosphere — glowing limb tinted by kind (denser air ⇒ softer, wider falloff)
-  const atmoColor = surface === 'earth' ? 0x88bbff : surface === 'venus' ? 0xe8c070 : isGas ? 0xd8c0a0 : 0x9fb4c8
-  const atmoPower = surface === 'venus' || isGas ? 2.2 : 3.2 // thicker air bleeds further across the disc
-  group.add(makeAtmosphere(radius, atmoColor, atmoPower))
+  // Fresnel atmosphere — per-kind params drive Rayleigh tint, sunset color, and limb width
+  group.add(makeAtmosphere(radius, surface))
 
   // Earth-type bodies get a translucent cloud shell drifting just above the surface.
   const startupCloudSize = startupTextureSize > 512 ? 512 : 256
