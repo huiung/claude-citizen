@@ -57,7 +57,7 @@ export function computeStarAttributes(count = 18000, seed = 42): StarAttributes 
     if (rand() < 0.55) {
       // In-band: point on the plane circle + gaussian-ish offset along the normal.
       const ang = rand() * Math.PI * 2
-      const off = (rand() + rand() + rand() - 1.5) * 0.21 // ~gaussian, sigma≈0.15
+      const off = (rand() + rand() + rand() - 1.5) * 0.21 // ~gaussian (Irwin-Hall of 3), sigma≈0.105
       dir.copy(u).multiplyScalar(Math.cos(ang))
         .addScaledVector(v, Math.sin(ang))
         .addScaledVector(n, off)

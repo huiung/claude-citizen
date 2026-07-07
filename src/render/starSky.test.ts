@@ -71,5 +71,8 @@ describe('buildStarSky', () => {
     const mat = points.material as THREE.ShaderMaterial
     expect(mat.transparent).toBe(true)
     expect(mat.depthWrite).toBe(false)
+    expect(mat.blending).toBe(THREE.AdditiveBlending)
+    expect(mat.vertexColors).toBe(true)
+    expect(mat.uniforms.uScale.value).toBe(900)
   })
 })
