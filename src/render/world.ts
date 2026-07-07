@@ -70,7 +70,7 @@ export function buildNebula(): THREE.Mesh {
         float n = fbm6(q * 3.0);
         float n2 = fbm(q * 6.0 + 4.0);
         // Bright belt hugs the shared galactic plane; dust lanes carve its core.
-        float band = pow(1.0 - abs(dot(d, uBandNormal)), 4.0);
+        float band = pow(max(1.0 - abs(dot(d, uBandNormal)), 0.0), 4.0);
         float dust = smoothstep(0.55, 0.8, fbm(d * 5.0 + 47.0)) * band;
         float cloud = smoothstep(0.5, 0.95, n) * 0.5 + band * 0.55 * smoothstep(0.3, 0.8, n2);
         cloud *= 1.0 - 0.75 * dust;
