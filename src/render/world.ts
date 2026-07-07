@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { SurfaceKind } from '../sim/solarSystem'
 import { SUN_POSITION } from '../sim/solarSystem'
+import { ATMOSPHERE_PARAMS } from './atmosphereParams'
 import {
   generateCloudTexture, generateCloudTextureAsync, generatePlanetTextures, generatePlanetTexturesAsync, samplePlanetSurface,
 } from './planetTextures'
@@ -77,19 +78,23 @@ export function buildNebula(): THREE.Mesh {
   return mesh
 }
 
-/** Fresnel atmosphere shell — glows along the limb (edge), fades to clear over the disc.
- *  BackSide + additive so it reads as light scattering around the planet, not a painted skin. */
-function makeAtmosphere(radius: number, atmoColor: number, power: number, dayColor = 0xffb070): THREE.Mesh {
+/** Fresnel atmosphere shell — brightest along the limb, tinted by per-kind params:
+ *  lit limb shifts toward the Rayleigh tint, a sunset band crosses the terminator,
+ *  the night limb nearly fades out. BackSide + additive so it reads as scattering. */
+function makeAtmosphere(radius: number, surface: SurfaceKind): THREE.Mesh {
+  const p = ATMOSPHERE_PARAMS[surface]
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     uniforms: {
-      uColor: { value: new THREE.Color(atmoColor) },
-      uDayColor: { value: new THREE.Color(dayColor) },
-      uPower: { value: power },
-      uSunPos: { value: SUN_POSITION.clone() }, // world-space sun — drives the day/night limb
+      uBase: { value: new THREE.Color(p.baseColor) },
+      uRayleigh: { value: new THREE.Color(p.rayleighColor) },
+      uSunset: { value: new THREE.Color(p.sunsetColor) },
+      uPower: { value: p.power },
+      uIntensity: { value: p.intensity },
+      uSunPos: { value: SUN_POSITION.clone() },
     },
     vertexShader: /* glsl */ `
       varying vec3 vNormalV;
@@ -110,22 +115,25 @@ function makeAtmosphere(radius: number, atmoColor: number, power: number, dayCol
       varying vec3 vView;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPos;
-      uniform vec3 uColor;
-      uniform vec3 uDayColor;
+      uniform vec3 uBase;
+      uniform vec3 uRayleigh;
+      uniform vec3 uSunset;
       uniform float uPower;
+      uniform float uIntensity;
       uniform vec3 uSunPos;
       void main(){
-        // Limb glow (Fresnel) — brightest where the shell grazes the view ray.
-        float fres = pow(1.0 - abs(dot(normalize(vNormalV), normalize(vView))), uPower);
+        // Limb density: Fresnel falloff shaped by how long the view ray grazes the shell.
+        float grazing = 1.0 - abs(dot(normalize(vNormalV), normalize(vView)));
+        float density = pow(grazing, uPower) * (0.65 + 0.35 * grazing);
         // Day/night from the sun direction at this point on the shell.
         vec3 sunDir = normalize(uSunPos - vWorldPos);
         float ndl = dot(normalize(vWorldNormal), sunDir); // -1 night .. +1 day
-        float day = smoothstep(-0.3, 0.25, ndl);          // soft terminator
-        // Warm sunset band peaks across the terminator, on the lit side.
+        float day = smoothstep(-0.3, 0.25, ndl);
+        // Lit limb leans toward the Rayleigh tint; a sunset band peaks across the terminator.
         float sunset = pow(clamp(1.0 - abs(ndl), 0.0, 1.0), 2.0) * day;
-        vec3 col = mix(uColor, uDayColor, sunset);
-        float lit = mix(0.04, 1.0, day);                  // night limb nearly fades out
-        gl_FragColor = vec4(col * fres * lit, fres * lit);
+        vec3 col = mix(mix(uBase, uRayleigh, day), uSunset, sunset);
+        float lit = mix(0.04, 1.0, day) * uIntensity;
+        gl_FragColor = vec4(col * density * lit, density * lit);
       }
     `,
   })
@@ -140,7 +148,7 @@ export const SPAWN_PLANET = { position: new THREE.Vector3(12800, 5400, 400), rad
 export function buildPlanet(): THREE.Group {
   const group = new THREE.Group()
   group.add(makePlanetSurface(SPAWN_PLANET.radius, 0xc25433, SPAWN_PLANET.surface, 7, 4, 0.8, 1024))
-  group.add(makeAtmosphere(SPAWN_PLANET.radius, 0x9fb4c8, 3.2))
+  group.add(makeAtmosphere(SPAWN_PLANET.radius, SPAWN_PLANET.surface))
   group.position.copy(SPAWN_PLANET.position)
   return group
 }
@@ -670,10 +678,8 @@ export function buildSolarPlanet(
     group.add(makePlanetSurface(radius, color, surface, seed, 6, 0.8, startupTextureSize))
   }
 
-  // Fresnel atmosphere — glowing limb tinted by kind (denser air ⇒ softer, wider falloff)
-  const atmoColor = surface === 'earth' ? 0x88bbff : surface === 'venus' ? 0xe8c070 : isGas ? 0xd8c0a0 : 0x9fb4c8
-  const atmoPower = surface === 'venus' || isGas ? 2.2 : 3.2 // thicker air bleeds further across the disc
-  group.add(makeAtmosphere(radius, atmoColor, atmoPower))
+  // Fresnel atmosphere — per-kind params drive Rayleigh tint, sunset color, and limb width
+  group.add(makeAtmosphere(radius, surface))
 
   // Earth-type bodies get a translucent cloud shell drifting just above the surface.
   const startupCloudSize = startupTextureSize > 512 ? 512 : 256
