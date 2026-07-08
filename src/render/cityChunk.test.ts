@@ -1,44 +1,70 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { CITY_TIER_RADIUS, buildCityChunk, computeCityLayout } from './cityChunk'
+import { CITY_BLOCK, CITY_ROAD, CITY_TIER_RADIUS, buildCityChunk, computeCityLayout, computeWindowPixels } from './cityChunk'
 import { computeCitySites } from './citySites'
 
 describe('computeCityLayout', () => {
-  it('is deterministic per seed', () => {
+  it('is deterministic and returns buildings plus block pads', () => {
     const a = computeCityLayout(4242, 2)
     const b = computeCityLayout(4242, 2)
-    expect(a.length).toBe(b.length)
-    expect(a[0]).toEqual(b[0])
+    expect(a.buildings.length).toBe(b.buildings.length)
+    expect(a.pads.length).toBe(b.pads.length)
+    expect(a.buildings[0]).toEqual(b.buildings[0])
   })
 
-  it('scales building count with tier', () => {
-    const town = computeCityLayout(7, 0).length
-    const metro = computeCityLayout(7, 2).length
-    expect(town).toBeGreaterThanOrEqual(20)
-    expect(town).toBeLessThanOrEqual(200)
-    expect(metro).toBeGreaterThanOrEqual(400)
-    expect(metro).toBeLessThanOrEqual(1600)
-    expect(metro).toBeGreaterThan(town * 3)
+  it('lays a dense fabric — several buildings per block, pads under every block', () => {
+    const metro = computeCityLayout(7, 2)
+    const town = computeCityLayout(7, 0)
+    expect(metro.pads.length).toBeGreaterThanOrEqual(300)
+    expect(metro.buildings.length).toBeGreaterThanOrEqual(600)
+    expect(metro.buildings.length).toBeLessThanOrEqual(2200)
+    expect(metro.buildings.length / metro.pads.length).toBeGreaterThan(1.8)
+    expect(town.buildings.length).toBeGreaterThanOrEqual(40)
   })
 
-  it('keeps every building inside the tier radius', () => {
+  it('keeps everything inside the tier radius with tight footprints', () => {
+    expect(CITY_ROAD).toBe(24)
     const extent = CITY_TIER_RADIUS[2]
-    for (const b of computeCityLayout(99, 2)) {
-      expect(Math.hypot(b.x, b.z)).toBeLessThanOrEqual(extent + 60)
-      expect(b.w).toBeGreaterThan(0)
-      expect(b.d).toBeGreaterThan(0)
+    const { buildings, pads } = computeCityLayout(99, 2)
+    for (const b of buildings) {
+      expect(Math.hypot(b.x, b.z)).toBeLessThanOrEqual(extent + CITY_BLOCK)
+      expect(b.w).toBeGreaterThanOrEqual(12)
+      expect(b.w).toBeLessThanOrEqual(32)
+      expect(b.d).toBeGreaterThanOrEqual(12)
+      expect(b.d).toBeLessThanOrEqual(32)
       expect(b.h).toBeGreaterThan(0)
-      expect(b.lit).toBeGreaterThanOrEqual(0)
-      expect(b.lit).toBeLessThanOrEqual(1)
     }
+    for (const p of pads) expect(Math.hypot(p.x, p.z)).toBeLessThanOrEqual(extent + CITY_BLOCK)
   })
 
   it('follows a tower power law — few tall, many low', () => {
-    const heights = computeCityLayout(123, 2).map((b) => b.h).sort((a, b) => a - b)
-    const median = heights[Math.floor(heights.length / 2)]
-    const max = heights[heights.length - 1]
-    expect(median).toBeLessThan(70)
-    expect(max).toBeGreaterThan(120)
+    const heights = computeCityLayout(123, 2).buildings.map((b) => b.h).sort((a, b) => a - b)
+    expect(heights[Math.floor(heights.length / 2)]).toBeLessThan(60)
+    expect(heights[heights.length - 1]).toBeGreaterThan(120)
+  })
+})
+
+describe('computeWindowPixels', () => {
+  it('draws a lit-window grid on a dark facade', () => {
+    const size = 64
+    const px = computeWindowPixels(size, 9)
+    expect(px.length).toBe(size * size * 4)
+    let litCount = 0
+    let dark = 0
+    for (let i = 0; i < size * size; i++) {
+      const r = px[i * 4]
+      if (r > 120) litCount++
+      if (r < 24) dark++
+    }
+    const litRatio = litCount / (size * size)
+    expect(litRatio).toBeGreaterThan(0.08)
+    expect(litRatio).toBeLessThan(0.5)
+    expect(dark / (size * size)).toBeGreaterThan(0.4)
+  })
+
+  it('is deterministic per seed and varies across seeds', () => {
+    expect(computeWindowPixels(64, 9)).toEqual(computeWindowPixels(64, 9))
+    expect(computeWindowPixels(64, 9)).not.toEqual(computeWindowPixels(64, 10))
   })
 })
 
@@ -46,19 +72,21 @@ describe('buildCityChunk', () => {
   const sites = computeCitySites(1274, 4300, 8)
   const planetPos = new THREE.Vector3(0, -4000, 18000)
 
-  it('creates two instanced meshes covering every kept building, positioned near the planet surface', () => {
+  it('creates pad + building instanced meshes anchored near the surface, windows on sides only', () => {
     const chunk = buildCityChunk(sites[0], planetPos, 1274, 4300)
     const meshes = chunk.group.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
     expect(meshes.length).toBe(2)
-    const layoutCount = meshes[0].count
-    expect(meshes[1].count).toBe(layoutCount)
-    // metropolis, minus lots dropped by the per-building water filter (rim bays are real
-    // on this seed) — must stay a dense city but may be well under the raw layout count
-    expect(layoutCount).toBeGreaterThanOrEqual(250)
-    expect(layoutCount).toBeLessThanOrEqual(computeCityLayout(sites[0].seed, sites[0].tier).length)
+    const [pads, bodies] = meshes
+    expect(pads.count).toBeGreaterThanOrEqual(200)
+    expect(bodies.count).toBeGreaterThanOrEqual(450)
+    expect(Array.isArray(bodies.material)).toBe(true)
+    const mats = bodies.material as THREE.Material[]
+    expect(mats.length).toBe(6)
+    expect((mats[0] as THREE.MeshStandardMaterial).emissiveMap).not.toBeNull()
+    expect((mats[2] as THREE.MeshStandardMaterial).emissiveMap).toBeNull()
     const m = new THREE.Matrix4()
     const pos = new THREE.Vector3()
-    meshes[0].getMatrixAt(0, m)
+    bodies.getMatrixAt(0, m)
     pos.setFromMatrixPosition(m)
     const dist = pos.distanceTo(planetPos)
     expect(dist).toBeGreaterThan(4300 * 0.95)
@@ -66,17 +94,14 @@ describe('buildCityChunk', () => {
     chunk.dispose()
   })
 
-  it('update() drives night emissive/glow and dispose() empties the group', () => {
+  it('update() night-gates the window emissive and dispose() empties the group', () => {
     const chunk = buildCityChunk(sites[0], planetPos, 1274, 4300)
     chunk.update(1)
     const meshes = chunk.group.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
-    const body = meshes[0].material as THREE.MeshStandardMaterial
-    const glow = meshes[1].material as THREE.MeshBasicMaterial
-    expect(body.emissiveIntensity).toBeGreaterThan(0.3)
-    expect(glow.opacity).toBeGreaterThan(0.1)
+    const side = (meshes[1].material as THREE.Material[])[0] as THREE.MeshStandardMaterial
+    expect(side.emissiveIntensity).toBeGreaterThan(0.6)
     chunk.update(0)
-    expect(body.emissiveIntensity).toBe(0)
-    expect(glow.opacity).toBe(0)
+    expect(side.emissiveIntensity).toBe(0)
     chunk.dispose()
     expect(chunk.group.children.length).toBe(0)
   })
