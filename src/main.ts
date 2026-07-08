@@ -1205,7 +1205,9 @@ function updateCities(): void {
     citySplats = buildCityLightSplats(citySites, EARTH.position, EARTH.radius)
     scene.add(citySplats)
   }
-  citySplats!.visible = true
+  // Gate on the PvP zone here (not only in updateDeepSpaceVisibility): this runs later
+  // in the frame, so writing an unconditional `true` would win over that earlier hide.
+  citySplats!.visible = ship.position.distanceToSquared(PVP_ZONE_CENTER) > PVP_ARENA_CLEAR_RADIUS * PVP_ARENA_CLEAR_RADIUS
   updateCityLightSplats(citySplats!, EARTH.position, SUN_POSITION)
 
   _cityShipDir.copy(ship.position).sub(EARTH.position).normalize()
