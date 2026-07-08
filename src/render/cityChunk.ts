@@ -93,12 +93,28 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   // First pass: sample terrain per building and DROP WATER CELLS — on the real seed half
   // the sites have ocean inside their footprint (rim bays); buildings must not stand in
   // the sea. InstancedMesh counts are therefore computed AFTER filtering.
-  const placements: { s: BuildingSpec; dir: THREE.Vector3; ground: number }[] = []
+  const OFFSETS = [[0, 0], [70, 0], [-70, 0], [0, 70], [0, -70]] as const
+  const placements: { s: BuildingSpec; dir: THREE.Vector3; ground: number; hBoost: number }[] = []
   for (const s of specs) {
-    const dirB = n.clone().multiplyScalar(radius).addScaledVector(u, s.x).addScaledVector(v, s.z).normalize()
-    const t = samplePlanetSurface('earth', planetSeed, dirB.x, dirB.y, dirB.z, undefined, radius)
-    if (t.height < 0.05) continue // ocean/coast inside the footprint — skip this lot
-    placements.push({ s, dir: dirB, ground: radius + t.height * radius * 0.055 * 1.6 })
+    let ground = Infinity
+    let centerGround = 0
+    let water = false
+    let dirC: THREE.Vector3 | null = null
+    for (const [ox, oz] of OFFSETS) {
+      const dirS = n.clone().multiplyScalar(radius).addScaledVector(u, s.x + ox).addScaledVector(v, s.z + oz).normalize()
+      const t = samplePlanetSurface('earth', planetSeed, dirS.x, dirS.y, dirS.z, undefined, radius)
+      if (ox === 0 && oz === 0) {
+        if (t.height < 0.05) { water = true; break } // ocean/coast — skip this lot
+        centerGround = radius + t.height * radius * 0.055 * 1.6
+        dirC = dirS
+      }
+      ground = Math.min(ground, radius + t.height * radius * 0.055 * 1.6)
+    }
+    if (water || !dirC) continue
+    // base at the lowest nearby terrain (mesh interpolates between ~140u-spaced vertices,
+    // so the analytic centre alone leaves ~12% of buildings hovering); the height boost
+    // keeps the roof where the layout intended it.
+    placements.push({ s, dir: dirC, ground, hBoost: centerGround - ground })
   }
   const bodies = new THREE.InstancedMesh(bodyGeo, bodyMat, placements.length)
   const glow = new THREE.InstancedMesh(bodyGeo, glowMat, placements.length)
@@ -109,12 +125,12 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   const pos = new THREE.Vector3()
   const scl = new THREE.Vector3()
   const litColor = new THREE.Color()
-  placements.forEach(({ s, dir, ground }, i) => {
+  placements.forEach(({ s, dir, ground, hBoost }, i) => {
     q.setFromUnitVectors(up, dir)
     pos.copy(planetPos).addScaledVector(dir, ground - 2) // sink slightly to close float gaps
-    m.compose(pos, q, scl.set(s.w, s.h, s.d))
+    m.compose(pos, q, scl.set(s.w, s.h + hBoost, s.d))
     bodies.setMatrixAt(i, m)
-    m.compose(pos, q, scl.set(s.w * 1.03, s.h * 1.01, s.d * 1.03))
+    m.compose(pos, q, scl.set(s.w * 1.03, (s.h + hBoost) * 1.01, s.d * 1.03))
     glow.setMatrixAt(i, m)
     glow.setColorAt(i, litColor.setScalar(s.lit))
   })

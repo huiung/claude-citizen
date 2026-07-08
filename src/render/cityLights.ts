@@ -42,7 +42,8 @@ export function cityNightFactor(ndotl: number): number {
 const SPLAT_SCALE = [900, 1500, 2400] as const // town / city / metropolis footprint glow
 
 /** One additive glow quad per city, resting on the sphere. Opacity is driven per frame
- *  by updateCityLightSplats — lights only exist on the night side. */
+ *  by updateCityLightSplats — lights only exist on the night side.
+ *  Session-lifetime objects toggled via visibility — no dispose path by design. */
 export function buildCityLightSplats(sites: CitySite[], planetPos: THREE.Vector3, radius: number): THREE.Group {
   const group = new THREE.Group()
   for (const site of sites) {
@@ -57,7 +58,9 @@ export function buildCityLightSplats(sites: CitySite[], planetPos: THREE.Vector3
     )
     const scale = SPLAT_SCALE[site.tier]
     mesh.scale.set(scale, scale, 1)
-    mesh.position.copy(planetPos).addScaledVector(site.direction, radius * 1.012)
+    // 1.04: land displacement reaches ~151u at close LOD (0.4 height * r * 0.055 * 1.6) —
+    // the glow must float above the peaks or the terrain depth-rejects it from orbit.
+    mesh.position.copy(planetPos).addScaledVector(site.direction, radius * 1.04)
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), site.direction) // plane +z → surface normal
     mesh.userData.cityDirection = site.direction.clone()
     group.add(mesh)
