@@ -1,32 +1,29 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { CITY_BLOCK, CITY_ROAD, CITY_TIER_RADIUS, buildCityChunk, computeCityLayout, computeWindowPixels } from './cityChunk'
+import { CITY_BLOCK, CITY_ROAD, CITY_TIER_RADIUS, buildCityChunk, computeCityLayout, computeStreetGlowPixels, computeWindowPixels } from './cityChunk'
 import { computeCitySites } from './citySites'
 
 describe('computeCityLayout', () => {
-  it('is deterministic and returns buildings plus block pads', () => {
+  it('is deterministic per seed', () => {
     const a = computeCityLayout(4242, 2)
     const b = computeCityLayout(4242, 2)
-    expect(a.buildings.length).toBe(b.buildings.length)
-    expect(a.pads.length).toBe(b.pads.length)
-    expect(a.buildings[0]).toEqual(b.buildings[0])
+    expect(a.length).toBe(b.length)
+    expect(a[0]).toEqual(b[0])
   })
 
-  it('lays a dense fabric — several buildings per block, pads under every block', () => {
+  it('lays a dense fabric — several buildings per block', () => {
     const metro = computeCityLayout(7, 2)
     const town = computeCityLayout(7, 0)
-    expect(metro.pads.length).toBeGreaterThanOrEqual(300)
-    expect(metro.buildings.length).toBeGreaterThanOrEqual(600)
-    expect(metro.buildings.length).toBeLessThanOrEqual(2200)
-    expect(metro.buildings.length / metro.pads.length).toBeGreaterThan(1.8)
-    expect(town.buildings.length).toBeGreaterThanOrEqual(40)
+    expect(metro.length).toBeGreaterThanOrEqual(600)
+    expect(metro.length).toBeLessThanOrEqual(2200)
+    expect(town.length).toBeGreaterThanOrEqual(40)
+    expect(metro.length).toBeGreaterThan(town.length * 3)
   })
 
   it('keeps everything inside the tier radius with tight footprints', () => {
-    expect(CITY_ROAD).toBe(24)
     const extent = CITY_TIER_RADIUS[2]
-    const { buildings, pads } = computeCityLayout(99, 2)
-    for (const b of buildings) {
+    expect(CITY_BLOCK + CITY_ROAD).toBe(120) // street lattice tile == one cell
+    for (const b of computeCityLayout(99, 2)) {
       expect(Math.hypot(b.x, b.z)).toBeLessThanOrEqual(extent + CITY_BLOCK)
       expect(b.w).toBeGreaterThanOrEqual(12)
       expect(b.w).toBeLessThanOrEqual(32)
@@ -34,11 +31,10 @@ describe('computeCityLayout', () => {
       expect(b.d).toBeLessThanOrEqual(32)
       expect(b.h).toBeGreaterThan(0)
     }
-    for (const p of pads) expect(Math.hypot(p.x, p.z)).toBeLessThanOrEqual(extent + CITY_BLOCK)
   })
 
   it('follows a tower power law — few tall, many low', () => {
-    const heights = computeCityLayout(123, 2).buildings.map((b) => b.h).sort((a, b) => a - b)
+    const heights = computeCityLayout(123, 2).map((b) => b.h).sort((a, b) => a - b)
     expect(heights[Math.floor(heights.length / 2)]).toBeLessThan(60)
     expect(heights[heights.length - 1]).toBeGreaterThan(120)
   })
@@ -68,40 +64,74 @@ describe('computeWindowPixels', () => {
   })
 })
 
+describe('computeStreetGlowPixels', () => {
+  it('lights the tile borders (street lattice) and keeps the block interior dark', () => {
+    const size = 64
+    const px = computeStreetGlowPixels(size)
+    expect(px.length).toBe(size * size * 4)
+    expect(px[0]).toBe(255) // corner — street light
+    const centre = ((size / 2) * size + size / 2) * 4
+    expect(px[centre]).toBe(0) // block interior stays dark
+    // border width matches the road share of a cell
+    const expected = Math.max(2, Math.round((size * (CITY_ROAD / 2)) / (CITY_BLOCK + CITY_ROAD)))
+    expect(px[((size / 2) * size + (expected - 1)) * 4]).toBe(255)
+    expect(px[((size / 2) * size + (expected + 1)) * 4]).toBe(0)
+  })
+})
+
 describe('buildCityChunk', () => {
   const sites = computeCitySites(1274, 4300, 8)
   const planetPos = new THREE.Vector3(0, -4000, 18000)
 
-  it('creates pad + building instanced meshes anchored near the surface, windows on sides only', () => {
+  it('creates one terrain-hugging ground sheet plus building instances near the surface', () => {
     const chunk = buildCityChunk(sites[0], planetPos, 1274, 4300)
-    const meshes = chunk.group.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
-    expect(meshes.length).toBe(2)
-    const [pads, bodies] = meshes
-    expect(pads.count).toBeGreaterThanOrEqual(200)
+    const instanced = chunk.group.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
+    const plain = chunk.group.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh && !(c instanceof THREE.InstancedMesh))
+    expect(instanced.length).toBe(1) // bodies
+    expect(plain.length).toBe(1) // ground sheet
+    const [bodies] = instanced
+    const [ground] = plain
     expect(bodies.count).toBeGreaterThanOrEqual(450)
-    expect(Array.isArray(bodies.material)).toBe(true)
+    const groundMat = ground.material as THREE.MeshStandardMaterial
+    expect(groundMat.emissiveMap).not.toBeNull()
+    expect(groundMat.emissiveMap!.wrapS).toBe(THREE.RepeatWrapping)
+    // ground vertices bend onto the sphere: interior vertices sit near the planet
+    // surface (plane corners are skirt vertices that dive below terrain by design)
+    const gp = ground.geometry.getAttribute('position') as THREE.BufferAttribute
+    const vpos = new THREE.Vector3()
+    const side = Math.sqrt(gp.count) // (seg+1) per row
+    const mid = Math.floor(side / 2)
+    for (const i of [mid * side + mid, mid * side + Math.floor(side / 4), Math.floor(side / 4) * side + mid]) {
+      vpos.fromBufferAttribute(gp, i).add(ground.position).sub(planetPos)
+      expect(vpos.length()).toBeGreaterThan(4300 * 0.95)
+      expect(vpos.length()).toBeLessThan(4300 * 1.1)
+    }
     const mats = bodies.material as THREE.Material[]
     expect(mats.length).toBe(6)
     expect((mats[0] as THREE.MeshStandardMaterial).emissiveMap).not.toBeNull()
-    expect((mats[2] as THREE.MeshStandardMaterial).emissiveMap).toBeNull()
+    expect((mats[2] as THREE.MeshStandardMaterial).emissiveMap).toBeNull() // roof (+y) has no windows
     const m = new THREE.Matrix4()
-    const pos = new THREE.Vector3()
+    const bpos = new THREE.Vector3()
     bodies.getMatrixAt(0, m)
-    pos.setFromMatrixPosition(m)
-    const dist = pos.distanceTo(planetPos)
+    bpos.setFromMatrixPosition(m)
+    const dist = bpos.distanceTo(planetPos)
     expect(dist).toBeGreaterThan(4300 * 0.95)
     expect(dist).toBeLessThan(4300 * 1.1)
     chunk.dispose()
   })
 
-  it('update() night-gates the window emissive and dispose() empties the group', () => {
+  it('update() night-gates windows and street glow; dispose() empties the group', () => {
     const chunk = buildCityChunk(sites[0], planetPos, 1274, 4300)
     chunk.update(1)
-    const meshes = chunk.group.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
-    const side = (meshes[1].material as THREE.Material[])[0] as THREE.MeshStandardMaterial
+    const instanced = chunk.group.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
+    const plain = chunk.group.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh && !(c instanceof THREE.InstancedMesh))
+    const side = (instanced[0].material as THREE.Material[])[0] as THREE.MeshStandardMaterial
+    const groundMat = plain[0].material as THREE.MeshStandardMaterial
     expect(side.emissiveIntensity).toBeGreaterThan(0.6)
+    expect(groundMat.emissiveIntensity).toBeGreaterThan(0.4)
     chunk.update(0)
     expect(side.emissiveIntensity).toBe(0)
+    expect(groundMat.emissiveIntensity).toBe(0)
     chunk.dispose()
     expect(chunk.group.children.length).toBe(0)
   })
