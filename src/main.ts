@@ -53,6 +53,9 @@ import { engineGlowStyle, type EngineGlowStyle } from './render/engineGlow'
 import { createSeasonHubLifeRig, updateSeasonHubLifeRig } from './render/seasonHub'
 import { buildBlackHole } from './render/blackHole'
 import { applyPlanetAssetTextures, loadPlanetAssetTextures } from './render/planetAssetTextures'
+import { computeCitySites, type CitySite } from './render/citySites'
+import { buildCityChunk, CITY_TIER_RADIUS, type CityChunk } from './render/cityChunk'
+import { buildCityLightSplats, cityNightFactor, updateCityLightSplats } from './render/cityLights'
 import { cancelTravel, catchUpQuantum, createQuantum, cycleQuantumDestinationIndex, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
   createTimeTrial,
@@ -1176,10 +1179,64 @@ for (const [idx, planet] of PLANETS.entries()) {
 }
 buildLights(scene)
 
+// --- Night cities (Earth only, v1): orbit glow splats + streamed low-altitude chunks ---
+const EARTH = PLANETS.find((p) => p.name === 'Earth')!
+let citySites: CitySite[] | null = null
+let citySplats: THREE.Group | null = null
+const cityChunks = new Map<number, CityChunk>()
+const CITY_CHUNK_BUILD_ALT = 3000
+const _cityShipDir = new THREE.Vector3()
+const _citySunDir = new THREE.Vector3()
+
+function updateCities(): void {
+  const dist = ship.position.distanceTo(EARTH.position)
+  if (dist > EARTH.radius * 3) {
+    if (citySplats) citySplats.visible = false
+    for (const [idx, chunk] of cityChunks) {
+      scene.remove(chunk.group)
+      chunk.dispose()
+      cityChunks.delete(idx)
+    }
+    return
+  }
+  if (!citySites) {
+    // Lazy one-time init on first Earth approach (~10ms total, far from the surface).
+    citySites = computeCitySites(EARTH.seed, EARTH.radius, 8)
+    citySplats = buildCityLightSplats(citySites, EARTH.position, EARTH.radius)
+    scene.add(citySplats)
+  }
+  citySplats!.visible = true
+  updateCityLightSplats(citySplats!, EARTH.position, SUN_POSITION)
+
+  _cityShipDir.copy(ship.position).sub(EARTH.position).normalize()
+  _citySunDir.copy(SUN_POSITION).sub(EARTH.position).normalize()
+  const alt = dist - EARTH.radius
+  for (let i = 0; i < citySites.length; i++) {
+    const site = citySites[i]
+    const arc = _cityShipDir.angleTo(site.direction) * EARTH.radius // ground distance to the city
+    const reach = CITY_TIER_RADIUS[site.tier]
+    const chunk = cityChunks.get(i)
+    if (!chunk && alt < CITY_CHUNK_BUILD_ALT && arc < reach + 2600) {
+      const built = buildCityChunk(site, EARTH.position, EARTH.seed, EARTH.radius)
+      scene.add(built.group)
+      cityChunks.set(i, built)
+    } else if (chunk && arc > reach + 4200) {
+      scene.remove(chunk.group)
+      chunk.dispose()
+      cityChunks.delete(i)
+    }
+  }
+  for (const [i, chunk] of cityChunks) {
+    chunk.update(cityNightFactor(citySites[i].direction.dot(_citySunDir)))
+  }
+}
+
 function updateDeepSpaceVisibility(): void {
   const inPvpDeepSpace = ship.position.distanceToSquared(PVP_ZONE_CENTER) <= PVP_ARENA_CLEAR_RADIUS * PVP_ARENA_CLEAR_RADIUS
   sun.visible = !inPvpDeepSpace
   for (const mesh of planetGroups) mesh.visible = !inPvpDeepSpace
+  if (citySplats) citySplats.visible = citySplats.visible && !inPvpDeepSpace
+  for (const chunk of cityChunks.values()) chunk.group.visible = !inPvpDeepSpace
 }
 
 function rebuildPlanetLODs(): void {
@@ -4205,6 +4262,15 @@ export function launchGame(callsign?: string): void {
   if (callsign) nicknameEl.value = callsign
   launch()
 }
+// DEV verification hook: ?city=N drops the pilot 1.2km above city site N-1 after launch.
+if (import.meta.env.DEV && URL_PARAMS.get('city')) {
+  const devSites = computeCitySites(EARTH.seed, EARTH.radius, 8)
+  const idx = Math.min(devSites.length - 1, Math.max(0, Number(URL_PARAMS.get('city')) - 1 || 0))
+  const site = devSites[idx]
+  const overhead = EARTH.position.clone().addScaledVector(site.direction, EARTH.radius + 1200)
+  const ground = EARTH.position.clone().addScaledVector(site.direction, EARTH.radius)
+  setTimeout(() => { if (running) placePlayerAt(overhead, ground) }, 2500)
+}
 export function enterBrowse(): void { enterBrowseMode() }
 if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) {
   nicknameEl.value = SHOWCASE_HOLDER ? HOLDER_SHOWCASE_STEPS[0].callsign : SHOWCASE_TIME_TRIAL ? 'RACER' : 'test'
@@ -5126,6 +5192,7 @@ function frame(now: number): void {
     pfMark('minimap')
     updateDepthHUD()
     updateAltitudeHUD()
+    updateCities()
     const atmosphere = updateAtmoVeil()
     if (quantum.phase === 'idle') {
       // Black-hole proximity adds a low rumble; regional ambience gives each landmark its own air.
