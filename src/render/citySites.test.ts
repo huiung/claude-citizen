@@ -37,6 +37,26 @@ describe('computeCitySites', () => {
     }
   })
 
+  it('keeps city footprints mostly on land (no metropolis in a bay)', () => {
+    for (const site of sites) {
+      const t1 = new THREE.Vector3(0, 1, 0).cross(site.direction).normalize()
+      const t2 = site.direction.clone().cross(t1).normalize()
+      let land = 0
+      let total = 0
+      const probe = new THREE.Vector3()
+      for (const arc of [0.16, 0.3]) {
+        for (let k = 0; k < 6; k++) {
+          const ang = (k / 6) * Math.PI * 2
+          probe.copy(site.direction).addScaledVector(t1, Math.cos(ang) * arc).addScaledVector(t2, Math.sin(ang) * arc).normalize()
+          const p = samplePlanetSurface('earth', EARTH_SEED, probe.x, probe.y, probe.z, undefined, EARTH_RADIUS)
+          total++
+          if (p.height >= 0.05) land++
+        }
+      }
+      expect(land / total).toBeGreaterThanOrEqual(0.7)
+    }
+  })
+
   it('assigns tiers by pick order — metropolises first', () => {
     expect(sites.map((s) => s.tier)).toEqual([2, 2, 1, 1, 1, 0, 0, 0].slice(0, sites.length))
   })

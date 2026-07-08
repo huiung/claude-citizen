@@ -54,6 +54,19 @@ export function computeCitySites(planetSeed: number, radius: number, count = 8):
       roughness = Math.max(roughness, Math.abs(p.height - centre.height))
     }
     if (!onLand) continue
+
+    // Footprint check: the flatness probes cover ~0.02 rad but a metropolis spans ~0.33 rad —
+    // sample two rings across the widest footprint and reject candidates that straddle bays.
+    let land = 0
+    for (const arc of [0.16, 0.3] as const) {
+      for (let k = 0; k < 6; k++) {
+        const ang = (k / 6) * Math.PI * 2
+        probe.copy(dir).addScaledVector(t1, Math.cos(ang) * arc).addScaledVector(t2, Math.sin(ang) * arc).normalize()
+        const p = samplePlanetSurface('earth', planetSeed, probe.x, probe.y, probe.z, undefined, radius)
+        if (p.height >= 0.05) land++
+      }
+    }
+    if (land < 9) continue // < 75% of the footprint on land
     candidates.push({ dir, roughness })
   }
 
