@@ -12,6 +12,9 @@ function mulberry32(seed: number) {
   }
 }
 
+const _axisX = new THREE.Vector3(1, 0, 0)
+const _axisY = new THREE.Vector3(0, 1, 0)
+
 export interface CitySite {
   /** unit direction from the planet centre to the city */
   direction: THREE.Vector3
@@ -35,15 +38,18 @@ export function computeCitySites(planetSeed: number, radius: number, count = 8):
     const s = Math.sqrt(1 - y * y)
     const dir = new THREE.Vector3(s * Math.cos(theta), y, s * Math.sin(theta))
     if (Math.abs(dir.y) > 0.7) continue // polar caps stay dark
-    const centre = samplePlanetSurface('earth', planetSeed, dir.x, dir.y, dir.z, 0x3a72a8, radius)
+    const centre = samplePlanetSurface('earth', planetSeed, dir.x, dir.y, dir.z, undefined, radius)
     if (centre.height < 0.05) continue // water, coast — cities want solid land
 
-    // Local flatness: 4 probes ~0.02 rad away must also be land, with little height spread.
+    // Local flatness: 4 probes ~0.02 rad away along the TANGENT plane (a global-axis
+    // offset degenerates near ±X and skews the flatness ranking by longitude).
+    const t1 = (Math.abs(dir.y) > 0.99 ? _axisX : _axisY).clone().cross(dir).normalize()
+    const t2 = dir.clone().cross(t1).normalize()
     let roughness = 0
     let onLand = true
-    for (const [ox, oy] of [[0.02, 0], [-0.02, 0], [0, 0.02], [0, -0.02]] as const) {
-      probe.set(dir.x + ox, dir.y + oy, dir.z).normalize()
-      const p = samplePlanetSurface('earth', planetSeed, probe.x, probe.y, probe.z, 0x3a72a8, radius)
+    for (const [a, b] of [[0.02, 0], [-0.02, 0], [0, 0.02], [0, -0.02]] as const) {
+      probe.copy(dir).addScaledVector(t1, a).addScaledVector(t2, b).normalize()
+      const p = samplePlanetSurface('earth', planetSeed, probe.x, probe.y, probe.z, undefined, radius)
       if (p.height < 0.05) { onLand = false; break }
       roughness = Math.max(roughness, Math.abs(p.height - centre.height))
     }
@@ -52,23 +58,28 @@ export function computeCitySites(planetSeed: number, radius: number, count = 8):
   }
 
   candidates.sort((a, b) => a.roughness - b.roughness)
-  const picked: THREE.Vector3[] = []
-  const minSeparation = 0.35
-  for (const c of candidates) {
-    if (picked.length >= count) break
-    if (picked.every((p) => p.angleTo(c.dir) > minSeparation)) picked.push(c.dir)
-  }
-  // Sparse seeds can leave gaps — relax separation once rather than return a dark planet.
-  if (picked.length < count) {
-    for (const c of candidates) {
-      if (picked.length >= count) break
-      if (!picked.includes(c.dir) && picked.every((p) => p.angleTo(c.dir) > minSeparation * 0.6)) picked.push(c.dir)
-    }
-  }
+  const picked = pickSeparated(candidates.map((c) => c.dir), count, 0.35)
 
   return picked.map((dir, i) => ({
     direction: dir,
     tier: (i < 2 ? 2 : i < 5 ? 1 : 0) as 0 | 1 | 2,
     seed: (planetSeed * 31 + i * 101) | 0,
   }))
+}
+
+/** Greedy pick by ascending score with a minimum angular separation; one relaxed pass
+ *  (×0.6) fills the remainder rather than returning a sparse set. Exported for tests. */
+export function pickSeparated(dirs: THREE.Vector3[], count: number, minSeparation: number): THREE.Vector3[] {
+  const picked: THREE.Vector3[] = []
+  for (const dir of dirs) {
+    if (picked.length >= count) break
+    if (picked.every((p) => p.angleTo(dir) > minSeparation)) picked.push(dir)
+  }
+  if (picked.length < count) {
+    for (const dir of dirs) {
+      if (picked.length >= count) break
+      if (!picked.includes(dir) && picked.every((p) => p.angleTo(dir) > minSeparation * 0.6)) picked.push(dir)
+    }
+  }
+  return picked
 }

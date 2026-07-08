@@ -1,5 +1,6 @@
+import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { computeCitySites } from './citySites'
+import { computeCitySites, pickSeparated } from './citySites'
 import { samplePlanetSurface } from './planetTextures'
 
 const EARTH_SEED = 1274
@@ -36,9 +37,27 @@ describe('computeCitySites', () => {
     }
   })
 
-  it('assigns descending tiers — first picks are the metropolises', () => {
-    expect(sites[0].tier).toBe(2)
-    expect(sites[sites.length - 1].tier).toBeLessThanOrEqual(sites[0].tier)
-    for (const site of sites) expect([0, 1, 2]).toContain(site.tier)
+  it('assigns tiers by pick order — metropolises first', () => {
+    expect(sites.map((s) => s.tier)).toEqual([2, 2, 1, 1, 1, 0, 0, 0].slice(0, sites.length))
+  })
+})
+
+describe('pickSeparated', () => {
+  const clustered = [
+    new THREE.Vector3(1, 0, 0),
+    new THREE.Vector3(1, 0.01, 0).normalize(), // ~0.01 rad from the first
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3(1, 0.3, 0).normalize(), // ~0.29 rad — passes only the relaxed 0.21 gate
+  ]
+  it('greedy pass skips near-duplicates', () => {
+    const picked = pickSeparated(clustered, 2, 0.35)
+    expect(picked[0]).toBe(clustered[0])
+    expect(picked[1]).toBe(clustered[2])
+  })
+  it('relaxation fills the remainder without re-adding picked entries', () => {
+    const picked = pickSeparated(clustered, 3, 0.35)
+    expect(picked.length).toBe(3)
+    expect(picked[2]).toBe(clustered[3])
+    expect(new Set(picked).size).toBe(3)
   })
 })
