@@ -1211,15 +1211,17 @@ function updateCities(): void {
   _cityShipDir.copy(ship.position).sub(EARTH.position).normalize()
   _citySunDir.copy(SUN_POSITION).sub(EARTH.position).normalize()
   const alt = dist - EARTH.radius
+  let builtThisTick = false // one ~2ms chunk build per tick — adjacent cities must not stack a hitch
   for (let i = 0; i < citySites.length; i++) {
     const site = citySites[i]
     const arc = _cityShipDir.angleTo(site.direction) * EARTH.radius // ground distance to the city
     const reach = CITY_TIER_RADIUS[site.tier]
     const chunk = cityChunks.get(i)
-    if (!chunk && alt < CITY_CHUNK_BUILD_ALT && arc < reach + 2600) {
+    if (!chunk && !builtThisTick && alt < CITY_CHUNK_BUILD_ALT && arc < reach + 2600) {
       const built = buildCityChunk(site, EARTH.position, EARTH.seed, EARTH.radius)
       scene.add(built.group)
       cityChunks.set(i, built)
+      builtThisTick = true
     } else if (chunk && arc > reach + 4200) {
       scene.remove(chunk.group)
       chunk.dispose()
@@ -4262,14 +4264,21 @@ export function launchGame(callsign?: string): void {
   if (callsign) nicknameEl.value = callsign
   launch()
 }
-// DEV verification hook: ?city=N drops the pilot 1.2km above city site N-1 after launch.
+// DEV verification hook: ?city=N drops the pilot 1.2km above city site N-1 once the
+// game is actually flying (poll: launch + flight-plan chooser dismissed), so it works
+// regardless of how long the menu takes and isn't overridden by spawnAtFlightPlan.
 if (import.meta.env.DEV && URL_PARAMS.get('city')) {
   const devSites = computeCitySites(EARTH.seed, EARTH.radius, 8)
   const idx = Math.min(devSites.length - 1, Math.max(0, Number(URL_PARAMS.get('city')) - 1 || 0))
   const site = devSites[idx]
   const overhead = EARTH.position.clone().addScaledVector(site.direction, EARTH.radius + 1200)
   const ground = EARTH.position.clone().addScaledVector(site.direction, EARTH.radius)
-  setTimeout(() => { if (running) placePlayerAt(overhead, ground) }, 2500)
+  const devCityPoll = setInterval(() => {
+    if (!running || !flightPlanEl.hidden) return
+    clearInterval(devCityPoll)
+    placePlayerAt(overhead, ground)
+  }, 500)
+  setTimeout(() => clearInterval(devCityPoll), 120000) // stop polling after 2 minutes
 }
 export function enterBrowse(): void { enterBrowseMode() }
 if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) {
