@@ -110,6 +110,9 @@ export interface CityChunk {
  *  well above the analytic sample — lift the city fabric clear of those chords. */
 const SHEET_LIFT = 30
 
+/** Lots this close to the round city edge are skipped — the sheet's skirt dives there. */
+const SKIRT_MARGIN = 24
+
 /** One city: a single ground sheet BENT onto the planet (each vertex follows the analytic
  *  terrain, water clamped to coast level so bays become harbor platforms) carrying a
  *  repeating street-grid emissiveMap — rigid pads can never tile a curved bumpy surface,
@@ -127,7 +130,7 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   interface Placement { w: number; d: number; h: number; dir: THREE.Vector3; ground: number }
   /** 5-point terrain anchor with center water gate (v1 technique kept). */
   function place(x: number, z: number, w: number, d: number, h: number): Placement | null {
-    if (Math.hypot(x, z) > extent - 24) return null // skirt zone — the sheet dives here
+    if (Math.hypot(x, z) > extent - SKIRT_MARGIN) return null // the sheet dives here
     let ground = Infinity
     let centerGround = 0
     let dirC: THREE.Vector3 | null = null
@@ -203,8 +206,14 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
     emissive: 0xffffff, emissiveIntensity: 0, emissiveMap: windowTexture,
   })
   const roofMat = new THREE.MeshStandardMaterial({ color: 0x232a31, roughness: 0.95, metalness: 0 })
-  // BoxGeometry group order: +x, -x, +y(roof), -y, +z, -z — windows on the four sides only.
-  const bodies = new THREE.InstancedMesh(unitBox, [sideMat, sideMat, roofMat, roofMat, sideMat, sideMat], bodyPlacements.length)
+  // BoxGeometry face order: +x, -x, +y, -y, +z, -z (12 indices each). The renderer emits one
+  // draw call PER GROUP even when groups share a material, so merge the default 6 groups into
+  // 3 — windows on the four sides, plain roof on ±y — keeping the city at 4 draw calls total.
+  unitBox.clearGroups()
+  unitBox.addGroup(0, 12, 0) // +x, -x sides (6 indices per face)
+  unitBox.addGroup(12, 12, 1) // +y, -y roof/underside
+  unitBox.addGroup(24, 12, 0) // +z, -z sides
+  const bodies = new THREE.InstancedMesh(unitBox, [sideMat, roofMat], bodyPlacements.length)
 
   const m = new THREE.Matrix4()
   const q = new THREE.Quaternion()

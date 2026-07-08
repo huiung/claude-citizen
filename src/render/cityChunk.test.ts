@@ -107,9 +107,11 @@ describe('buildCityChunk', () => {
       expect(vpos.length()).toBeLessThan(4300 * 1.1)
     }
     const mats = bodies.material as THREE.Material[]
-    expect(mats.length).toBe(6)
+    expect(mats.length).toBe(2) // sides + roof — one draw call each, 4 total per city with ground
+    expect(bodies.geometry.groups.length).toBe(3) // ±x sides / ±y roof / ±z sides
     expect((mats[0] as THREE.MeshStandardMaterial).emissiveMap).not.toBeNull()
-    expect((mats[2] as THREE.MeshStandardMaterial).emissiveMap).toBeNull() // roof (+y) has no windows
+    expect((mats[1] as THREE.MeshStandardMaterial).emissiveMap).toBeNull() // roof (±y) has no windows
+    expect(bodies.geometry.groups[1].materialIndex).toBe(1) // ±y faces → roof material
     const m = new THREE.Matrix4()
     const bpos = new THREE.Vector3()
     bodies.getMatrixAt(0, m)
@@ -125,7 +127,7 @@ describe('buildCityChunk', () => {
     chunk.update(1)
     const instanced = chunk.group.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
     const plain = chunk.group.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh && !(c instanceof THREE.InstancedMesh))
-    const side = (instanced[0].material as THREE.Material[])[0] as THREE.MeshStandardMaterial
+    const side = (instanced[0].material as THREE.Material[])[0] as THREE.MeshStandardMaterial // sides material
     const groundMat = plain[0].material as THREE.MeshStandardMaterial
     expect(side.emissiveIntensity).toBeGreaterThan(0.6)
     expect(groundMat.emissiveIntensity).toBeGreaterThan(0.4)
