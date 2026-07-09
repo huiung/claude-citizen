@@ -39,6 +39,7 @@ export function buildNebula(): THREE.Mesh {
       uColorB: { value: new THREE.Color(0x1a3040) }, // dim teal
       uColorC: { value: new THREE.Color(0x3a2c34) }, // dusty rose
       uBandNormal: { value: MILKY_WAY_NORMAL.clone() },
+      uFade: { value: 0 }, // daylight-atmosphere washout — driven via setNebulaFade
     },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
@@ -52,6 +53,7 @@ export function buildNebula(): THREE.Mesh {
       varying vec3 vDir;
       uniform vec3 uColorA, uColorB, uColorC;
       uniform vec3 uBandNormal;
+      uniform float uFade;
       float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
       float noise(vec3 x){
         vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
@@ -77,7 +79,7 @@ export function buildNebula(): THREE.Mesh {
         vec3 col = mix(uColorA, uColorB, n2);
         col = mix(col, uColorC, smoothstep(0.55, 1.0, n));
         col += vec3(0.62, 0.66, 0.72) * band * 0.35 * (1.0 - dust);
-        float intensity = cloud * 0.5;
+        float intensity = cloud * 0.5 * (1.0 - uFade);
         gl_FragColor = vec4(col * intensity, intensity);
       }
     `,
@@ -85,6 +87,12 @@ export function buildNebula(): THREE.Mesh {
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(30000, 64, 48), mat)
   mesh.renderOrder = -1
   return mesh
+}
+
+/** Apply a sky fade (0..1, clamped) — daylight air washing the nebula out. */
+export function setNebulaFade(nebula: THREE.Mesh, fade: number): void {
+  const mat = nebula.material as THREE.ShaderMaterial
+  mat.uniforms.uFade.value = Math.min(1, Math.max(0, fade))
 }
 
 /** Fresnel atmosphere shell — brightest along the limb, tinted by per-kind params:
@@ -147,6 +155,75 @@ function makeAtmosphere(radius: number, surface: SurfaceKind): THREE.Mesh {
     `,
   })
   return new THREE.Mesh(new THREE.SphereGeometry(radius * 1.06, 48, 32), mat)
+}
+
+/** Top of the SKY atmosphere as a fraction of planet radius. Deliberately much taller
+ *  than the 1.06R limb shell: gameplay flies cities at 1-3km, so the felt atmosphere
+ *  must reach there (Earth: 4300R → top ≈ 3km altitude). Shared with main.ts so the
+ *  star/nebula fade agrees with the dome. */
+export const SKY_DOME_FRAC = 1.7
+
+/** Inside-the-atmosphere sky dome (Earth): a second BackSide additive sphere at
+ *  SKY_DOME_FRAC·R that is transparent from space and, once the camera descends into
+ *  it, paints zenith Rayleigh blue, a hazy horizon, and a sunset band toward a low
+ *  sun — all gated by local daylight so the night sky stays starry. Camera depth is
+ *  derived per-fragment from the built-in cameraPosition: no per-frame uniforms. */
+export function makeSkyDome(radius: number, surface: SurfaceKind): THREE.Mesh {
+  const p = ATMOSPHERE_PARAMS[surface]
+  const mat = new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    uniforms: {
+      uBase: { value: new THREE.Color(p.baseColor) },
+      uRayleigh: { value: new THREE.Color(p.rayleighColor) },
+      uSunset: { value: new THREE.Color(p.sunsetColor) },
+      uIntensity: { value: p.intensity },
+      uSunPos: { value: SUN_POSITION.clone() },
+      uRadius: { value: radius },
+      uTop: { value: radius * SKY_DOME_FRAC },
+    },
+    vertexShader: /* glsl */ `
+      varying vec3 vWorldPos;
+      varying vec3 vCenter;
+      void main(){
+        vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
+        vCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz; // dome is centred on its local origin
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying vec3 vWorldPos;
+      varying vec3 vCenter;
+      uniform vec3 uBase;
+      uniform vec3 uRayleigh;
+      uniform vec3 uSunset;
+      uniform float uIntensity;
+      uniform vec3 uSunPos;
+      uniform float uRadius;
+      uniform float uTop;
+      void main(){
+        // Depth into the atmosphere: 0 at the dome top (and outside), 1 at the surface.
+        float insideness = clamp((uTop - distance(cameraPosition, vCenter)) / (uTop - uRadius), 0.0, 1.0);
+        if (insideness <= 0.0) { gl_FragColor = vec4(0.0); return; }
+        vec3 up = normalize(cameraPosition - vCenter);
+        vec3 viewDir = normalize(vWorldPos - cameraPosition);
+        vec3 camSun = normalize(uSunPos - cameraPosition);
+        // Thicker air toward the horizon; sun elevation at the OBSERVER gates day/night.
+        float horizon = pow(1.0 - clamp(dot(viewDir, up), 0.0, 1.0), 2.0);
+        float sunUp = dot(camSun, up);
+        float day = smoothstep(-0.12, 0.18, sunUp);
+        // Warm band around a low sun, strongest looking toward it.
+        float lowSun = pow(clamp(1.0 - abs(sunUp), 0.0, 1.0), 3.0);
+        float towardSun = pow(clamp(dot(viewDir, camSun), 0.0, 1.0), 2.0);
+        vec3 sky = mix(uRayleigh, mix(uBase, uSunset, lowSun * towardSun), horizon);
+        float lit = day * pow(insideness, 1.3) * uIntensity * (0.55 + 0.45 * horizon);
+        gl_FragColor = vec4(sky * lit, clamp(lit, 0.0, 1.0));
+      }
+    `,
+  })
+  return new THREE.Mesh(new THREE.SphereGeometry(radius * SKY_DOME_FRAC, 48, 32), mat)
 }
 
 // Spawn-side backdrop world — a textured Mars-type planet, up and to the side of the -z
@@ -665,6 +742,8 @@ function makePlanetSurface(
 export interface SolarPlanetOptions {
   quality?: 'startup' | 'high'
   startupTextureSize?: number
+  /** Turn the atmosphere shell into a sky dome when the camera is inside it (Earth). */
+  skyEnabled?: boolean
 }
 
 export function buildSolarPlanet(
@@ -689,6 +768,8 @@ export function buildSolarPlanet(
 
   // Fresnel atmosphere — per-kind params drive Rayleigh tint, sunset color, and limb width
   group.add(makeAtmosphere(radius, surface))
+  // Inside-atmosphere sky dome (Earth) — invisible from space, sky-blue from within.
+  if (options.skyEnabled) group.add(makeSkyDome(radius, surface))
 
   // Earth-type bodies get a translucent cloud shell drifting just above the surface.
   const startupCloudSize = startupTextureSize > 512 ? 512 : 256

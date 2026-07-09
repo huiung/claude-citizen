@@ -99,7 +99,10 @@ export function buildStarSky(count = 18000, seed = 42): THREE.Points {
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     vertexColors: true, // injects the `color` attribute declaration into the shader
-    uniforms: { uScale: { value: 900 } }, // fallback only — replaced via setStarSkyScale on init/resize
+    uniforms: {
+      uScale: { value: 900 }, // fallback only — replaced via setStarSkyScale on init/resize
+      uFade: { value: 0 }, // daylight-atmosphere washout — driven via setStarSkyFade
+    },
     vertexShader: /* glsl */ `
       attribute float aSize;
       varying vec3 vColor;
@@ -113,8 +116,10 @@ export function buildStarSky(count = 18000, seed = 42): THREE.Points {
     `,
     fragmentShader: /* glsl */ `
       varying vec3 vColor;
+      uniform float uFade;
       void main(){
         float a = smoothstep(0.5, 0.15, length(gl_PointCoord - 0.5)); // soft round sprite
+        a *= 1.0 - uFade;
         gl_FragColor = vec4(vColor * a, a);
       }
     `,
@@ -127,4 +132,19 @@ export function buildStarSky(count = 18000, seed = 42): THREE.Points {
 export function setStarSkyScale(sky: THREE.Points, drawingBufferHeight: number): void {
   const mat = sky.material as THREE.ShaderMaterial
   mat.uniforms.uScale.value = drawingBufferHeight * 0.5
+}
+
+/** How much the atmosphere hides the stars: 0 in space or at night, →1 on a day-side
+ *  surface. altFrac is depth into the shell (space=0, surface=1); sunUp is the sun's
+ *  elevation at the observer (-1..1). Mirrors the sky shader's smoothstep(-0.12, 0.18). */
+export function computeSkyFade(altFrac: number, sunUp: number): number {
+  const a = Math.pow(Math.min(1, Math.max(0, altFrac)), 0.6) // air is denser low — bias the washout down
+  const t = Math.min(1, Math.max(0, (sunUp + 0.12) / 0.3))
+  return a * t * t * (3 - 2 * t)
+}
+
+/** Apply a sky fade (0..1, clamped) — daylight air washing the starfield out. */
+export function setStarSkyFade(sky: THREE.Points, fade: number): void {
+  const mat = sky.material as THREE.ShaderMaterial
+  mat.uniforms.uFade.value = Math.min(1, Math.max(0, fade))
 }
