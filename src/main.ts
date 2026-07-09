@@ -56,6 +56,7 @@ import { createSeasonHubLifeRig, updateSeasonHubLifeRig } from './render/seasonH
 import { buildBlackHole } from './render/blackHole'
 import { applyPlanetAssetTextures, loadPlanetAssetTextures } from './render/planetAssetTextures'
 import { computeCitySites, type CitySite } from './render/citySites'
+import { isEarthDataReady, latLonToDir, loadEarthData } from './render/earthData'
 import { buildCityChunk, CITY_TIER_RADIUS, type CityChunk } from './render/cityChunk'
 import { buildCityLightSplats, cityNightFactor, updateCityLightSplats } from './render/cityLights'
 import { cancelTravel, catchUpQuantum, createQuantum, cycleQuantumDestinationIndex, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
@@ -1170,7 +1171,10 @@ for (const [idx, planet] of PLANETS.entries()) {
     skyEnabled: planet.name === 'Earth',
   })
   mesh.position.copy(planet.position)
-  mesh.userData.spin = 0.004 + ((planet.seed % 100) / 100) * 0.012 // gentle, per-planet rotation
+  // Earth doesn't spin: night-city sites and terrain/collision sampling live in world
+  // space, and with real-imagery continents any drift would slide Seoul's lights off
+  // the peninsula. The sun is fixed, so no day/night behaviour is lost.
+  mesh.userData.spin = planet.name === 'Earth' ? 0 : 0.004 + ((planet.seed % 100) / 100) * 0.012
   mesh.userData.planetIdx = idx
   scene.add(mesh)
   planetGroups.push(mesh)
@@ -1191,6 +1195,33 @@ const cityChunks = new Map<number, CityChunk>()
 const CITY_CHUNK_BUILD_ALT = 3000
 const _cityShipDir = new THREE.Vector3()
 const _citySunDir = new THREE.Vector3()
+
+// --- Real Earth: NASA rasters/textures load in the background; once ready the Earth
+// group is rebuilt so terrain displacement, collision heights, the Blue Marble
+// material, clouds, and city placement all switch to real topography together.
+// A load failure simply leaves the procedural Earth (offline/dev safety).
+void loadEarthData().then(() => {
+  if (!isEarthDataReady()) return
+  const idx = PLANETS.indexOf(EARTH)
+  const old = planetGroups[idx]
+  const rebuilt = buildSolarPlanet(EARTH.radius, EARTH.color, EARTH.hasRings, EARTH.surface, EARTH.seed, planetUpgraded.has(idx)
+    ? { quality: 'high', skyEnabled: true }
+    : { startupTextureSize: 1024, skyEnabled: true })
+  rebuilt.position.copy(EARTH.position)
+  rebuilt.rotation.copy(old.rotation)
+  rebuilt.userData.spin = old.userData.spin
+  rebuilt.userData.planetIdx = idx
+  scene.remove(old)
+  disposeObject(old)
+  scene.add(rebuilt)
+  planetGroups[idx] = rebuilt
+  rebuildPlanetLODs()
+  // City sites jump to the real megacity table — drop any procedural sites/chunks.
+  if (citySplats) { scene.remove(citySplats); disposeObject(citySplats) }
+  citySplats = null
+  citySites = null
+  for (const [i, chunk] of cityChunks) { scene.remove(chunk.group); chunk.dispose(); cityChunks.delete(i) }
+})
 
 function updateCities(): void {
   const dist = ship.position.distanceTo(EARTH.position)
@@ -1317,9 +1348,12 @@ function upgradeNextPlanet(now: number): void {
     try {
       // Fetch the real-imagery maps (if this planet has them) while the worker prewarms the
       // procedural fallback — whichever the swap ends up using, nothing blocks the main thread.
+      // Real-Earth mode covers every map itself (color/bump/roughness/clouds from NASA data),
+      // so both the legacy earth.jpg fetch and the procedural prewarm would be dead work.
+      const earthReal = next.planet.name === 'Earth' && isEarthDataReady()
       const [assets] = await Promise.all([
-        loadPlanetAssetTextures(next.planet.name, renderer.capabilities.getMaxAnisotropy()),
-        prewarmHighPlanetTextures(next.planet.radius, next.planet.surface, next.planet.seed, next.planet.color),
+        earthReal ? Promise.resolve(null) : loadPlanetAssetTextures(next.planet.name, renderer.capabilities.getMaxAnisotropy()),
+        earthReal ? Promise.resolve() : prewarmHighPlanetTextures(next.planet.radius, next.planet.surface, next.planet.seed, next.planet.color),
       ])
       const old = planetGroups[next.idx]
       const upgraded = buildSolarPlanet(
@@ -4356,6 +4390,27 @@ if (import.meta.env.DEV && URL_PARAMS.get('entry')) {
     }, 100)
   }, 500)
   setTimeout(() => clearInterval(devEntryPoll), 120000)
+}
+// DEV verification hook: ?earthview=<seoul|nyc|glint|orbit> parks the pilot over a real
+// landmark once the NASA earth data is in — capture-driven judgment of the real-Earth pass.
+if (import.meta.env.DEV && URL_PARAMS.get('earthview')) {
+  const which = URL_PARAMS.get('earthview')!
+  const devEarthPoll = setInterval(() => {
+    if (!running || !flightPlanEl.hidden || !isEarthDataReady()) return
+    clearInterval(devEarthPoll)
+    const place = (lat: number, lon: number, altFrac: number, target?: THREE.Vector3) => {
+      const pos = EARTH.position.clone().addScaledVector(latLonToDir(lat, lon), EARTH.radius * (1 + altFrac))
+      placePlayerAt(pos, target ?? EARTH.position)
+    }
+    if (which === 'seoul') place(37.57, 126.98, 0.5)
+    else if (which === 'nyc') place(40.71, -74.01, 0.5) // ~164° from the sub-solar point → night side
+    else if (which === 'glint') {
+      // Oblique look at the sub-solar ocean (Indian Ocean, lon 90°E) — the specular streak.
+      const seaTarget = EARTH.position.clone().addScaledVector(latLonToDir(0, 90), EARTH.radius)
+      place(18, 55, 0.35, seaTarget)
+    } else place(30, 110, 1.6) // orbit: East Asia hemisphere from high above
+  }, 500)
+  setTimeout(() => clearInterval(devEarthPoll), 120000)
 }
 export function enterBrowse(): void { enterBrowseMode() }
 if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) {
