@@ -3,6 +3,7 @@ import {
   _resetEarthDataForTests, _setEarthRastersForTests, dirToEquirectUv, isEarthDataReady,
   latLonToDir, sampleEarthElevation,
 } from './earthData'
+import { samplePlanetSurface } from './planetTextures'
 
 describe('latLonToDir / dirToEquirectUv', () => {
   it('round-trips real city coordinates through the sphere mapping', () => {
@@ -63,6 +64,24 @@ describe('sampleEarthElevation', () => {
     expect(low.height).toBeCloseTo(0.06 + (100 / 255) * 0.34, 3)
     const high = sampleEarthElevation(...latLonToDir(0, 135).toArray() as [number, number, number]) // u=0.875 → elev 255
     expect(high.height).toBeCloseTo(0.4, 3)
+  })
+
+  it('drives samplePlanetSurface("earth") once ready, leaving other planets procedural', () => {
+    const before = samplePlanetSurface('earth', 42, 1, 0, 0)
+    injectSyntheticWorld()
+    const dir = latLonToDir(0, 135) // land, elev 255
+    const earth = samplePlanetSurface('earth', 42, dir.x, dir.y, dir.z)
+    expect(earth.height).toBeCloseTo(0.4, 3)
+    const ocean = latLonToDir(0, -135)
+    const sea = samplePlanetSurface('earth', 42, ocean.x, ocean.y, ocean.z)
+    expect(sea.height).toBeLessThan(-0.18)
+    expect(sea.color.b).toBeGreaterThan(sea.color.r) // water tint stays blue for ground tinting
+    const mars = samplePlanetSurface('mars', 42, dir.x, dir.y, dir.z)
+    const marsAgain = samplePlanetSurface('mars', 42, dir.x, dir.y, dir.z)
+    expect(mars.height).toBeCloseTo(marsAgain.height, 8) // untouched by earth rasters
+    _resetEarthDataForTests()
+    const after = samplePlanetSurface('earth', 42, 1, 0, 0)
+    expect(after.height).toBeCloseTo(before.height, 8) // procedural fallback identical
   })
 
   it('bilinearly interpolates between texels', () => {
