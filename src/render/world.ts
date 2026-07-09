@@ -5,6 +5,7 @@ import { ATMOSPHERE_PARAMS } from './atmosphereParams'
 import {
   generateCloudTexture, generateCloudTextureAsync, generatePlanetTextures, generatePlanetTexturesAsync, samplePlanetSurface,
 } from './planetTextures'
+import { earthCloudTexture, earthColorTexture, isEarthDataReady, makeEarthBumpTexture, makeEarthRoughnessTexture } from './earthData'
 import { createRingTexture, remapRingUVs } from './planetRings'
 import { makeAsteroidMaterial, makeOreMaterial } from './asteroidTextures'
 import { buildStarSky, MILKY_WAY_NORMAL } from './starSky'
@@ -724,6 +725,18 @@ function makePlanetSurface(
   }
 
   geo.computeVertexNormals()
+  // Real Earth: Blue Marble color, elevation bump, and a water-smooth roughness map so
+  // the sun streaks across oceans. Displacement above already followed the NASA raster.
+  if (surface === 'earth' && isEarthDataReady()) {
+    return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      map: earthColorTexture(textureSize !== undefined && textureSize <= 1024 ? 'startup' : 'high'),
+      bumpMap: makeEarthBumpTexture(),
+      bumpScale: radius * 0.02,
+      roughnessMap: makeEarthRoughnessTexture(),
+      roughness: 1,
+      metalness: 0,
+    }))
+  }
   const mapSize = textureSize ?? highPlanetMapSize(surface, radius)
   const maps = generatePlanetTextures(surface, seed, color, mapSize, radius)
   const material = new THREE.MeshStandardMaterial({
@@ -772,12 +785,16 @@ export function buildSolarPlanet(
   if (options.skyEnabled) group.add(makeSkyDome(radius, surface))
 
   // Earth-type bodies get a translucent cloud shell drifting just above the surface.
+  // Real Earth swaps the procedural puffs for NASA's global cloud composite.
   const startupCloudSize = startupTextureSize > 512 ? 512 : 256
-  const clouds = generateCloudTexture(surface, seed, quality === 'high' ? highCloudMapSize(radius) : startupCloudSize, radius)
+  const clouds = (surface === 'earth' && earthCloudTexture())
+    || generateCloudTexture(surface, seed, quality === 'high' ? highCloudMapSize(radius) : startupCloudSize, radius)
   if (clouds) {
     group.add(new THREE.Mesh(
       new THREE.SphereGeometry(radius * 1.018, 72, 36),
-      new THREE.MeshBasicMaterial({ map: clouds, transparent: true, opacity: 0.4, depthWrite: false }),
+      // NASA clouds carry their own alpha (luminance) — they can run denser than the
+      // uniformly-translucent procedural shell without whiting out the planet.
+      new THREE.MeshBasicMaterial({ map: clouds, transparent: true, opacity: surface === 'earth' && earthCloudTexture() ? 0.85 : 0.4, depthWrite: false }),
     ))
   }
 

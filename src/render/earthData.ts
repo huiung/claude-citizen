@@ -140,6 +140,35 @@ async function loadRaster(url: string): Promise<{ data: Uint8ClampedArray; width
   return { data: gray, width: canvas.width, height: canvas.height }
 }
 
+/** cloud_combined ships white-on-black — turn luminance into alpha so the cloud shell
+ *  keeps using ordinary transparent blending (black jpg background would paint the
+ *  oceans dark otherwise). */
+async function loadCloudAlphaTexture(url: string): Promise<THREE.Texture> {
+  const img = new Image()
+  img.src = url
+  await img.decode()
+  const canvas = document.createElement('canvas')
+  canvas.width = img.naturalWidth
+  canvas.height = img.naturalHeight
+  const ctx = canvas.getContext('2d')!
+  ctx.drawImage(img, 0, 0)
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const px = data.data
+  for (let i = 0; i < px.length; i += 4) {
+    px[i + 3] = px[i] // alpha = luminance (grayscale source)
+    px[i] = px[i + 1] = px[i + 2] = 255 // pure white clouds, opacity carries the shape
+  }
+  ctx.putImageData(data, 0, 0)
+  const tex = new THREE.CanvasTexture(canvas)
+  tex.colorSpace = THREE.SRGBColorSpace
+  tex.wrapS = THREE.RepeatWrapping
+  tex.wrapT = THREE.ClampToEdgeWrapping
+  tex.minFilter = THREE.LinearMipmapLinearFilter
+  tex.magFilter = THREE.LinearFilter
+  tex.needsUpdate = true
+  return tex
+}
+
 function loadColorTexture(url: string): Promise<THREE.Texture> {
   return new Promise((resolve, reject) => {
     new THREE.TextureLoader().load(url, (tex) => {
@@ -162,7 +191,7 @@ export async function loadEarthData(): Promise<void> {
       loadRaster('/textures/earth/elev-1024.png'),
       loadRaster('/textures/earth/bath-1024.png'),
       loadColorTexture('/textures/earth/color-2048.jpg'),
-      loadColorTexture('/textures/earth/clouds-2048.jpg').catch(() => null),
+      loadCloudAlphaTexture('/textures/earth/clouds-2048.jpg').catch(() => null),
     ])
     if (elev.width !== bath.width || elev.height !== bath.height) throw new Error('earth raster size mismatch')
     colorStartup = startupTex
