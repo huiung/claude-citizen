@@ -29,6 +29,8 @@ import {
   buildMuchLaunchTower, buildRareFrogShrine, buildSun, buildWarpField, COLONY_POS, prewarmHighPlanetTextures, REFINERY_POS, setNebulaFade, SKY_DOME_FRAC, SPAWN_PLANET, updateDustField, updateWarpField,
 } from './render/world'
 import { computeSkyFade, setStarSkyFade, setStarSkyScale } from './render/starSky'
+import { buildEntryPlasma, computeEntryHeat, PLASMA_COLD_THRESHOLD } from './render/entryFx'
+import { ATMOSPHERE_PARAMS } from './render/atmosphereParams'
 import { PLANETS, planetDockPosition, SUN_COLOR, SUN_POSITION, SUN_RADIUS, type SurfaceKind } from './sim/solarSystem'
 import { NetClient, type MarketActionResult, type MarketIntentResult, type MarketListing, type PeerState, type PlayerProgress } from './net/client'
 import { dockableTarget, DOCK_RANGE, type DockTarget } from './sim/docking'
@@ -238,6 +240,7 @@ const depthBarEl = document.getElementById('depth-bar')!
 const altLineEl = document.getElementById('alt-line')!
 const altLabelEl = document.getElementById('alt-label')!
 const atmoVeilEl = document.getElementById('atmo-veil')!
+const entryVeilEl = document.getElementById('entry-veil')!
 let lastRankIndex = -1 // -1 until first HUD update, so we don't announce a "promotion" on load
 let promoTimer: ReturnType<typeof setTimeout> | undefined
 function showPromotion(name: string): void {
@@ -4331,6 +4334,29 @@ if (import.meta.env.DEV && URL_PARAMS.get('sky')) {
   }, 500)
   setTimeout(() => clearInterval(devSkyPoll), 120000)
 }
+// DEV verification hook: ?entry=1 hurls the pilot at Earth from above the sky dome in a
+// sustained full-speed dive (velocity re-pinned for 22s — flight assist would otherwise
+// brake it away) so the re-entry plasma/vignette/shake sequence can be captured mid-fall.
+if (import.meta.env.DEV && URL_PARAMS.get('entry')) {
+  const sunDir = SUN_POSITION.clone().sub(EARTH.position).normalize()
+  const entryUp = sunDir.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), 0.5) // day side, off sub-solar
+  const startPos = EARTH.position.clone().addScaledVector(entryUp, EARTH.radius * 1.78)
+  const diveDir = entryUp.clone().negate()
+  const devEntryPoll = setInterval(() => {
+    if (!running || !flightPlanEl.hidden) return
+    clearInterval(devEntryPoll)
+    placePlayerAt(startPos, EARTH.position)
+    const diveUntil = performance.now() + 22000
+    const devDive = setInterval(() => {
+      if (performance.now() > diveUntil || ship.position.distanceTo(EARTH.position) < EARTH.radius + 400) {
+        clearInterval(devDive)
+        return
+      }
+      ship.velocity.copy(diveDir).multiplyScalar(effSpeed() * 1.25)
+    }, 100)
+  }, 500)
+  setTimeout(() => clearInterval(devEntryPoll), 120000)
+}
 export function enterBrowse(): void { enterBrowseMode() }
 if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) {
   nicknameEl.value = SHOWCASE_HOLDER ? HOLDER_SHOWCASE_STEPS[0].callsign : SHOWCASE_TIME_TRIAL ? 'RACER' : 'test'
@@ -4461,6 +4487,65 @@ const _skySun = new THREE.Vector3()
 // Atmospheric-entry sky: the closer you get to a planet's surface, the more the screen
 // fills with that planet's air color — brighter on the sun-facing (day) side, fading to
 // dark space at night. A sense of descending into the atmosphere and flying under its sky.
+// --- Re-entry FX: one heat scalar drives the plasma sheath, vignette, shake, rumble ---
+const _atmoNearest = { prox: 0, surface: 'rocky' as SurfaceKind, center: new THREE.Vector3(), radius: 1 }
+const entryPlasma = buildEntryPlasma()
+scene.add(entryPlasma.mesh)
+let entryHeat = 0
+let entryShake = 0
+let entryClock = 0
+const _entryUp = new THREE.Vector3()
+const _entryVel = new THREE.Vector3()
+const _entryFwd = new THREE.Vector3(0, 0, -1)
+const _entryQ = new THREE.Quaternion()
+
+function updateEntryFx(dt: number): void {
+  entryClock += dt
+  const speed = ship.velocity.length()
+  let heat = 0
+  // quantum gate matches the audio path: a warp drop-out at a planet dock crosses the
+  // ignition band at thousands of m/s and would flash a silent, unearned burn.
+  if (quantum.phase === 'idle' && _atmoNearest.prox > 0.02 && speed > 1) {
+    _entryUp.copy(ship.position).sub(_atmoNearest.center).normalize()
+    _entryVel.copy(ship.velocity).divideScalar(speed)
+    // Ignition band tied to altitude, not the (very generous) veil prox ramp: the burn
+    // lights up crossing the sky-dome ceiling (0.7R up) and saturates deep in the air.
+    const alt = ship.position.distanceTo(_atmoNearest.center) - _atmoNearest.radius
+    const entryTop = _atmoNearest.radius * (SKY_DOME_FRAC - 1)
+    const band = Math.min(1, Math.max(0, (entryTop - alt) / (entryTop * 0.6)))
+    const density = band * ATMOSPHERE_PARAMS[_atmoNearest.surface].intensity
+    heat = computeEntryHeat(density, speed / effSpeed(), -_entryVel.dot(_entryUp))
+  }
+  entryHeat = heat
+  entryShake = Math.max(entryShake, heat * 0.55)
+  if (heat > PLASMA_COLD_THRESHOLD) {
+    // Sheath rides the hull but points down the velocity vector (strafing stays honest).
+    entryPlasma.mesh.position.copy(shipMesh.position)
+    entryPlasma.mesh.quaternion.copy(_entryQ.setFromUnitVectors(_entryFwd, _entryVel))
+    const tint = ATMOSPHERE_PARAMS[_atmoNearest.surface].sunsetColor
+    entryPlasma.update(heat, tint, entryClock)
+    // The clear window shrinks as heat builds — the burn closes in around the pilot.
+    // pow(0.7) response so a half-heat dive already reads on screen.
+    const glow = Math.pow(heat, 0.7)
+    const clear = Math.round(50 - glow * 22)
+    entryVeilEl.style.background = `radial-gradient(ellipse at center, transparent ${clear}%, #${tint.toString(16).padStart(6, '0')} 116%)`
+    entryVeilEl.style.opacity = String(Math.min(0.55, glow * 0.6))
+  } else {
+    entryPlasma.update(0, 0xff9a55, entryClock)
+    entryVeilEl.style.opacity = '0'
+  }
+}
+
+/** Same trauma pattern as applyBlackHoleShake, smaller amplitude, own decay. */
+function applyEntryShake(dt: number): void {
+  if (entryShake <= 0.0001) { entryShake = 0; return }
+  const amp = entryShake * entryShake * 60
+  camera.position.x += (Math.random() - 0.5) * amp
+  camera.position.y += (Math.random() - 0.5) * amp
+  camera.position.z += (Math.random() - 0.5) * amp
+  entryShake = Math.max(0, entryShake - dt * 2.2)
+}
+
 function updateAtmoVeil(): number {
   let prox = 0
   let surface = 'rocky'
@@ -4468,8 +4553,11 @@ function updateAtmoVeil(): number {
   for (const p of [...PLANETS, SPAWN_PLANET]) {
     const d = ship.position.distanceTo(p.position)
     const pr = 1 - Math.min(1, Math.max(0, (d - p.radius * 1.06) / (p.radius * 1.6)))
-    if (pr > prox) { prox = pr; surface = p.surface; nx = p.position.x; ny = p.position.y; nz = p.position.z }
+    if (pr > prox) { prox = pr; surface = p.surface; nx = p.position.x; ny = p.position.y; nz = p.position.z; _atmoNearest.radius = p.radius }
   }
+  _atmoNearest.prox = prox
+  _atmoNearest.surface = surface as SurfaceKind
+  _atmoNearest.center.set(nx, ny, nz)
   if (prox > 0.01) {
     // Day/night at our spot on the planet → sky brightness.
     _skyN.set(ship.position.x - nx, ship.position.y - ny, ship.position.z - nz).normalize()
@@ -5255,9 +5343,11 @@ function frame(now: number): void {
     updateCities()
     updateAtmoSky()
     const atmosphere = updateAtmoVeil()
+    updateEntryFx(dt)
+    applyEntryShake(dt)
     if (quantum.phase === 'idle') {
       // Black-hole proximity adds a low rumble; regional ambience gives each landmark its own air.
-      audio.setAmbience({ atmosphere, quantum: bhPressure, speedFrac: ship.velocity.length() / (hubTimeTrial.active ? baseSpeed : effSpeed()) })
+      audio.setAmbience({ atmosphere, quantum: bhPressure, speedFrac: ship.velocity.length() / (hubTimeTrial.active ? baseSpeed : effSpeed()), entryHeat })
       audio.setRegionalAmbience(applyAmbientVolume(currentRegionalAmbience()))
     }
     if (!dailyPanelEl.hidden) renderDailyPanel(now)

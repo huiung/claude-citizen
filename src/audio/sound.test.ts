@@ -245,3 +245,21 @@ describe('regional ambience shaping', () => {
     expect(params.noiseGain).toBe(0)
   })
 })
+
+describe('re-entry rumble', () => {
+  it('turns the atmosphere layer into a roar as entry heat rises', () => {
+    const cruise = ambienceToParams({ atmosphere: 0.8, quantum: 0, speedFrac: 1 })
+    const entry = ambienceToParams({ atmosphere: 0.8, quantum: 0, speedFrac: 1, entryHeat: 1 })
+    expect(entry.atmoGain).toBeGreaterThan(cruise.atmoGain * 1.5)
+    expect(entry.atmoFilterFreq).toBeGreaterThan(cruise.atmoFilterFreq + 500)
+  })
+
+  it('defaults to no roar and clamps out-of-range heat', () => {
+    const base = ambienceToParams({ atmosphere: 0.8, quantum: 0, speedFrac: 1 })
+    const zero = ambienceToParams({ atmosphere: 0.8, quantum: 0, speedFrac: 1, entryHeat: 0 })
+    expect(zero.atmoGain).toBe(base.atmoGain)
+    const wild = ambienceToParams({ atmosphere: 0.8, quantum: 0, speedFrac: 1, entryHeat: 99 })
+    const one = ambienceToParams({ atmosphere: 0.8, quantum: 0, speedFrac: 1, entryHeat: 1 })
+    expect(wild.atmoGain).toBe(one.atmoGain)
+  })
+})

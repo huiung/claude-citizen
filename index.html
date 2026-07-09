@@ -191,6 +191,11 @@
       position: fixed; inset: 0; pointer-events: none; z-index: 3; opacity: 0;
       transition: opacity .45s ease-out;
     }
+    /* Re-entry plasma vignette — fast attack (no transition lag on flicker) */
+    #entry-veil {
+      position: fixed; inset: 0; pointer-events: none; z-index: 3; opacity: 0;
+      transition: opacity .12s linear;
+    }
     #quantum {
       position: fixed; left: 50%; top: 17%; transform: translateX(-50%); pointer-events: none;
       font-size: 16px; letter-spacing: 3px; color: #aee9ff; z-index: 6;
@@ -996,6 +1001,7 @@
   <div id="time-trial-banner" hidden>RACE STARTED</div>
   <div id="race-finish-glow" hidden></div>
   <div id="atmo-veil"></div>
+  <div id="entry-veil"></div>
   <div id="quantum" hidden></div>
   <div id="objective" hidden></div>
   <div id="flight-plan" hidden role="dialog" aria-modal="true" aria-labelledby="flight-plan-title">
