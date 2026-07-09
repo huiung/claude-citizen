@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { MILKY_WAY_NORMAL, buildStarSky, computeStarAttributes, setStarSkyScale, starTemperatureColor } from './starSky'
+import { MILKY_WAY_NORMAL, buildStarSky, computeSkyFade, computeStarAttributes, setStarSkyFade, setStarSkyScale, starTemperatureColor } from './starSky'
 
 describe('starTemperatureColor', () => {
   it('is warm (r>g>b) at t=0 and blue-leaning (b>r) at t=1', () => {
@@ -80,5 +80,39 @@ describe('buildStarSky', () => {
     const points = buildStarSky(10, 1)
     setStarSkyScale(points, 2100) // e.g. 1050px CSS height at dpr 2
     expect((points.material as THREE.ShaderMaterial).uniforms.uScale.value).toBe(1050)
+  })
+})
+
+describe('computeSkyFade', () => {
+  it('is 0 in space regardless of sun elevation', () => {
+    expect(computeSkyFade(0, 0.9)).toBe(0)
+    expect(computeSkyFade(-0.5, 0.9)).toBe(0)
+  })
+
+  it('washes stars out on the day-side surface and keeps them at night', () => {
+    expect(computeSkyFade(1, 0.8)).toBeGreaterThanOrEqual(0.95)
+    expect(computeSkyFade(1, -0.5)).toBe(0)
+  })
+
+  it('is partial at twilight and monotonic in altitude', () => {
+    const twilight = computeSkyFade(1, 0.03)
+    expect(twilight).toBeGreaterThan(0)
+    expect(twilight).toBeLessThan(1)
+    expect(computeSkyFade(0.3, 0.8)).toBeLessThan(computeSkyFade(0.7, 0.8))
+    expect(computeSkyFade(2, 0.8)).toBeLessThanOrEqual(1) // altFrac clamps
+  })
+})
+
+describe('setStarSkyFade', () => {
+  it('exposes a uFade uniform (default 0) and clamps applied values to [0, 1]', () => {
+    const points = buildStarSky(10, 1)
+    const mat = points.material as THREE.ShaderMaterial
+    expect(mat.uniforms.uFade.value).toBe(0)
+    setStarSkyFade(points, 0.7)
+    expect(mat.uniforms.uFade.value).toBeCloseTo(0.7)
+    setStarSkyFade(points, 1.5)
+    expect(mat.uniforms.uFade.value).toBe(1)
+    setStarSkyFade(points, -1)
+    expect(mat.uniforms.uFade.value).toBe(0)
   })
 })

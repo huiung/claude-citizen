@@ -39,6 +39,7 @@ export function buildNebula(): THREE.Mesh {
       uColorB: { value: new THREE.Color(0x1a3040) }, // dim teal
       uColorC: { value: new THREE.Color(0x3a2c34) }, // dusty rose
       uBandNormal: { value: MILKY_WAY_NORMAL.clone() },
+      uFade: { value: 0 }, // daylight-atmosphere washout — driven via setNebulaFade
     },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
@@ -52,6 +53,7 @@ export function buildNebula(): THREE.Mesh {
       varying vec3 vDir;
       uniform vec3 uColorA, uColorB, uColorC;
       uniform vec3 uBandNormal;
+      uniform float uFade;
       float hash(vec3 p){ p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
       float noise(vec3 x){
         vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
@@ -77,7 +79,7 @@ export function buildNebula(): THREE.Mesh {
         vec3 col = mix(uColorA, uColorB, n2);
         col = mix(col, uColorC, smoothstep(0.55, 1.0, n));
         col += vec3(0.62, 0.66, 0.72) * band * 0.35 * (1.0 - dust);
-        float intensity = cloud * 0.5;
+        float intensity = cloud * 0.5 * (1.0 - uFade);
         gl_FragColor = vec4(col * intensity, intensity);
       }
     `,
@@ -87,10 +89,21 @@ export function buildNebula(): THREE.Mesh {
   return mesh
 }
 
+/** Apply a sky fade (0..1, clamped) — daylight air washing the nebula out. */
+export function setNebulaFade(nebula: THREE.Mesh, fade: number): void {
+  const mat = nebula.material as THREE.ShaderMaterial
+  mat.uniforms.uFade.value = Math.min(1, Math.max(0, fade))
+}
+
 /** Fresnel atmosphere shell — brightest along the limb, tinted by per-kind params:
  *  lit limb shifts toward the Rayleigh tint, a sunset band crosses the terminator,
- *  the night limb nearly fades out. BackSide + additive so it reads as scattering. */
-function makeAtmosphere(radius: number, surface: SurfaceKind): THREE.Mesh {
+ *  the night limb nearly fades out. BackSide + additive so it reads as scattering.
+ *  With skyEnabled, the same shell doubles as a sky dome once the camera dips inside
+ *  it: zenith Rayleigh blue, hazy horizon, sunset band, all gated by local daylight —
+ *  additive blending washes the space backdrop out on the day side and vanishes at
+ *  night so the stars return. Camera altitude is derived per-fragment from the
+ *  built-in cameraPosition, so no per-frame uniform updates are needed. */
+export function makeAtmosphere(radius: number, surface: SurfaceKind, skyEnabled = false): THREE.Mesh {
   const p = ATMOSPHERE_PARAMS[surface]
   const mat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
@@ -104,18 +117,23 @@ function makeAtmosphere(radius: number, surface: SurfaceKind): THREE.Mesh {
       uPower: { value: p.power },
       uIntensity: { value: p.intensity },
       uSunPos: { value: SUN_POSITION.clone() },
+      uRadius: { value: radius },
+      uShellRadius: { value: radius * 1.06 },
+      uSkyEnabled: { value: skyEnabled ? 1 : 0 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vNormalV;
       varying vec3 vView;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPos;
+      varying vec3 vCenter;
       void main(){
         vNormalV = normalize(normalMatrix * normal);
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
         vView = normalize(-mv.xyz);
         vWorldPos = (modelMatrix * vec4(position, 1.0)).xyz;
         vWorldNormal = normalize(mat3(modelMatrix) * normal);
+        vCenter = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz; // shell is centred on its local origin
         gl_Position = projectionMatrix * mv;
       }
     `,
@@ -124,12 +142,16 @@ function makeAtmosphere(radius: number, surface: SurfaceKind): THREE.Mesh {
       varying vec3 vView;
       varying vec3 vWorldNormal;
       varying vec3 vWorldPos;
+      varying vec3 vCenter;
       uniform vec3 uBase;
       uniform vec3 uRayleigh;
       uniform vec3 uSunset;
       uniform float uPower;
       uniform float uIntensity;
       uniform vec3 uSunPos;
+      uniform float uRadius;
+      uniform float uShellRadius;
+      uniform float uSkyEnabled;
       void main(){
         // Limb density: Fresnel falloff shaped by how long the view ray grazes the shell.
         float grazing = 1.0 - abs(dot(normalize(vNormalV), normalize(vView)));
@@ -142,7 +164,32 @@ function makeAtmosphere(radius: number, surface: SurfaceKind): THREE.Mesh {
         float sunset = pow(clamp(1.0 - abs(ndl), 0.0, 1.0), 2.0) * day;
         vec3 col = mix(mix(uBase, uRayleigh, day), uSunset, sunset);
         float lit = mix(0.04, 1.0, day) * uIntensity;
-        gl_FragColor = vec4(col * density * lit, density * lit);
+
+        // --- Inside-the-shell sky dome (Earth) ---
+        // Depth into the shell: 0 at the top of the atmosphere, 1 at the surface.
+        float insideness = clamp((uShellRadius - distance(cameraPosition, vCenter))
+                                 / (uShellRadius - uRadius), 0.0, 1.0) * uSkyEnabled;
+        vec3 sky = vec3(0.0);
+        float skyLit = 0.0;
+        if (insideness > 0.0) {
+          vec3 up = normalize(cameraPosition - vCenter);
+          vec3 viewDir = normalize(vWorldPos - cameraPosition);
+          vec3 camSun = normalize(uSunPos - cameraPosition);
+          // Thicker air toward the horizon; sun elevation at the OBSERVER gates day/night.
+          float horizon = pow(1.0 - clamp(dot(viewDir, up), 0.0, 1.0), 2.0);
+          float sunUp = dot(camSun, up);
+          float skyDay = smoothstep(-0.12, 0.18, sunUp);
+          // Warm band around a low sun, strongest looking toward it.
+          float lowSun = pow(clamp(1.0 - abs(sunUp), 0.0, 1.0), 3.0);
+          float towardSun = pow(clamp(dot(viewDir, camSun), 0.0, 1.0), 2.0);
+          float sunsetSky = lowSun * towardSun;
+          sky = mix(uRayleigh, mix(uBase, uSunset, sunsetSky), horizon);
+          skyLit = skyDay * insideness * uIntensity * (0.55 + 0.45 * horizon);
+        }
+        // Rim term fades as the sky takes over so the limb doesn't double-glow overhead.
+        vec3 outCol = col * density * lit * (1.0 - insideness) + sky * skyLit;
+        float outA = clamp(density * lit * (1.0 - insideness) + skyLit, 0.0, 1.0);
+        gl_FragColor = vec4(outCol, outA);
       }
     `,
   })
@@ -665,6 +712,8 @@ function makePlanetSurface(
 export interface SolarPlanetOptions {
   quality?: 'startup' | 'high'
   startupTextureSize?: number
+  /** Turn the atmosphere shell into a sky dome when the camera is inside it (Earth). */
+  skyEnabled?: boolean
 }
 
 export function buildSolarPlanet(
@@ -688,7 +737,7 @@ export function buildSolarPlanet(
   }
 
   // Fresnel atmosphere — per-kind params drive Rayleigh tint, sunset color, and limb width
-  group.add(makeAtmosphere(radius, surface))
+  group.add(makeAtmosphere(radius, surface, options.skyEnabled ?? false))
 
   // Earth-type bodies get a translucent cloud shell drifting just above the surface.
   const startupCloudSize = startupTextureSize > 512 ? 512 : 256
