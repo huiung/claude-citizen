@@ -138,7 +138,7 @@ export function setStarSkyScale(sky: THREE.Points, drawingBufferHeight: number):
  *  surface. altFrac is depth into the shell (space=0, surface=1); sunUp is the sun's
  *  elevation at the observer (-1..1). Mirrors the sky shader's smoothstep(-0.12, 0.18). */
 export function computeSkyFade(altFrac: number, sunUp: number): number {
-  const a = Math.min(1, Math.max(0, altFrac))
+  const a = Math.pow(Math.min(1, Math.max(0, altFrac)), 0.6) // air is denser low — bias the washout down
   const t = Math.min(1, Math.max(0, (sunUp + 0.12) / 0.3))
   return a * t * t * (3 - 2 * t)
 }

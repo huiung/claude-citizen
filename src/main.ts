@@ -26,7 +26,7 @@ import { shouldRenderWorldFrame, shouldRunBackgroundWorldWork } from './sim/rend
 import {
   buildAsteroids, buildColony, buildLights, buildMineableAsteroid, buildPlanet,
   buildCapitalShip, buildDustField, buildLootCrate, buildNebula, buildSolarPlanet, buildStarfield, buildStation,
-  buildMuchLaunchTower, buildRareFrogShrine, buildSun, buildWarpField, COLONY_POS, prewarmHighPlanetTextures, REFINERY_POS, setNebulaFade, SPAWN_PLANET, updateDustField, updateWarpField,
+  buildMuchLaunchTower, buildRareFrogShrine, buildSun, buildWarpField, COLONY_POS, prewarmHighPlanetTextures, REFINERY_POS, setNebulaFade, SKY_DOME_FRAC, SPAWN_PLANET, updateDustField, updateWarpField,
 } from './render/world'
 import { computeSkyFade, setStarSkyFade, setStarSkyScale } from './render/starSky'
 import { PLANETS, planetDockPosition, SUN_COLOR, SUN_POSITION, SUN_RADIUS, type SurfaceKind } from './sim/solarSystem'
@@ -1238,7 +1238,7 @@ function updateCities(): void {
 
 // --- Inside-atmosphere sky (Earth): the shell shader paints the sky by itself, but
 // additive blending can't hide bright stars — fade the starfield/nebula at the source.
-const EARTH_SHELL_RADIUS = EARTH.radius * 1.06
+const EARTH_SKY_TOP = EARTH.radius * SKY_DOME_FRAC
 const _skyUp = new THREE.Vector3()
 const _skySunDir = new THREE.Vector3()
 let lastSkyFade = 0
@@ -1246,8 +1246,8 @@ let lastSkyFade = 0
 function updateAtmoSky(): void {
   const dist = ship.position.distanceTo(EARTH.position)
   let fade = 0
-  if (dist < EARTH_SHELL_RADIUS * 1.5) {
-    const altFrac = (EARTH_SHELL_RADIUS - dist) / (EARTH_SHELL_RADIUS - EARTH.radius)
+  if (dist < EARTH_SKY_TOP) {
+    const altFrac = (EARTH_SKY_TOP - dist) / (EARTH_SKY_TOP - EARTH.radius)
     _skyUp.copy(ship.position).sub(EARTH.position).normalize()
     _skySunDir.copy(SUN_POSITION).sub(ship.position).normalize()
     fade = computeSkyFade(altFrac, _skySunDir.dot(_skyUp))
@@ -4305,6 +4305,31 @@ if (import.meta.env.DEV && URL_PARAMS.get('city')) {
     placePlayerAt(overhead, ground)
   }, 500)
   setTimeout(() => clearInterval(devCityPoll), 120000) // stop polling after 2 minutes
+}
+// DEV verification hook: ?sky=day|dusk|night parks the pilot 200m over the sub-solar /
+// near-terminator / antisolar point on Earth, aimed just above the horizon, to judge
+// the in-atmosphere sky (blue dome / sunset band / stars back at night).
+if (import.meta.env.DEV && URL_PARAMS.get('sky')) {
+  const mode = URL_PARAMS.get('sky')
+  const sunDir = SUN_POSITION.clone().sub(EARTH.position).normalize()
+  const side = new THREE.Vector3(0, 1, 0).cross(sunDir).normalize()
+  // Dusk sits ~11° sunward of the terminator so the low sun still paints its band.
+  const up = mode === 'night' ? sunDir.clone().negate()
+    : mode === 'dusk' ? side.multiplyScalar(Math.cos(0.2)).addScaledVector(sunDir, Math.sin(0.2)).normalize()
+    : sunDir.clone()
+  // Aim along the horizon, pitched up — toward the sun at dusk so the sunset band shows.
+  const tangent = mode === 'dusk'
+    ? sunDir.clone().addScaledVector(up, -sunDir.dot(up)).normalize()
+    : new THREE.Vector3(0, 1, 0).cross(up).normalize()
+  // 200m up: inside the 1.06R shell (+258) and above the tallest terrain (~150).
+  const pos = EARTH.position.clone().addScaledVector(up, EARTH.radius + 200)
+  const target = pos.clone().addScaledVector(tangent, 1400).addScaledVector(up, 2200)
+  const devSkyPoll = setInterval(() => {
+    if (!running || !flightPlanEl.hidden) return
+    clearInterval(devSkyPoll)
+    placePlayerAt(pos, target)
+  }, 500)
+  setTimeout(() => clearInterval(devSkyPoll), 120000)
 }
 export function enterBrowse(): void { enterBrowseMode() }
 if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) {

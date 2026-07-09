@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { buildNebula, makeAtmosphere, setNebulaFade } from './world'
+import { SKY_DOME_FRAC, buildNebula, makeSkyDome, setNebulaFade } from './world'
 
 describe('buildNebula / setNebulaFade', () => {
   it('exposes a uFade uniform (default 0) and clamps applied values to [0, 1]', () => {
@@ -16,17 +16,18 @@ describe('buildNebula / setNebulaFade', () => {
   })
 })
 
-describe('makeAtmosphere sky mode', () => {
-  it('enables the inside-sky term only when skyEnabled is passed (Earth)', () => {
-    const mat = makeAtmosphere(4300, 'earth', true).material as THREE.ShaderMaterial
-    expect(mat.uniforms.uSkyEnabled.value).toBe(1)
+describe('makeSkyDome', () => {
+  it('reaches gameplay altitude and carries the per-fragment insideness uniforms', () => {
+    expect(SKY_DOME_FRAC).toBeGreaterThan(1.06) // taller than the limb shell — covers city flight
+    const dome = makeSkyDome(4300, 'earth')
+    const mat = dome.material as THREE.ShaderMaterial
     expect(mat.uniforms.uRadius.value).toBe(4300)
-    expect(mat.uniforms.uShellRadius.value).toBeCloseTo(4300 * 1.06)
-    expect(mat.fragmentShader).toContain('insideness') // sky dome branch present
-  })
-
-  it('keeps the sky term off by default (other planets unchanged)', () => {
-    const mat = makeAtmosphere(2200, 'mars').material as THREE.ShaderMaterial
-    expect(mat.uniforms.uSkyEnabled.value).toBe(0)
+    expect(mat.uniforms.uTop.value).toBeCloseTo(4300 * SKY_DOME_FRAC)
+    expect(mat.side).toBe(THREE.BackSide)
+    expect(mat.blending).toBe(THREE.AdditiveBlending)
+    expect(mat.depthWrite).toBe(false)
+    expect(mat.fragmentShader).toContain('insideness') // transparent-from-space gate
+    const geo = dome.geometry as THREE.SphereGeometry
+    expect(geo.parameters.radius).toBeCloseTo(4300 * SKY_DOME_FRAC)
   })
 })
