@@ -1236,7 +1236,7 @@ function updateCities(): void {
   }
 }
 
-// --- Inside-atmosphere sky (Earth): the shell shader paints the sky by itself, but
+// --- Inside-atmosphere sky (Earth): the sky dome paints the sky by itself, but
 // additive blending can't hide bright stars — fade the starfield/nebula at the source.
 const EARTH_SKY_TOP = EARTH.radius * SKY_DOME_FRAC
 const _skyUp = new THREE.Vector3()
@@ -4321,7 +4321,7 @@ if (import.meta.env.DEV && URL_PARAMS.get('sky')) {
   const tangent = mode === 'dusk'
     ? sunDir.clone().addScaledVector(up, -sunDir.dot(up)).normalize()
     : new THREE.Vector3(0, 1, 0).cross(up).normalize()
-  // 200m up: inside the 1.06R shell (+258) and above the tallest terrain (~150).
+  // 200m up: deep inside the 1.7R sky dome and above the tallest terrain (~150).
   const pos = EARTH.position.clone().addScaledVector(up, EARTH.radius + 200)
   const target = pos.clone().addScaledVector(tangent, 1400).addScaledVector(up, 2200)
   const devSkyPoll = setInterval(() => {
