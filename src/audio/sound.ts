@@ -65,6 +65,8 @@ export interface AmbienceState {
   quantum: number
   /** Current speed as a fraction of the ship's effective max speed. */
   speedFrac: number
+  /** Re-entry heat 0..1 (see entryFx.computeEntryHeat) — turns the air layer into a roar. */
+  entryHeat?: number
 }
 
 export interface AmbienceParams {
@@ -97,14 +99,15 @@ export function ambienceToParams(state: AmbienceState): AmbienceParams {
   const atmosphere = clamp(state.atmosphere, 0, 1)
   const quantum = clamp(state.quantum, 0, 1)
   const speed = clamp(state.speedFrac, 0, 1.4)
+  const heat = clamp(state.entryHeat ?? 0, 0, 1)
   const atmo = atmosphere * atmosphere
   const q = quantum * quantum
 
   return {
     spaceGain: SPACE_AMBIENCE_GAIN * (1 - atmosphere * 0.45) * (1 - quantum * 0.25),
     spaceFilterFreq: 140 + speed * 90,
-    atmoGain: ATMO_AMBIENCE_GAIN_MAX * atmo * (0.55 + Math.min(speed, 1) * 0.45),
-    atmoFilterFreq: 340 + atmo * 980 + Math.min(speed, 1) * 420,
+    atmoGain: ATMO_AMBIENCE_GAIN_MAX * atmo * (0.55 + Math.min(speed, 1) * 0.45) * (1 + heat * 1.6),
+    atmoFilterFreq: 340 + atmo * 980 + Math.min(speed, 1) * 420 + heat * 900,
     quantumGain: QUANTUM_AMBIENCE_GAIN_MAX * q,
     quantumFilterFreq: 1200 + q * 1800,
   }
