@@ -41,3 +41,27 @@ export function computeCloudFogBoost(alt: number, cover: number): number {
   const d = (alt - 4300 * CLOUD_SHELL_ALT_FRAC) / CLOUD_BAND
   return Math.exp(-d * d * 3) * Math.min(1, Math.max(0, cover))
 }
+
+/** onBeforeCompile patch for the real-Earth surface material: up close the color map
+ *  has run out of texels and the ground goes airbrush-smooth, so two blocky hash-noise
+ *  frequencies (field-sized ~19u cells and district-sized ~104u patches at R=4300)
+ *  modulate the albedo. Fades over slant distance — at ~1000u altitude even the nearest
+ *  bare ground sits 1-3ku away, so the fade must reach well past the horizon arc
+ *  (~2900u) to register; gone by 6000u so orbit views render exactly as before.
+ *  smoothstep runs low-to-high edges only: the reversed-edge form is undefined in GLSL
+ *  and ANGLE/Metal actually returns 0 for it. */
+export function patchEarthGroundDetail(shader: { fragmentShader: string }): void {
+  shader.fragmentShader = shader.fragmentShader.replace(
+    '#include <map_fragment>',
+    /* glsl */ `#include <map_fragment>
+    {
+      float gdDist = length(vViewPosition);
+      float gdAmt = 1.0 - smoothstep(400.0, 6000.0, gdDist);
+      if (gdAmt > 0.0) {
+        float gd1 = fract(sin(dot(floor(vMapUv * 1400.0), vec2(127.1, 311.7))) * 43758.5453);
+        float gd2 = fract(sin(dot(floor(vMapUv * 260.0), vec2(269.5, 183.3))) * 43758.5453);
+        diffuseColor.rgb *= 1.0 + ((gd1 - 0.5) * 0.26 + (gd2 - 0.5) * 0.14) * gdAmt;
+      }
+    }`,
+  )
+}

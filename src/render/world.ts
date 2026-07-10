@@ -6,6 +6,7 @@ import {
   generateCloudTexture, generateCloudTextureAsync, generatePlanetTextures, generatePlanetTexturesAsync, samplePlanetSurface,
 } from './planetTextures'
 import { earthCloudTexture, earthColorTexture, isEarthDataReady, makeEarthBumpTexture, makeEarthRoughnessTexture } from './earthData'
+import { patchEarthGroundDetail } from './atmoImmersion'
 import { createRingTexture, remapRingUVs } from './planetRings'
 import { makeAsteroidMaterial, makeOreMaterial } from './asteroidTextures'
 import { buildStarSky, MILKY_WAY_NORMAL } from './starSky'
@@ -728,7 +729,7 @@ function makePlanetSurface(
   // Real Earth: Blue Marble color, elevation bump, and a water-smooth roughness map so
   // the sun streaks across oceans. Displacement above already followed the NASA raster.
   if (surface === 'earth' && isEarthDataReady()) {
-    return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+    const earthMat = new THREE.MeshStandardMaterial({
       map: earthColorTexture(textureSize !== undefined && textureSize <= 1024 ? 'startup' : 'high'),
       bumpMap: makeEarthBumpTexture(),
       // Bump stays subtle: the 1024-texel elevation raster has steep per-texel gradients,
@@ -737,7 +738,9 @@ function makePlanetSurface(
       roughnessMap: makeEarthRoughnessTexture(),
       roughness: 1,
       metalness: 0,
-    }))
+    })
+    earthMat.onBeforeCompile = patchEarthGroundDetail
+    return new THREE.Mesh(geo, earthMat)
   }
   const mapSize = textureSize ?? highPlanetMapSize(surface, radius)
   const maps = generatePlanetTextures(surface, seed, color, mapSize, radius)

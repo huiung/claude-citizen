@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { computeAtmoFog, computeCelestialHide, computeCloudFogBoost } from './atmoImmersion'
+import { computeAtmoFog, computeCelestialHide, computeCloudFogBoost, patchEarthGroundDetail } from './atmoImmersion'
 
 describe('computeCelestialHide', () => {
   it('hides above the upper threshold, shows below the lower one', () => {
@@ -50,5 +50,23 @@ describe('computeCloudFogBoost', () => {
     expect(computeCloudFogBoost(SHELL + 200, 1)).toBeLessThan(0.05)
     expect(computeCloudFogBoost(SHELL - 200, 1)).toBeLessThan(0.05)
     expect(computeCloudFogBoost(SHELL + 40, 1)).toBeGreaterThan(0.4)
+  })
+})
+
+describe('patchEarthGroundDetail', () => {
+  it('injects distance-gated detail noise right after the map sample', () => {
+    const shader = { fragmentShader: 'head\n#include <map_fragment>\ntail' }
+    patchEarthGroundDetail(shader)
+    const src = shader.fragmentShader
+    expect(src).toContain('#include <map_fragment>') // original sample kept
+    expect(src).toContain('1.0 - smoothstep(400.0, 6000.0, gdDist)') // low-to-high edges: reversed edges are undefined GLSL (ANGLE returns 0)
+    expect(src.indexOf('diffuseColor.rgb')).toBeGreaterThan(src.indexOf('#include <map_fragment>'))
+    expect(src.indexOf('tail')).toBeGreaterThan(src.indexOf('diffuseColor.rgb')) // injected before the rest
+  })
+
+  it('leaves a shader without a map sample untouched', () => {
+    const shader = { fragmentShader: 'no anchor here' }
+    patchEarthGroundDetail(shader)
+    expect(shader.fragmentShader).toBe('no anchor here')
   })
 })
