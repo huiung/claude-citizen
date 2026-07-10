@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   _resetEarthDataForTests, _setEarthRastersForTests, dirToEquirectUv, isEarthDataReady,
-  latLonToDir, sampleEarthElevation,
+  latLonToDir, sampleCloudCover, sampleEarthElevation, _setEarthCloudCoverForTests,
 } from './earthData'
 import { samplePlanetSurface } from './planetTextures'
 
@@ -94,5 +94,29 @@ describe('sampleEarthElevation', () => {
     const dir = latLonToDir(0, -135 + 45) // u = 0.25 → px 0.5 → 50/50 blend
     const s = sampleEarthElevation(dir.x, dir.y, dir.z)
     expect(s.height).toBeCloseTo(0.06 + (100 / 255) * 0.34, 3)
+  })
+})
+
+describe('sampleCloudCover', () => {
+  it('returns 0 when no cloud raster is loaded', () => {
+    _resetEarthDataForTests()
+    const d = latLonToDir(0, 0)
+    expect(sampleCloudCover(d.x, d.y, d.z)).toBe(0)
+  })
+
+  it('bilinear-samples the injected luminance raster on the shared equirect convention', () => {
+    try {
+      // 4x2 world: west half overcast (255), east half clear (0).
+      const cover = new Uint8ClampedArray([255, 255, 0, 0, 255, 255, 0, 0])
+      _setEarthCloudCoverForTests(cover, 4, 2)
+      const west = latLonToDir(0, -90) // u=0.25 → overcast
+      const east = latLonToDir(0, 90) // u=0.75 → clear
+      expect(sampleCloudCover(west.x, west.y, west.z)).toBeGreaterThan(0.95)
+      expect(sampleCloudCover(east.x, east.y, east.z)).toBeLessThan(0.05)
+      const mid = latLonToDir(0, 0) // u=0.5 → texel boundary, halfway blend
+      expect(sampleCloudCover(mid.x, mid.y, mid.z)).toBeCloseTo(0.5, 1)
+    } finally {
+      _resetEarthDataForTests()
+    }
   })
 })

@@ -30,6 +30,7 @@ let colorStartup: THREE.Texture | null = null
 let colorHigh: THREE.Texture | null = null
 let clouds: THREE.Texture | null = null
 let highColorLoad: Promise<THREE.Texture | null> = Promise.resolve(null)
+let cloudCover: { data: Uint8ClampedArray; width: number; height: number } | null = null
 
 /** three SphereGeometry UV convention: u=0 → -X, u=0.25 → +Z, v=0 → north pole (+Y).
  *  Equirect textures put longitude -180° at the left edge. */
@@ -92,6 +93,15 @@ export function earthCloudTexture(): THREE.Texture | null {
 /** Resolves with the 3600px color map once it lands (null if it failed or no load ran). */
 export function earthHighColorLoaded(): Promise<THREE.Texture | null> {
   return highColorLoad
+}
+
+/** Cloud cover 0..1 at a surface direction — the same luminance the cloud shell renders,
+ *  kept at load time so the descent wisp effect only fires where clouds actually are.
+ *  0 until the cloud texture has loaded. */
+export function sampleCloudCover(nx: number, ny: number, nz: number): number {
+  if (!cloudCover) return 0
+  const { u, v } = dirToEquirectUv(nx, ny, nz)
+  return bilinear(cloudCover.data, cloudCover.width, cloudCover.height, u, v) / 255
 }
 
 function grayscaleTexture(values: (i: number) => number, width: number, height: number): THREE.Texture {
@@ -160,11 +170,14 @@ async function loadCloudAlphaTexture(url: string): Promise<THREE.Texture> {
   ctx.drawImage(img, 0, 0)
   const data = ctx.getImageData(0, 0, canvas.width, canvas.height)
   const px = data.data
+  const cover = new Uint8ClampedArray(canvas.width * canvas.height)
   for (let i = 0; i < px.length; i += 4) {
+    cover[i / 4] = px[i]
     px[i + 3] = px[i] // alpha = luminance (grayscale source)
     px[i] = px[i + 1] = px[i + 2] = 255 // pure white clouds, opacity carries the shape
   }
   ctx.putImageData(data, 0, 0)
+  cloudCover = { data: cover, width: canvas.width, height: canvas.height } // feeds sampleCloudCover
   const tex = new THREE.CanvasTexture(canvas)
   tex.colorSpace = THREE.SRGBColorSpace
   tex.wrapS = THREE.RepeatWrapping
@@ -219,10 +232,15 @@ export function _setEarthRastersForTests(elev: Uint8ClampedArray, bath: Uint8Cla
   rasters = { elev, bath, width, height }
 }
 
+export function _setEarthCloudCoverForTests(data: Uint8ClampedArray, width: number, height: number): void {
+  cloudCover = { data, width, height }
+}
+
 export function _resetEarthDataForTests(): void {
   rasters = null
   colorStartup = null
   colorHigh = null
   clouds = null
   highColorLoad = Promise.resolve(null)
+  cloudCover = null
 }

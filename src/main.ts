@@ -56,7 +56,8 @@ import { createSeasonHubLifeRig, updateSeasonHubLifeRig } from './render/seasonH
 import { buildBlackHole } from './render/blackHole'
 import { applyPlanetAssetTextures, loadPlanetAssetTextures } from './render/planetAssetTextures'
 import { computeCitySites, type CitySite } from './render/citySites'
-import { earthHighColorLoaded, isEarthDataReady, latLonToDir, loadEarthData } from './render/earthData'
+import { earthHighColorLoaded, isEarthDataReady, latLonToDir, loadEarthData, sampleCloudCover } from './render/earthData'
+import { computeAtmoFog, computeCelestialHide, computeCloudFogBoost } from './render/atmoImmersion'
 import { buildCityChunk, selectChunkSite, type CityChunk } from './render/cityChunk'
 import { buildCityLightSplats, cityNightFactor, updateCityLightSplats } from './render/cityLights'
 import { cancelTravel, catchUpQuantum, createQuantum, cycleQuantumDestinationIndex, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
@@ -898,7 +899,10 @@ const starfield = buildStarfield()
 // matching the old PointsMaterial sizing. Re-keyed on every resize below.
 const starBufSize = new THREE.Vector2()
 setStarSkyScale(starfield, renderer.getDrawingBufferSize(starBufSize).y)
-scene.add(starfield, buildPlanet(), buildAsteroids())
+// Kept as handles: daylight air hides these distant bodies during a descent (updateAtmoSky).
+const spawnBackdropPlanet = buildPlanet()
+const beltAsteroids = buildAsteroids()
+scene.add(starfield, spawnBackdropPlanet, beltAsteroids)
 
 const dustField = buildDustField() // parallax motes — sense of speed in flight
 scene.add(dustField)
@@ -1279,16 +1283,22 @@ function updateCities(): void {
 
 // --- Inside-atmosphere sky (Earth): the sky dome paints the sky by itself, but
 // additive blending can't hide bright stars — fade the starfield/nebula at the source.
+// The same pass drives the rest of the descent feel: aerial-perspective fog, hiding
+// distant celestial bodies in daylight air, and the cloud-layer crossing wisp.
 const EARTH_SKY_TOP = EARTH.radius * SKY_DOME_FRAC
+const EARTH_IDX = PLANETS.indexOf(EARTH)
 const _skyUp = new THREE.Vector3()
 const _skySunDir = new THREE.Vector3()
 let lastSkyFade = 0
+let celestialsHidden = false
+const atmoFog = new THREE.Fog(0x000000, 1, 1) // single instance, mutated per frame
 
 function updateAtmoSky(): void {
   const dist = ship.position.distanceTo(EARTH.position)
   let fade = 0
+  let altFrac = 0
   if (dist < EARTH_SKY_TOP) {
-    const altFrac = (EARTH_SKY_TOP - dist) / (EARTH_SKY_TOP - EARTH.radius)
+    altFrac = (EARTH_SKY_TOP - dist) / (EARTH_SKY_TOP - EARTH.radius)
     _skyUp.copy(ship.position).sub(EARTH.position).normalize()
     _skySunDir.copy(SUN_POSITION).sub(ship.position).normalize()
     fade = computeSkyFade(altFrac, _skySunDir.dot(_skyUp))
@@ -1297,6 +1307,34 @@ function updateAtmoSky(): void {
     lastSkyFade = fade
     setStarSkyFade(starfield, fade)
     setNebulaFade(nebula, fade)
+  }
+
+  // Aerial haze: distance fog whose density follows the depth into the shell and whose
+  // color follows the local daylight. Crossing the cloud layer squeezes it hard for a
+  // moment, scaled by the actual NASA cloud cover overhead — the wisp effect.
+  const fog = computeAtmoFog(altFrac, dist < EARTH_SKY_TOP ? _skySunDir.dot(_skyUp) : 0)
+  if (fog) {
+    const boost = computeCloudFogBoost(dist - EARTH.radius, sampleCloudCover(_skyUp.x, _skyUp.y, _skyUp.z), EARTH.radius)
+    atmoFog.near = fog.near + (120 - fog.near) * boost
+    atmoFog.far = fog.far + (900 - fog.far) * boost
+    atmoFog.color.setRGB(fog.color[0], fog.color[1], fog.color[2])
+    scene.fog = atmoFog
+  } else {
+    scene.fog = null
+  }
+
+  // The atmosphere hides the distant bodies: day washout, and depth even at night —
+  // planets hanging over the ground as giant discs break the "I'm down on Earth" read.
+  // updateDeepSpaceVisibility runs earlier in the frame and re-shows planets every
+  // frame, so while hidden we overwrite it here (AND-hide).
+  celestialsHidden = computeCelestialHide(fade, altFrac, celestialsHidden)
+  spawnBackdropPlanet.visible = !celestialsHidden
+  beltAsteroids.visible = !celestialsHidden
+  galaxyRoot.visible = !celestialsHidden
+  if (celestialsHidden) {
+    for (const g of planetGroups) {
+      if (g.userData.planetIdx !== EARTH_IDX) g.visible = false
+    }
   }
 }
 
@@ -1444,6 +1482,10 @@ function streamOre(): void {
 // --- Procedural galaxy: stream celestial bodies in/out around the player.
 const STREAM_RADIUS = 55000
 const spawnedBodies = new Map<string, THREE.Object3D>()
+// One parent for every streamed galaxy body: the descent celestial-fade toggles this
+// group instead of chasing bodies that stream in while the sky is already washed out.
+const galaxyRoot = new THREE.Group()
+scene.add(galaxyRoot)
 let lastStream = -Infinity
 // Skip the (cell-querying) stream pass when the ship has barely moved — nothing can enter or leave
 // the radius, so re-querying just burns a frame. Kills the periodic hitch when parked/rotating.
@@ -1542,7 +1584,7 @@ function streamCelestials(now: number): void {
   const liveIds = new Set(nearby.map((c) => c.id))
   for (const [id, mesh] of spawnedBodies) {
     if (!liveIds.has(id)) {
-      scene.remove(mesh)
+      galaxyRoot.remove(mesh)
       disposeObject(mesh)
       spawnedBodies.delete(id)
     }
@@ -1575,7 +1617,7 @@ function processCelestialBuilds(): void {
     pendingBuild.delete(c.id)
     if (spawnedBodies.has(c.id)) continue
     const mesh = buildCelestial(c)
-    scene.add(mesh)
+    galaxyRoot.add(mesh)
     spawnedBodies.set(c.id, mesh)
     built++
   }
@@ -5422,6 +5464,9 @@ function frame(now: number): void {
   } else {
     sun.visible = true
     for (const mesh of planetGroups) mesh.visible = true
+    scene.fog = null
+    celestialsHidden = false
+    spawnBackdropPlanet.visible = beltAsteroids.visible = galaxyRoot.visible = true
     // Menu background: slow orbit around the station
     const t = now * 0.0001
     camera.position.set(Math.cos(t) * 220 + 120, 60, Math.sin(t) * 220 - 350)

@@ -78,7 +78,9 @@ export function buildCityLightSplats(sites: CitySite[], planetPos: THREE.Vector3
     texture.needsUpdate = true
     const mesh = new THREE.Mesh(
       new THREE.PlaneGeometry(1, 1),
-      new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }),
+      // fog:false — an additive splat blending toward the aerial-haze fog color would
+      // wash grey before adding; the glow must stay pure emission under any fog tuning.
+      new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }),
     )
     const scale = SPLAT_SCALE[site.tier]
     mesh.scale.set(scale, scale, 1)
