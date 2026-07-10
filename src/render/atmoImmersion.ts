@@ -1,13 +1,14 @@
 // Descent immersion helpers — pure math driven per frame from updateAtmoSky in main.
 // All thresholds are tuned for the playable planet scale (Earth R = 4300).
 
-/** Daylight air hides distant celestial bodies (planets, backdrop worlds, galaxy bodies).
- *  Hysteresis so the toggle can't flicker while hovering at one altitude: hide once the
- *  sky washout passes 0.35, show again only when it drops under 0.25. Night side keeps
- *  fade at 0 — planets stay visible in a night sky, as in life. */
-export function computeCelestialHide(fade: number, wasHidden: boolean): boolean {
-  if (fade > 0.35) return true
-  if (fade < 0.25) return false
+/** The atmosphere hides distant celestial bodies (planets, backdrop worlds, galaxy
+ *  bodies) on two axes, each with hysteresis so hovering at one altitude can't flicker
+ *  the toggle: day washout (fade 0.35/0.25) — blue sky swallows everything — and
+ *  atmosphere depth (altFrac 0.5/0.4) — real night-sky planets are point lights, but
+ *  ours sit game-scale close and would loom as huge flat discs over the night ground. */
+export function computeCelestialHide(fade: number, altFrac: number, wasHidden: boolean): boolean {
+  if (fade > 0.35 || altFrac > 0.5) return true
+  if (fade < 0.25 && altFrac < 0.4) return false
   return wasHidden
 }
 

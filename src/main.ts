@@ -1323,10 +1323,11 @@ function updateAtmoSky(): void {
     scene.fog = null
   }
 
-  // Daylight air hides the distant bodies (planets hanging in a blue sky break the
-  // "I'm down on Earth" read). updateDeepSpaceVisibility runs earlier in the frame and
-  // re-shows planets every frame, so while hidden we overwrite it here (AND-hide).
-  celestialsHidden = computeCelestialHide(fade, celestialsHidden)
+  // The atmosphere hides the distant bodies: day washout, and depth even at night —
+  // planets hanging over the ground as giant discs break the "I'm down on Earth" read.
+  // updateDeepSpaceVisibility runs earlier in the frame and re-shows planets every
+  // frame, so while hidden we overwrite it here (AND-hide).
+  celestialsHidden = computeCelestialHide(fade, altFrac, celestialsHidden)
   spawnBackdropPlanet.visible = !celestialsHidden
   beltAsteroids.visible = !celestialsHidden
   galaxyRoot.visible = !celestialsHidden

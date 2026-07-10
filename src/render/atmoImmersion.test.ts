@@ -2,14 +2,24 @@ import { describe, expect, it } from 'vitest'
 import { computeAtmoFog, computeCelestialHide, computeCloudFogBoost, patchEarthGroundDetail } from './atmoImmersion'
 
 describe('computeCelestialHide', () => {
-  it('hides above the upper threshold, shows below the lower one', () => {
-    expect(computeCelestialHide(0.5, false)).toBe(true)
-    expect(computeCelestialHide(0.1, true)).toBe(false)
+  it('hides above the day-washout threshold, shows below the lower one', () => {
+    expect(computeCelestialHide(0.5, 0, false)).toBe(true)
+    expect(computeCelestialHide(0.1, 0, true)).toBe(false)
   })
 
-  it('holds the previous state inside the hysteresis band', () => {
-    expect(computeCelestialHide(0.3, true)).toBe(true)
-    expect(computeCelestialHide(0.3, false)).toBe(false)
+  it('holds the previous state inside the washout hysteresis band', () => {
+    expect(computeCelestialHide(0.3, 0, true)).toBe(true)
+    expect(computeCelestialHide(0.3, 0, false)).toBe(false)
+  })
+
+  it('hides deep in the atmosphere even at night — real planets are points, ours are discs', () => {
+    expect(computeCelestialHide(0, 0.9, false)).toBe(true) // night surface
+    expect(computeCelestialHide(0, 0.2, true)).toBe(false) // night near-space: planets back
+  })
+
+  it('holds the previous state inside the depth hysteresis band', () => {
+    expect(computeCelestialHide(0, 0.45, true)).toBe(true)
+    expect(computeCelestialHide(0, 0.45, false)).toBe(false)
   })
 })
 
