@@ -22,7 +22,10 @@ export function computeAtmoFog(altFrac: number, sunUp: number): { near: number; 
   const far = 26000 - depth * 17500 // → 8500 at the surface
   const t = Math.min(1, Math.max(0, (sunUp + 0.12) / 0.3))
   const day = t * t * (3 - 2 * t)
-  // night 0x0a0f1c → day horizon 0xbcd6ee
+  // Components derived from night 0x0a0f1c → day horizon 0xbcd6ee, but fed to
+  // Color.setRGB as LINEAR working-space values — on screen the fog renders about a
+  // gamma step brighter than those hexes. Tuned and verified as-is; don't "fix" the
+  // color space without re-judging captures.
   const color: [number, number, number] = [
     0.039 + (0.737 - 0.039) * day,
     0.059 + (0.839 - 0.059) * day,
@@ -37,9 +40,10 @@ export const CLOUD_SHELL_ALT_FRAC = 0.018
 const CLOUD_BAND = 90
 
 /** 0..1 fog boost while crossing the cloud layer, scaled by the actual cloud cover at
- *  the ship's position — clear sky passes clean, monsoon overcast whites the screen out. */
-export function computeCloudFogBoost(alt: number, cover: number): number {
-  const d = (alt - 4300 * CLOUD_SHELL_ALT_FRAC) / CLOUD_BAND
+ *  the ship's position — clear sky passes clean, monsoon overcast whites the screen out.
+ *  `radius` is the planet radius (the shell sits at radius * (1 + CLOUD_SHELL_ALT_FRAC)). */
+export function computeCloudFogBoost(alt: number, cover: number, radius: number): number {
+  const d = (alt - radius * CLOUD_SHELL_ALT_FRAC) / CLOUD_BAND
   return Math.exp(-d * d * 3) * Math.min(1, Math.max(0, cover))
 }
 

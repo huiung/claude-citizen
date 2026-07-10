@@ -1314,7 +1314,7 @@ function updateAtmoSky(): void {
   // moment, scaled by the actual NASA cloud cover overhead — the wisp effect.
   const fog = computeAtmoFog(altFrac, dist < EARTH_SKY_TOP ? _skySunDir.dot(_skyUp) : 0)
   if (fog) {
-    const boost = computeCloudFogBoost(dist - EARTH.radius, sampleCloudCover(_skyUp.x, _skyUp.y, _skyUp.z))
+    const boost = computeCloudFogBoost(dist - EARTH.radius, sampleCloudCover(_skyUp.x, _skyUp.y, _skyUp.z), EARTH.radius)
     atmoFog.near = fog.near + (120 - fog.near) * boost
     atmoFog.far = fog.far + (900 - fog.far) * boost
     atmoFog.color.setRGB(fog.color[0], fog.color[1], fog.color[2])
@@ -5464,6 +5464,9 @@ function frame(now: number): void {
   } else {
     sun.visible = true
     for (const mesh of planetGroups) mesh.visible = true
+    scene.fog = null
+    celestialsHidden = false
+    spawnBackdropPlanet.visible = beltAsteroids.visible = galaxyRoot.visible = true
     // Menu background: slow orbit around the station
     const t = now * 0.0001
     camera.position.set(Math.cos(t) * 220 + 120, 60, Math.sin(t) * 220 - 350)

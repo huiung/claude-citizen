@@ -48,18 +48,23 @@ describe('computeAtmoFog', () => {
 })
 
 describe('computeCloudFogBoost', () => {
-  const SHELL = 4300 * 0.018 // cloud shell altitude above the sphere surface
+  const RADIUS = 4300
+  const SHELL = RADIUS * 0.018 // cloud shell altitude above the sphere surface
 
   it('peaks at the cloud shell altitude and scales with cover', () => {
-    expect(computeCloudFogBoost(SHELL, 1)).toBeCloseTo(1, 5)
-    expect(computeCloudFogBoost(SHELL, 0.4)).toBeCloseTo(0.4, 5)
-    expect(computeCloudFogBoost(SHELL, 0)).toBe(0)
+    expect(computeCloudFogBoost(SHELL, 1, RADIUS)).toBeCloseTo(1, 5)
+    expect(computeCloudFogBoost(SHELL, 0.4, RADIUS)).toBeCloseTo(0.4, 5)
+    expect(computeCloudFogBoost(SHELL, 0, RADIUS)).toBe(0)
   })
 
   it('falls off to ~0 outside the crossing band', () => {
-    expect(computeCloudFogBoost(SHELL + 200, 1)).toBeLessThan(0.05)
-    expect(computeCloudFogBoost(SHELL - 200, 1)).toBeLessThan(0.05)
-    expect(computeCloudFogBoost(SHELL + 40, 1)).toBeGreaterThan(0.4)
+    expect(computeCloudFogBoost(SHELL + 200, 1, RADIUS)).toBeLessThan(0.05)
+    expect(computeCloudFogBoost(SHELL - 200, 1, RADIUS)).toBeLessThan(0.05)
+    expect(computeCloudFogBoost(SHELL + 40, 1, RADIUS)).toBeGreaterThan(0.4)
+  })
+
+  it('tracks the shell to the planet radius', () => {
+    expect(computeCloudFogBoost(9000 * 0.018, 1, 9000)).toBeCloseTo(1, 5)
   })
 })
 
