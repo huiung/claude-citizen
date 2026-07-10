@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
-import { CITY_BLOCK, CITY_ROAD, CITY_TIER_RADIUS, buildCityChunk, computeCityLayout, computeStreetGlowPixels, computeWindowPixels } from './cityChunk'
+import { CITY_BLOCK, CITY_ROAD, CITY_TIER_RADIUS, buildCityChunk, computeCityLayout, computeStreetGlowPixels, computeWindowPixels, selectChunkSite } from './cityChunk'
 import { computeCitySites } from './citySites'
 
 describe('computeCityLayout', () => {
@@ -136,5 +136,38 @@ describe('buildCityChunk', () => {
     expect(groundMat.emissiveIntensity).toBe(0)
     chunk.dispose()
     expect(chunk.group.children.length).toBe(0)
+  })
+})
+
+describe('selectChunkSite', () => {
+  const R = 4300
+  const site = (x: number, tier: 0 | 1 | 2): import('./citySites').CitySite =>
+    ({ direction: new THREE.Vector3(x, 1, 0).normalize(), tier, seed: 1 })
+  // Two tier-2 metros ~849u apart (closer than one 1400u footprint — the real-megacity case).
+  const sites = [site(0, 2), site(0.2, 2)]
+  const dir = (x: number) => new THREE.Vector3(x, 1, 0).normalize()
+
+  it('picks the nearest site inside the build band, null outside it', () => {
+    expect(selectChunkSite(sites, dir(0), R, 900, null)).toBe(0)
+    expect(selectChunkSite(sites, dir(0), R, 1300, null)).toBeNull() // above the build altitude
+    expect(selectChunkSite(sites, new THREE.Vector3(1, 0, 0), R, 900, null)).toBeNull() // arc too far
+  })
+
+  it('keeps the active chunk through the altitude dead zone, drops past it', () => {
+    expect(selectChunkSite(sites, dir(0), R, 1600, 0)).toBe(0) // between build(1200) and drop(2000)
+    expect(selectChunkSite(sites, dir(0), R, 2100, 0)).toBeNull()
+  })
+
+  it('does not thrash at the midpoint between two clustered cities', () => {
+    // Barely nearer to site 1 — within the switch hysteresis, the active chunk 0 stays.
+    expect(selectChunkSite(sites, dir(0.101), R, 900, 0)).toBe(0)
+  })
+
+  it('switches once the new nearest wins by more than the hysteresis', () => {
+    expect(selectChunkSite(sites, dir(0.19), R, 900, 0)).toBe(1)
+  })
+
+  it('returns null for an empty site list', () => {
+    expect(selectChunkSite([], dir(0), R, 500, null)).toBeNull()
   })
 })

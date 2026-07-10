@@ -56,8 +56,8 @@ import { createSeasonHubLifeRig, updateSeasonHubLifeRig } from './render/seasonH
 import { buildBlackHole } from './render/blackHole'
 import { applyPlanetAssetTextures, loadPlanetAssetTextures } from './render/planetAssetTextures'
 import { computeCitySites, type CitySite } from './render/citySites'
-import { isEarthDataReady, latLonToDir, loadEarthData } from './render/earthData'
-import { buildCityChunk, CITY_TIER_RADIUS, type CityChunk } from './render/cityChunk'
+import { earthHighColorLoaded, isEarthDataReady, latLonToDir, loadEarthData } from './render/earthData'
+import { buildCityChunk, selectChunkSite, type CityChunk } from './render/cityChunk'
 import { buildCityLightSplats, cityNightFactor, updateCityLightSplats } from './render/cityLights'
 import { cancelTravel, catchUpQuantum, createQuantum, cycleQuantumDestinationIndex, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
 import {
@@ -1192,8 +1192,6 @@ const EARTH = PLANETS.find((p) => p.name === 'Earth')!
 let citySites: CitySite[] | null = null
 let citySplats: THREE.Group | null = null
 const cityChunks = new Map<number, CityChunk>()
-const CITY_CHUNK_BUILD_ALT = 1200
-const CITY_CHUNK_DROP_ALT = 2000
 const _cityShipDir = new THREE.Vector3()
 const _citySunDir = new THREE.Vector3()
 
@@ -1222,7 +1220,18 @@ void loadEarthData().then(() => {
   citySplats = null
   citySites = null
   for (const [i, chunk] of cityChunks) { scene.remove(chunk.group); chunk.dispose(); cityChunks.delete(i) }
-})
+  // Whichever Earth group is live when the 3600px map lands, patch it in place — builds
+  // that raced ahead of the download hold the 2048 startup map by reference forever.
+  void earthHighColorLoaded().then((tex) => {
+    if (!tex) return
+    planetGroups[idx].traverse((o) => {
+      if (!(o instanceof THREE.Mesh)) return
+      const m = o.material as THREE.MeshStandardMaterial
+      // roughnessMap uniquely marks the real-Earth surface material in this group.
+      if (m?.isMeshStandardMaterial && m.roughnessMap && m.map && m.map !== tex) { m.map = tex; m.needsUpdate = true }
+    })
+  })
+}).catch((err) => console.warn('[earth] real-earth rebuild failed — staying procedural', err))
 
 function updateCities(): void {
   const dist = ship.position.distanceTo(EARTH.position)
@@ -1249,34 +1258,19 @@ function updateCities(): void {
   _cityShipDir.copy(ship.position).sub(EARTH.position).normalize()
   _citySunDir.copy(SUN_POSITION).sub(EARTH.position).normalize()
   const alt = dist - EARTH.radius
-  // Real megacities sit closer together than one chunk footprint (London–Paris is ~230u
-  // here, Seoul–Tokyo ~770u) — geometry for ALL nearby sites would interpenetrate into
-  // one continent-wide slab. Only the nearest city materializes; neighbours stay splats.
-  let nearest = -1
-  let nearestArc = Infinity
-  for (let i = 0; i < citySites.length; i++) {
-    const arc = _cityShipDir.angleTo(citySites[i].direction) * EARTH.radius // ground distance
-    if (arc < nearestArc) { nearestArc = arc; nearest = i }
-  }
-  // ±150u hysteresis: skimming the midpoint between two clustered cities must not
-  // thrash a ~2ms build/dispose every frame.
+  // One streamed chunk at a time (see selectChunkSite for why — real megacities overlap).
   const active = cityChunks.keys().next() // invariant: at most one chunk exists
-  if (!active.done && active.value !== nearest) {
-    const activeArc = _cityShipDir.angleTo(citySites[active.value].direction) * EARTH.radius
-    if (activeArc < nearestArc + 150) { nearest = active.value; nearestArc = activeArc }
+  const selected = selectChunkSite(citySites, _cityShipDir, EARTH.radius, alt, active.done ? null : active.value)
+  for (const [i, chunk] of cityChunks) {
+    if (i === selected) continue
+    scene.remove(chunk.group)
+    chunk.dispose()
+    cityChunks.delete(i)
   }
-  for (let i = 0; i < citySites.length; i++) {
-    const reach = CITY_TIER_RADIUS[citySites[i].tier]
-    const chunk = cityChunks.get(i)
-    if (!chunk && i === nearest && alt < CITY_CHUNK_BUILD_ALT && nearestArc < reach + 2600) {
-      const built = buildCityChunk(citySites[i], EARTH.position, EARTH.seed, EARTH.radius)
-      scene.add(built.group)
-      cityChunks.set(i, built)
-    } else if (chunk && (i !== nearest || alt > CITY_CHUNK_DROP_ALT || nearestArc > reach + 4200)) {
-      scene.remove(chunk.group)
-      chunk.dispose()
-      cityChunks.delete(i)
-    }
+  if (selected !== null && !cityChunks.has(selected)) {
+    const built = buildCityChunk(citySites[selected], EARTH.position, EARTH.seed, EARTH.radius)
+    scene.add(built.group)
+    cityChunks.set(selected, built)
   }
   for (const [i, chunk] of cityChunks) {
     chunk.update(cityNightFactor(citySites[i].direction.dot(_citySunDir)))
@@ -1381,7 +1375,11 @@ function upgradeNextPlanet(now: number): void {
       upgraded.rotation.copy(old.rotation)
       upgraded.userData.spin = old.userData.spin
       upgraded.userData.planetIdx = next.idx
-      if (assets) applyPlanetAssetTextures(upgraded, assets, { keepProceduralCloseup: next.planet.surface === 'earth' })
+      // Re-check earth readiness AFTER the awaits: if the NASA rasters landed while the
+      // legacy earth.jpg fetch was in flight, buildSolarPlanet above already used the real
+      // materials and applying the legacy map would overwrite the far LOD levels for good.
+      const earthRealNow = next.planet.name === 'Earth' && isEarthDataReady()
+      if (assets && !earthRealNow) applyPlanetAssetTextures(upgraded, assets, { keepProceduralCloseup: next.planet.surface === 'earth' })
       scene.remove(old)
       disposeObject(old)
       scene.add(upgraded)

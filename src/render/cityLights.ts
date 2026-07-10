@@ -66,8 +66,8 @@ export function cityNightFactor(ndotl: number): number {
 const SPLAT_SCALE = [500, 900, 1500] as const // town / city / metropolis footprint glow
 
 /** One additive glow quad per city, resting on the sphere. Opacity is driven per frame
- *  by updateCityLightSplats — lights only exist on the night side.
- *  Session-lifetime objects toggled via visibility — no dispose path by design. */
+ *  by updateCityLightSplats — lights only exist on the night side. Disposed via the
+ *  caller's generic disposeObject when the site table is swapped (real-Earth rebuild). */
 export function buildCityLightSplats(sites: CitySite[], planetPos: THREE.Vector3, radius: number): THREE.Group {
   const group = new THREE.Group()
   for (const site of sites) {

@@ -15,6 +15,39 @@ function mulberry32(seed: number) {
 /** City footprint radius (tangent-plane units ≈ metres) per tier: town / city / metropolis. */
 export const CITY_TIER_RADIUS = [500, 900, 1400] as const
 
+/** Streaming altitude band for the full-geometry chunk: build below, drop above — the
+ *  gap between them is a dead zone so hovering at the boundary can't thrash a build. */
+export const CITY_CHUNK_BUILD_ALT = 1200
+export const CITY_CHUNK_DROP_ALT = 2000
+/** A newly-nearest site must win by this much ground distance before the chunk swaps. */
+const CHUNK_SWITCH_HYSTERESIS = 150
+
+/** Which site (if any) owns the single streamed chunk this frame. Real megacities sit
+ *  closer together than one chunk footprint (London–Paris is ~230u here, Seoul–Tokyo
+ *  ~770u) — geometry for all nearby sites would interpenetrate into one continent-wide
+ *  slab, so exactly one materializes: the nearest, with hysteresis on the switch and
+ *  wider keep-bands than build-bands on both altitude and ground distance. */
+export function selectChunkSite(
+  sites: readonly CitySite[], shipDir: THREE.Vector3, radius: number, alt: number, activeIdx: number | null,
+): number | null {
+  if (sites.length === 0) return null
+  let nearest = -1
+  let nearestArc = Infinity
+  for (let i = 0; i < sites.length; i++) {
+    const arc = shipDir.angleTo(sites[i].direction) * radius // ground distance to the city
+    if (arc < nearestArc) { nearestArc = arc; nearest = i }
+  }
+  if (activeIdx !== null && activeIdx !== nearest && activeIdx < sites.length) {
+    const activeArc = shipDir.angleTo(sites[activeIdx].direction) * radius
+    if (activeArc < nearestArc + CHUNK_SWITCH_HYSTERESIS) { nearest = activeIdx; nearestArc = activeArc }
+  }
+  const reach = CITY_TIER_RADIUS[sites[nearest].tier]
+  if (activeIdx === nearest) {
+    return alt > CITY_CHUNK_DROP_ALT || nearestArc > reach + 4200 ? null : nearest
+  }
+  return alt < CITY_CHUNK_BUILD_ALT && nearestArc < reach + 2600 ? nearest : null
+}
+
 export const CITY_BLOCK = 96
 export const CITY_ROAD = 24
 

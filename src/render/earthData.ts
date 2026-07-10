@@ -29,6 +29,7 @@ let rasters: EarthRasters | null = null
 let colorStartup: THREE.Texture | null = null
 let colorHigh: THREE.Texture | null = null
 let clouds: THREE.Texture | null = null
+let highColorLoad: Promise<THREE.Texture | null> = Promise.resolve(null)
 
 /** three SphereGeometry UV convention: u=0 → -X, u=0.25 → +Z, v=0 → north pole (+Y).
  *  Equirect textures put longitude -180° at the left edge. */
@@ -86,6 +87,11 @@ export function earthColorTexture(quality: 'startup' | 'high'): THREE.Texture | 
 
 export function earthCloudTexture(): THREE.Texture | null {
   return clouds
+}
+
+/** Resolves with the 3600px color map once it lands (null if it failed or no load ran). */
+export function earthHighColorLoaded(): Promise<THREE.Texture | null> {
+  return highColorLoad
 }
 
 function grayscaleTexture(values: (i: number) => number, width: number, height: number): THREE.Texture {
@@ -198,8 +204,12 @@ export async function loadEarthData(): Promise<void> {
     clouds = cloudTex
     rasters = { elev: elev.data, bath: bath.data, width: elev.width, height: elev.height }
     // The high-res color map can trickle in afterwards — earthColorTexture('high')
-    // falls back to the startup map until it lands.
-    loadColorTexture('/textures/earth/color-3600.jpg').then((t) => { colorHigh = t }).catch(() => {})
+    // falls back to the startup map until it lands. earthHighColorLoaded() lets the
+    // caller patch already-built materials once it does (they hold the startup map
+    // by reference and would otherwise stay at 2048 for the whole session).
+    highColorLoad = loadColorTexture('/textures/earth/color-3600.jpg')
+      .then((t) => { colorHigh = t; return t as THREE.Texture | null })
+      .catch(() => null)
   } catch {
     rasters = null // stay procedural
   }
@@ -214,4 +224,5 @@ export function _resetEarthDataForTests(): void {
   colorStartup = null
   colorHigh = null
   clouds = null
+  highColorLoad = Promise.resolve(null)
 }
