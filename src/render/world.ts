@@ -5,6 +5,7 @@ import { ATMOSPHERE_PARAMS } from './atmosphereParams'
 import {
   generateCloudTexture, generateCloudTextureAsync, generatePlanetTextures, generatePlanetTexturesAsync, samplePlanetSurface,
 } from './planetTextures'
+import { earthCloudTexture, earthColorTexture, isEarthDataReady, makeEarthBumpTexture, makeEarthRoughnessTexture } from './earthData'
 import { createRingTexture, remapRingUVs } from './planetRings'
 import { makeAsteroidMaterial, makeOreMaterial } from './asteroidTextures'
 import { buildStarSky, MILKY_WAY_NORMAL } from './starSky'
@@ -724,6 +725,20 @@ function makePlanetSurface(
   }
 
   geo.computeVertexNormals()
+  // Real Earth: Blue Marble color, elevation bump, and a water-smooth roughness map so
+  // the sun streaks across oceans. Displacement above already followed the NASA raster.
+  if (surface === 'earth' && isEarthDataReady()) {
+    return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      map: earthColorTexture(textureSize !== undefined && textureSize <= 1024 ? 'startup' : 'high'),
+      bumpMap: makeEarthBumpTexture(),
+      // Bump stays subtle: the 1024-texel elevation raster has steep per-texel gradients,
+      // and a large scale flips normals into black square splotches along coasts/ranges.
+      bumpScale: 6,
+      roughnessMap: makeEarthRoughnessTexture(),
+      roughness: 1,
+      metalness: 0,
+    }))
+  }
   const mapSize = textureSize ?? highPlanetMapSize(surface, radius)
   const maps = generatePlanetTextures(surface, seed, color, mapSize, radius)
   const material = new THREE.MeshStandardMaterial({
@@ -772,12 +787,18 @@ export function buildSolarPlanet(
   if (options.skyEnabled) group.add(makeSkyDome(radius, surface))
 
   // Earth-type bodies get a translucent cloud shell drifting just above the surface.
+  // Real Earth swaps the procedural puffs for NASA's global cloud composite.
   const startupCloudSize = startupTextureSize > 512 ? 512 : 256
-  const clouds = generateCloudTexture(surface, seed, quality === 'high' ? highCloudMapSize(radius) : startupCloudSize, radius)
+  const clouds = (surface === 'earth' && earthCloudTexture())
+    || generateCloudTexture(surface, seed, quality === 'high' ? highCloudMapSize(radius) : startupCloudSize, radius)
   if (clouds) {
     group.add(new THREE.Mesh(
       new THREE.SphereGeometry(radius * 1.018, 72, 36),
-      new THREE.MeshBasicMaterial({ map: clouds, transparent: true, opacity: 0.4, depthWrite: false }),
+      // NASA clouds carry their own alpha (luminance) — they can run denser than the
+      // uniformly-translucent procedural shell without whiting out the planet.
+      // Lambert (not Basic): unlit clouds stay full-bright on the night side and erase
+      // the terminator — the shell must go dark with the ground under it.
+      new THREE.MeshLambertMaterial({ map: clouds, transparent: true, opacity: surface === 'earth' && earthCloudTexture() ? 0.85 : 0.4, depthWrite: false }),
     ))
   }
 
@@ -815,10 +836,10 @@ export async function prewarmHighPlanetTextures(radius: number, surface: Surface
 }
 
 export function buildLights(scene: THREE.Scene): void {
-  const sun = new THREE.DirectionalLight(0xfff4e0, 2.4)
-  sun.position.set(8000, 3000, 5000)
-  scene.add(sun)
-  scene.add(new THREE.AmbientLight(0x223344, 0.7))
+  // The sun PointLight in main (no falloff) is the ONLY directional source — a second
+  // fixed DirectionalLight here used to daylight the real night side of planets, which
+  // washed out the terminator and the night-city lights. Ambient keeps shadow sides readable.
+  scene.add(new THREE.AmbientLight(0x223344, 0.85))
 }
 
 // --- Quantum warp streaks (camera-local hyperspace lines) ---

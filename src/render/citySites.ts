@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { isEarthDataReady, latLonToDir } from './earthData'
 import { samplePlanetSurface } from './planetTextures'
 
 // Deterministic PRNG — duplicated per repo convention (see starSky.ts: importing a
@@ -24,10 +25,39 @@ export interface CitySite {
   seed: number
 }
 
+/** Real megacities for the NASA-raster Earth — night lights land where the actual
+ *  cities are. First entry is Seoul: the "hey, that's home" moment leads the table. */
+export const EARTH_CITIES = [
+  { name: 'Seoul', lat: 37.57, lon: 126.98, tier: 2 },
+  { name: 'Tokyo', lat: 35.68, lon: 139.69, tier: 2 },
+  { name: 'Shanghai', lat: 31.23, lon: 121.47, tier: 2 },
+  { name: 'New York', lat: 40.71, lon: -74.01, tier: 2 },
+  { name: 'London', lat: 51.51, lon: -0.13, tier: 1 },
+  { name: 'Paris', lat: 48.86, lon: 2.35, tier: 1 },
+  { name: 'Cairo', lat: 30.04, lon: 31.24, tier: 1 },
+  { name: 'Mumbai', lat: 19.08, lon: 72.88, tier: 1 },
+  { name: 'Moscow', lat: 55.76, lon: 37.62, tier: 1 },
+  { name: 'São Paulo', lat: -23.55, lon: -46.63, tier: 1 },
+  { name: 'Los Angeles', lat: 34.05, lon: -118.24, tier: 1 },
+  { name: 'Mexico City', lat: 19.43, lon: -99.13, tier: 1 },
+  { name: 'Istanbul', lat: 41.01, lon: 28.98, tier: 1 },
+  { name: 'Sydney', lat: -33.87, lon: 151.21, tier: 0 },
+  { name: 'Lagos', lat: 6.52, lon: 3.38, tier: 0 },
+  { name: 'Singapore', lat: 1.35, lon: 103.82, tier: 0 },
+] as const
+
 /** Deterministic city placement: sample candidate directions, keep solid non-polar land
  *  that is locally flat (no mountainsides, no coastlines), then greedily pick the
- *  flattest with a minimum angular separation. Same seed → same cities for every pilot. */
+ *  flattest with a minimum angular separation. Same seed → same cities for every pilot.
+ *  With the real-Earth rasters loaded, placement switches to the actual megacity table. */
 export function computeCitySites(planetSeed: number, radius: number, count = 8): CitySite[] {
+  if (isEarthDataReady()) {
+    return EARTH_CITIES.map((c, i) => ({
+      direction: latLonToDir(c.lat, c.lon),
+      tier: c.tier,
+      seed: (planetSeed * 31 + i * 101) | 0,
+    }))
+  }
   const rand = mulberry32(planetSeed ^ 0x5c17e5)
   const candidates: { dir: THREE.Vector3; roughness: number }[] = []
   const probe = new THREE.Vector3()

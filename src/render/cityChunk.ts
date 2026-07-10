@@ -15,6 +15,39 @@ function mulberry32(seed: number) {
 /** City footprint radius (tangent-plane units ≈ metres) per tier: town / city / metropolis. */
 export const CITY_TIER_RADIUS = [500, 900, 1400] as const
 
+/** Streaming altitude band for the full-geometry chunk: build below, drop above — the
+ *  gap between them is a dead zone so hovering at the boundary can't thrash a build. */
+export const CITY_CHUNK_BUILD_ALT = 1200
+export const CITY_CHUNK_DROP_ALT = 2000
+/** A newly-nearest site must win by this much ground distance before the chunk swaps. */
+const CHUNK_SWITCH_HYSTERESIS = 150
+
+/** Which site (if any) owns the single streamed chunk this frame. Real megacities sit
+ *  closer together than one chunk footprint (London–Paris is ~230u here, Seoul–Tokyo
+ *  ~770u) — geometry for all nearby sites would interpenetrate into one continent-wide
+ *  slab, so exactly one materializes: the nearest, with hysteresis on the switch and
+ *  wider keep-bands than build-bands on both altitude and ground distance. */
+export function selectChunkSite(
+  sites: readonly CitySite[], shipDir: THREE.Vector3, radius: number, alt: number, activeIdx: number | null,
+): number | null {
+  if (sites.length === 0) return null
+  let nearest = -1
+  let nearestArc = Infinity
+  for (let i = 0; i < sites.length; i++) {
+    const arc = shipDir.angleTo(sites[i].direction) * radius // ground distance to the city
+    if (arc < nearestArc) { nearestArc = arc; nearest = i }
+  }
+  if (activeIdx !== null && activeIdx !== nearest && activeIdx < sites.length) {
+    const activeArc = shipDir.angleTo(sites[activeIdx].direction) * radius
+    if (activeArc < nearestArc + CHUNK_SWITCH_HYSTERESIS) { nearest = activeIdx; nearestArc = activeArc }
+  }
+  const reach = CITY_TIER_RADIUS[sites[nearest].tier]
+  if (activeIdx === nearest) {
+    return alt > CITY_CHUNK_DROP_ALT || nearestArc > reach + 4200 ? null : nearest
+  }
+  return alt < CITY_CHUNK_BUILD_ALT && nearestArc < reach + 2600 ? nearest : null
+}
+
 export const CITY_BLOCK = 96
 export const CITY_ROAD = 24
 
@@ -179,8 +212,11 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   glowTexture.wrapT = THREE.RepeatWrapping
   glowTexture.repeat.set(streetRepeat, streetRepeat)
   glowTexture.needsUpdate = true
+  // Mid-grey urban fabric, not near-black asphalt: a nadir view is mostly roofs and
+  // ground sheet, and in daylight near-black reads as burnt rubble. Night look is
+  // unaffected — it comes from the emissive maps, not the base colors.
   const groundMat = new THREE.MeshStandardMaterial({
-    color: 0x1c2026, roughness: 0.95, metalness: 0,
+    color: 0x2e343b, roughness: 0.95, metalness: 0,
     emissive: 0xffffff, emissiveIntensity: 0, emissiveMap: glowTexture,
   })
   const ground = new THREE.Mesh(groundGeo, groundMat)
@@ -202,10 +238,10 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   windowTexture.minFilter = THREE.LinearFilter
   windowTexture.needsUpdate = true
   const sideMat = new THREE.MeshStandardMaterial({
-    color: 0x39424d, roughness: 0.85, metalness: 0.05,
+    color: 0x4a545f, roughness: 0.85, metalness: 0.05,
     emissive: 0xffffff, emissiveIntensity: 0, emissiveMap: windowTexture,
   })
-  const roofMat = new THREE.MeshStandardMaterial({ color: 0x232a31, roughness: 0.95, metalness: 0 })
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x525a63, roughness: 0.95, metalness: 0 })
   // BoxGeometry face order: +x, -x, +y, -y, +z, -z (12 indices each). The renderer emits one
   // draw call PER GROUP even when groups share a material, so merge the default 6 groups into
   // 3 — windows on the four sides, plain roof on ±y — keeping the city at 4 draw calls total.

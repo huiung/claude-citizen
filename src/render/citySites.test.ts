@@ -81,3 +81,26 @@ describe('pickSeparated', () => {
     expect(new Set(picked).size).toBe(3)
   })
 })
+
+describe('real-earth city sites', () => {
+  it('returns the real megacity table once NASA rasters are ready', async () => {
+    const { _setEarthRastersForTests, _resetEarthDataForTests, latLonToDir } = await import('./earthData')
+    const { EARTH_CITIES } = await import('./citySites')
+    // any ready raster switches the path — content is irrelevant for placement
+    _setEarthRastersForTests(new Uint8ClampedArray(8), new Uint8ClampedArray(8).fill(255), 4, 2)
+    try {
+      const real = computeCitySites(EARTH_SEED, EARTH_RADIUS, 8)
+      expect(real.length).toBe(EARTH_CITIES.length)
+      expect(EARTH_CITIES.length).toBeGreaterThanOrEqual(16)
+      const seoul = latLonToDir(EARTH_CITIES[0].lat, EARTH_CITIES[0].lon)
+      expect(EARTH_CITIES[0].name).toBe('Seoul')
+      expect(real[0].direction.distanceTo(seoul)).toBeLessThan(1e-9)
+      expect(real[0].direction.length()).toBeCloseTo(1, 9)
+      expect(real.filter((s) => s.tier === 2).length).toBe(4)
+      // deterministic per-site seeds, same formula as procedural sites
+      expect(real[3].seed).toBe((EARTH_SEED * 31 + 3 * 101) | 0)
+    } finally {
+      _resetEarthDataForTests()
+    }
+  })
+})
