@@ -1192,7 +1192,8 @@ const EARTH = PLANETS.find((p) => p.name === 'Earth')!
 let citySites: CitySite[] | null = null
 let citySplats: THREE.Group | null = null
 const cityChunks = new Map<number, CityChunk>()
-const CITY_CHUNK_BUILD_ALT = 3000
+const CITY_CHUNK_BUILD_ALT = 1200
+const CITY_CHUNK_DROP_ALT = 2000
 const _cityShipDir = new THREE.Vector3()
 const _citySunDir = new THREE.Vector3()
 
@@ -1248,18 +1249,30 @@ function updateCities(): void {
   _cityShipDir.copy(ship.position).sub(EARTH.position).normalize()
   _citySunDir.copy(SUN_POSITION).sub(EARTH.position).normalize()
   const alt = dist - EARTH.radius
-  let builtThisTick = false // one ~2ms chunk build per tick — adjacent cities must not stack a hitch
+  // Real megacities sit closer together than one chunk footprint (London–Paris is ~230u
+  // here, Seoul–Tokyo ~770u) — geometry for ALL nearby sites would interpenetrate into
+  // one continent-wide slab. Only the nearest city materializes; neighbours stay splats.
+  let nearest = -1
+  let nearestArc = Infinity
   for (let i = 0; i < citySites.length; i++) {
-    const site = citySites[i]
-    const arc = _cityShipDir.angleTo(site.direction) * EARTH.radius // ground distance to the city
-    const reach = CITY_TIER_RADIUS[site.tier]
+    const arc = _cityShipDir.angleTo(citySites[i].direction) * EARTH.radius // ground distance
+    if (arc < nearestArc) { nearestArc = arc; nearest = i }
+  }
+  // ±150u hysteresis: skimming the midpoint between two clustered cities must not
+  // thrash a ~2ms build/dispose every frame.
+  const active = cityChunks.keys().next() // invariant: at most one chunk exists
+  if (!active.done && active.value !== nearest) {
+    const activeArc = _cityShipDir.angleTo(citySites[active.value].direction) * EARTH.radius
+    if (activeArc < nearestArc + 150) { nearest = active.value; nearestArc = activeArc }
+  }
+  for (let i = 0; i < citySites.length; i++) {
+    const reach = CITY_TIER_RADIUS[citySites[i].tier]
     const chunk = cityChunks.get(i)
-    if (!chunk && !builtThisTick && alt < CITY_CHUNK_BUILD_ALT && arc < reach + 2600) {
-      const built = buildCityChunk(site, EARTH.position, EARTH.seed, EARTH.radius)
+    if (!chunk && i === nearest && alt < CITY_CHUNK_BUILD_ALT && nearestArc < reach + 2600) {
+      const built = buildCityChunk(citySites[i], EARTH.position, EARTH.seed, EARTH.radius)
       scene.add(built.group)
       cityChunks.set(i, built)
-      builtThisTick = true
-    } else if (chunk && arc > reach + 4200) {
+    } else if (chunk && (i !== nearest || alt > CITY_CHUNK_DROP_ALT || nearestArc > reach + 4200)) {
       scene.remove(chunk.group)
       chunk.dispose()
       cityChunks.delete(i)
@@ -4403,7 +4416,9 @@ if (import.meta.env.DEV && URL_PARAMS.get('earthview')) {
       placePlayerAt(pos, target ?? EARTH.position)
     }
     if (which === 'seoul') place(37.57, 126.98, 0.5)
+    else if (which === 'seoul-low') place(37.57, 126.98, 0.22) // inside the chunk-build band
     else if (which === 'nyc') place(40.71, -74.01, 0.5) // ~164° from the sub-solar point → night side
+    else if (which === 'nyc-low') place(40.71, -74.01, 0.22)
     else if (which === 'glint') {
       // Oblique look at the sub-solar ocean (Indian Ocean, lon 90°E) — the specular streak.
       const seaTarget = EARTH.position.clone().addScaledVector(latLonToDir(0, 90), EARTH.radius)

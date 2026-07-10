@@ -731,7 +731,9 @@ function makePlanetSurface(
     return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
       map: earthColorTexture(textureSize !== undefined && textureSize <= 1024 ? 'startup' : 'high'),
       bumpMap: makeEarthBumpTexture(),
-      bumpScale: radius * 0.02,
+      // Bump stays subtle: the 1024-texel elevation raster has steep per-texel gradients,
+      // and a large scale flips normals into black square splotches along coasts/ranges.
+      bumpScale: 6,
       roughnessMap: makeEarthRoughnessTexture(),
       roughness: 1,
       metalness: 0,
@@ -794,7 +796,9 @@ export function buildSolarPlanet(
       new THREE.SphereGeometry(radius * 1.018, 72, 36),
       // NASA clouds carry their own alpha (luminance) — they can run denser than the
       // uniformly-translucent procedural shell without whiting out the planet.
-      new THREE.MeshBasicMaterial({ map: clouds, transparent: true, opacity: surface === 'earth' && earthCloudTexture() ? 0.85 : 0.4, depthWrite: false }),
+      // Lambert (not Basic): unlit clouds stay full-bright on the night side and erase
+      // the terminator — the shell must go dark with the ground under it.
+      new THREE.MeshLambertMaterial({ map: clouds, transparent: true, opacity: surface === 'earth' && earthCloudTexture() ? 0.85 : 0.4, depthWrite: false }),
     ))
   }
 
@@ -832,10 +836,10 @@ export async function prewarmHighPlanetTextures(radius: number, surface: Surface
 }
 
 export function buildLights(scene: THREE.Scene): void {
-  const sun = new THREE.DirectionalLight(0xfff4e0, 2.4)
-  sun.position.set(8000, 3000, 5000)
-  scene.add(sun)
-  scene.add(new THREE.AmbientLight(0x223344, 0.7))
+  // The sun PointLight in main (no falloff) is the ONLY directional source — a second
+  // fixed DirectionalLight here used to daylight the real night side of planets, which
+  // washed out the terminator and the night-city lights. Ambient keeps shadow sides readable.
+  scene.add(new THREE.AmbientLight(0x223344, 0.85))
 }
 
 // --- Quantum warp streaks (camera-local hyperspace lines) ---

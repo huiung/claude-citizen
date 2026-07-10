@@ -179,8 +179,11 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   glowTexture.wrapT = THREE.RepeatWrapping
   glowTexture.repeat.set(streetRepeat, streetRepeat)
   glowTexture.needsUpdate = true
+  // Mid-grey urban fabric, not near-black asphalt: a nadir view is mostly roofs and
+  // ground sheet, and in daylight near-black reads as burnt rubble. Night look is
+  // unaffected — it comes from the emissive maps, not the base colors.
   const groundMat = new THREE.MeshStandardMaterial({
-    color: 0x1c2026, roughness: 0.95, metalness: 0,
+    color: 0x2e343b, roughness: 0.95, metalness: 0,
     emissive: 0xffffff, emissiveIntensity: 0, emissiveMap: glowTexture,
   })
   const ground = new THREE.Mesh(groundGeo, groundMat)
@@ -202,10 +205,10 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   windowTexture.minFilter = THREE.LinearFilter
   windowTexture.needsUpdate = true
   const sideMat = new THREE.MeshStandardMaterial({
-    color: 0x39424d, roughness: 0.85, metalness: 0.05,
+    color: 0x4a545f, roughness: 0.85, metalness: 0.05,
     emissive: 0xffffff, emissiveIntensity: 0, emissiveMap: windowTexture,
   })
-  const roofMat = new THREE.MeshStandardMaterial({ color: 0x232a31, roughness: 0.95, metalness: 0 })
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x525a63, roughness: 0.95, metalness: 0 })
   // BoxGeometry face order: +x, -x, +y, -y, +z, -z (12 indices each). The renderer emits one
   // draw call PER GROUP even when groups share a material, so merge the default 6 groups into
   // 3 — windows on the four sides, plain roof on ±y — keeping the city at 4 draw calls total.
