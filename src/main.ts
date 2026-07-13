@@ -1277,7 +1277,7 @@ function updateCities(): void {
     cityChunks.set(selected, built)
   }
   for (const [i, chunk] of cityChunks) {
-    chunk.update(cityNightFactor(citySites[i].direction.dot(_citySunDir)))
+    chunk.update(cityNightFactor(citySites[i].direction.dot(_citySunDir)), performance.now() / 1000)
   }
 }
 

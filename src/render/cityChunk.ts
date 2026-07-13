@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { samplePlanetSurface } from './planetTextures'
+import { computePadMarkingPixels, computePadWorld, PAD_RADIUS } from './cityPad'
 import type { CitySite } from './citySites'
 
 // Deterministic PRNG — duplicated per repo convention (see starSky.ts).
@@ -134,7 +135,10 @@ export function computeStreetGlowPixels(size = 64): Uint8Array<ArrayBuffer> {
 
 export interface CityChunk {
   group: THREE.Group
-  update(nightFactor: number): void
+  /** skypad deck-top centre (world) — the landing target */
+  padCenter: THREE.Vector3
+  padNormal: THREE.Vector3
+  update(nightFactor: number, timeSec: number): void
   dispose(): void
 }
 
@@ -268,18 +272,52 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   bodies.instanceMatrix.needsUpdate = true
   if (bodies.instanceColor) bodies.instanceColor.needsUpdate = true
 
+  // --- Skypad: landing deck + pulsing edge ring (spot chosen by cityPad's
+  // deterministic lot, shared with the guidance beam in main) ---
+  const pad = computePadWorld(site, planetPos, planetSeed, radius)
+  const markTex = new THREE.DataTexture(computePadMarkingPixels(64), 64, 64, THREE.RGBAFormat)
+  markTex.colorSpace = THREE.SRGBColorSpace
+  markTex.magFilter = THREE.LinearFilter
+  markTex.minFilter = THREE.LinearFilter
+  markTex.needsUpdate = true
+  const deckMat = new THREE.MeshStandardMaterial({
+    color: 0x9aa2ab, roughness: 0.9, metalness: 0.05, // daylight-readable concrete (sRGB 0x8x+ lesson)
+    emissive: 0xffd9a8, emissiveIntensity: 0.35, emissiveMap: markTex,
+  })
+  const deckGeo = new THREE.CylinderGeometry(PAD_RADIUS, PAD_RADIUS * 1.08, 3, 8)
+  const deck = new THREE.Mesh(deckGeo, deckMat)
+  deck.quaternion.setFromUnitVectors(up, pad.normal)
+  deck.position.copy(pad.center).addScaledVector(pad.normal, -1.5) // padCenter is the top face — cylinder origin is mid-height
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0xffc86e, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  })
+  const ringGeo = new THREE.TorusGeometry(PAD_RADIUS * 0.92, 1.5, 6, 32)
+  const ring = new THREE.Mesh(ringGeo, ringMat)
+  ring.quaternion.copy(deck.quaternion)
+  ring.rotateX(Math.PI / 2) // lay the torus flat on the deck face
+  ring.position.copy(pad.center).addScaledVector(pad.normal, 0.8)
+
   const group = new THREE.Group()
   group.add(ground)
   group.add(bodies)
+  group.add(deck)
+  group.add(ring)
   return {
     group,
-    update(nightFactor: number) {
+    padCenter: pad.center,
+    padNormal: pad.normal,
+    update(nightFactor: number, timeSec: number) {
       sideMat.emissiveIntensity = nightFactor * 1.2
       groundMat.emissiveIntensity = nightFactor * 0.95
+      const pulse = 0.7 + 0.3 * Math.sin(timeSec * 2.4)
+      deckMat.emissiveIntensity = (0.35 + nightFactor * 0.85) * pulse
+      ringMat.opacity = (0.35 + nightFactor * 0.5) * pulse
     },
     dispose() {
       group.remove(ground)
       group.remove(bodies)
+      group.remove(deck)
+      group.remove(ring)
       groundGeo.dispose()
       groundMat.dispose()
       glowTexture.dispose()
@@ -288,6 +326,11 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
       roofMat.dispose()
       windowTexture.dispose()
       bodies.dispose()
+      deckGeo.dispose()
+      deckMat.dispose()
+      markTex.dispose()
+      ringGeo.dispose()
+      ringMat.dispose()
     },
   }
 }

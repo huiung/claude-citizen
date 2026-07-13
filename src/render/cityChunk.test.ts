@@ -88,9 +88,9 @@ describe('buildCityChunk', () => {
     const instanced = chunk.group.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
     const plain = chunk.group.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh && !(c instanceof THREE.InstancedMesh))
     expect(instanced.length).toBe(1) // bodies
-    expect(plain.length).toBe(1) // ground sheet
+    expect(plain.length).toBe(3) // ground sheet + skypad deck + edge ring
     const [bodies] = instanced
-    const [ground] = plain
+    const [ground] = plain // insertion order: ground first (deck/ring asserted in the skypad test)
     expect(bodies.count).toBeGreaterThanOrEqual(450)
     const groundMat = ground.material as THREE.MeshStandardMaterial
     expect(groundMat.emissiveMap).not.toBeNull()
@@ -124,18 +124,27 @@ describe('buildCityChunk', () => {
 
   it('update() night-gates windows and street glow; dispose() empties the group', () => {
     const chunk = buildCityChunk(sites[0], planetPos, 1274, 4300)
-    chunk.update(1)
+    chunk.update(1, 0)
     const instanced = chunk.group.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
     const plain = chunk.group.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh && !(c instanceof THREE.InstancedMesh))
     const side = (instanced[0].material as THREE.Material[])[0] as THREE.MeshStandardMaterial // sides material
     const groundMat = plain[0].material as THREE.MeshStandardMaterial
     expect(side.emissiveIntensity).toBeGreaterThan(0.6)
     expect(groundMat.emissiveIntensity).toBeGreaterThan(0.4)
-    chunk.update(0)
+    chunk.update(0, 0)
     expect(side.emissiveIntensity).toBe(0)
     expect(groundMat.emissiveIntensity).toBe(0)
     chunk.dispose()
     expect(chunk.group.children.length).toBe(0)
+  })
+
+  it('exposes the skypad on the chunk: deck-top centre near the surface, unit normal', () => {
+    const chunk = buildCityChunk(sites[0], planetPos, 1274, 4300)
+    expect(chunk.padNormal.length()).toBeCloseTo(1, 6)
+    const r = chunk.padCenter.distanceTo(planetPos)
+    expect(r).toBeGreaterThan(4300) // lifted above the sphere
+    expect(r).toBeLessThan(4300 * 1.05)
+    chunk.dispose()
   })
 })
 
