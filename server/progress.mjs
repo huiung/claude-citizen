@@ -138,6 +138,14 @@ function sanitizeDaily(value) {
   }
 }
 
+// Landing visit-collection whitelist — mirrors the client's EARTH_CITIES table
+// (src/render/citySites.ts). The server never imports client code, so the list
+// is duplicated here like the XP curve above.
+const EARTH_CITY_NAMES = new Set([
+  'Seoul', 'Tokyo', 'Shanghai', 'New York', 'London', 'Paris', 'Cairo', 'Mumbai',
+  'Moscow', 'São Paulo', 'Los Angeles', 'Mexico City', 'Istanbul', 'Sydney', 'Lagos', 'Singapore',
+])
+
 /** Accept only the small, known progress shape - never trust the client blindly. */
 export function sanitizeProgress(p) {
   if (!p || typeof p !== 'object') return null
@@ -159,6 +167,9 @@ export function sanitizeProgress(p) {
     },
     crafting: sanitizeCrafting(p.crafting),
     daily: sanitizeDaily(p.daily),
+    visitedCities: [...new Set(
+      (Array.isArray(p.visitedCities) ? p.visitedCities : []).filter((c) => EARTH_CITY_NAMES.has(c)),
+    )].slice(0, EARTH_CITY_NAMES.size),
   }
 }
 

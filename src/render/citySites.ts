@@ -23,6 +23,8 @@ export interface CitySite {
   tier: 0 | 1 | 2
   /** per-site seed for the building layout */
   seed: number
+  /** real megacity name (real-Earth path only) — the landing visit-collection key */
+  name?: string
 }
 
 /** Real megacities for the NASA-raster Earth — night lights land where the actual
@@ -53,6 +55,7 @@ export const EARTH_CITIES = [
 export function computeCitySites(planetSeed: number, radius: number, count = 8): CitySite[] {
   if (isEarthDataReady()) {
     return EARTH_CITIES.map((c, i) => ({
+      name: c.name,
       direction: latLonToDir(c.lat, c.lon),
       tier: c.tier,
       seed: (planetSeed * 31 + i * 101) | 0,

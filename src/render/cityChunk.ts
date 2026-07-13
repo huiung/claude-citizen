@@ -1,6 +1,16 @@
 import * as THREE from 'three'
 import { samplePlanetSurface } from './planetTextures'
+import { computePadMarkingPixels, computePadWorld, PAD_DECK_HEIGHT, PAD_RADIUS } from './cityPad'
+import {
+  CITY_BLOCK, CITY_ROAD, CITY_TERRAIN_SCALE, CITY_TIER_RADIUS, cityGroundRadius, cityTangentFrame,
+  computeCityLayout, SHEET_LIFT, SKIRT_MARGIN,
+} from './cityLayout'
 import type { CitySite } from './citySites'
+
+// Layout primitives live in cityLayout (shared with cityPad); re-exported so existing
+// consumers keep their import site.
+export { CITY_BLOCK, CITY_ROAD, CITY_TIER_RADIUS, computeCityLayout } from './cityLayout'
+export type { BuildingSpec } from './cityLayout'
 
 // Deterministic PRNG — duplicated per repo convention (see starSky.ts).
 function mulberry32(seed: number) {
@@ -11,9 +21,6 @@ function mulberry32(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 }
-
-/** City footprint radius (tangent-plane units ≈ metres) per tier: town / city / metropolis. */
-export const CITY_TIER_RADIUS = [500, 900, 1400] as const
 
 /** Streaming altitude band for the full-geometry chunk: build below, drop above — the
  *  gap between them is a dead zone so hovering at the boundary can't thrash a build. */
@@ -46,44 +53,6 @@ export function selectChunkSite(
     return alt > CITY_CHUNK_DROP_ALT || nearestArc > reach + 4200 ? null : nearest
   }
   return alt < CITY_CHUNK_BUILD_ALT && nearestArc < reach + 2600 ? nearest : null
-}
-
-export const CITY_BLOCK = 96
-export const CITY_ROAD = 24
-
-export interface BuildingSpec { x: number; z: number; w: number; d: number; h: number }
-
-/** Dense block-grid, pure and deterministic: 3-5 tight-footprint (12-32u) buildings per
- *  built block, 18% plaza blocks, power-law heights peaking downtown. Streets are drawn
- *  by the ground sheet's repeating grid texture, so the layout only emits buildings. */
-export function computeCityLayout(siteSeed: number, tier: 0 | 1 | 2): BuildingSpec[] {
-  const rand = mulberry32(siteSeed)
-  const extent = CITY_TIER_RADIUS[tier]
-  const cell = CITY_BLOCK + CITY_ROAD
-  const cells = Math.floor((extent * 2) / cell)
-  const buildings: BuildingSpec[] = []
-  for (let gx = 0; gx < cells; gx++) {
-    for (let gz = 0; gz < cells; gz++) {
-      const cx = -extent + cell * (gx + 0.5)
-      const cz = -extent + cell * (gz + 0.5)
-      const r = Math.hypot(cx, cz)
-      if (r > extent) continue
-      if (rand() < 0.18) continue // plaza/park — paved but unbuilt
-      const core = Math.max(0, 1 - r / extent)
-      const perBlock = 3 + Math.floor(rand() * 3) // 3-5
-      for (let b = 0; b < perBlock; b++) {
-        const w = 12 + rand() * 20
-        const d = 12 + rand() * 20
-        const h = 10 + Math.pow(rand(), 5.0) * 210 * (0.2 + core * 0.8) + rand() * 14
-        buildings.push({
-          x: cx + (rand() - 0.5) * (CITY_BLOCK - w - 6),
-          z: cz + (rand() - 0.5) * (CITY_BLOCK - d - 6),
-          w, d, h,
-        })
-      }
-    }
-  }
-  return buildings
 }
 
 /** Procedural facade: 8x16 window grid, ~40% lit warm, dark mullions/facade. Used as an
@@ -134,17 +103,12 @@ export function computeStreetGlowPixels(size = 64): Uint8Array<ArrayBuffer> {
 
 export interface CityChunk {
   group: THREE.Group
-  update(nightFactor: number): void
+  /** skypad deck-top centre (world) — the landing target */
+  padCenter: THREE.Vector3
+  padNormal: THREE.Vector3
+  update(nightFactor: number, timeSec: number): void
   dispose(): void
 }
-
-/** Radial lift applied to the whole city (sheet AND buildings). The planet render mesh
- *  linearly interpolates between its vertices, so in rough terrain its surface can sit
- *  well above the analytic sample — lift the city fabric clear of those chords. */
-const SHEET_LIFT = 30
-
-/** Lots this close to the round city edge are skipped — the sheet's skirt dives there. */
-const SKIRT_MARGIN = 24
 
 /** One city: a single ground sheet BENT onto the planet (each vertex follows the analytic
  *  terrain, water clamped to coast level so bays become harbor platforms) carrying a
@@ -156,8 +120,7 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   const extent = CITY_TIER_RADIUS[site.tier]
   const cell = CITY_BLOCK + CITY_ROAD
   const n = site.direction
-  const u = (Math.abs(n.y) > 0.99 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)).cross(n).normalize()
-  const v = n.clone().cross(u).normalize()
+  const { u, v } = cityTangentFrame(n) // shared with cityPad — the beam and the pad must agree
   const OFFSETS = [[0, 0], [70, 0], [-70, 0], [0, 70], [0, -70]] as const
 
   interface Placement { w: number; d: number; h: number; dir: THREE.Vector3; ground: number }
@@ -172,10 +135,10 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
       const t = samplePlanetSurface('earth', planetSeed, dirS.x, dirS.y, dirS.z, undefined, radius)
       if (ox === 0 && oz === 0) {
         if (t.height < 0.05) return null // ocean/coast — skip this lot
-        centerGround = radius + t.height * radius * 0.055 * 1.6
+        centerGround = radius + t.height * radius * CITY_TERRAIN_SCALE
         dirC = dirS
       }
-      ground = Math.min(ground, radius + t.height * radius * 0.055 * 1.6)
+      ground = Math.min(ground, radius + t.height * radius * CITY_TERRAIN_SCALE)
     }
     if (!dirC) return null
     return { w, d, h: h + (centerGround - ground), dir: dirC, ground }
@@ -194,7 +157,7 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
     const t = samplePlanetSurface('earth', planetSeed, vDir.x, vDir.y, vDir.z, undefined, radius)
     // Water clamps to coast level: bays inside the footprint become flat harbor platforms
     // instead of holes (buildings still skip water, so those read as docks/plazas).
-    let g = radius + Math.max(0.05, t.height) * radius * 0.055 * 1.6 + SHEET_LIFT
+    let g = cityGroundRadius(radius, t.height) + SHEET_LIFT
     const lr = Math.hypot(lx, ly)
     if (lr > extent) g -= (lr - extent) * 0.9 // skirt: dive underground past the round city edge
     vDir.multiplyScalar(g)
@@ -268,18 +231,52 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   bodies.instanceMatrix.needsUpdate = true
   if (bodies.instanceColor) bodies.instanceColor.needsUpdate = true
 
+  // --- Skypad: landing deck + pulsing edge ring (spot chosen by cityPad's
+  // deterministic lot, shared with the guidance beam in main) ---
+  const pad = computePadWorld(site, planetPos, planetSeed, radius)
+  const markTex = new THREE.DataTexture(computePadMarkingPixels(64), 64, 64, THREE.RGBAFormat)
+  markTex.colorSpace = THREE.SRGBColorSpace
+  markTex.magFilter = THREE.LinearFilter
+  markTex.minFilter = THREE.LinearFilter
+  markTex.needsUpdate = true
+  const deckMat = new THREE.MeshStandardMaterial({
+    color: 0x9aa2ab, roughness: 0.9, metalness: 0.05, // daylight-readable concrete (sRGB 0x8x+ lesson)
+    emissive: 0xffd9a8, emissiveIntensity: 0.35, emissiveMap: markTex,
+  })
+  const deckGeo = new THREE.CylinderGeometry(PAD_RADIUS, PAD_RADIUS * 1.08, PAD_DECK_HEIGHT, 8)
+  const deck = new THREE.Mesh(deckGeo, deckMat)
+  deck.quaternion.setFromUnitVectors(up, pad.normal)
+  deck.position.copy(pad.center).addScaledVector(pad.normal, -PAD_DECK_HEIGHT / 2) // padCenter is the top face — cylinder origin is mid-height
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0xffc86e, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  })
+  const ringGeo = new THREE.TorusGeometry(PAD_RADIUS * 0.92, 1.5, 6, 32)
+  const ring = new THREE.Mesh(ringGeo, ringMat)
+  ring.quaternion.copy(deck.quaternion)
+  ring.rotateX(Math.PI / 2) // lay the torus flat on the deck face
+  ring.position.copy(pad.center).addScaledVector(pad.normal, 0.8)
+
   const group = new THREE.Group()
   group.add(ground)
   group.add(bodies)
+  group.add(deck)
+  group.add(ring)
   return {
     group,
-    update(nightFactor: number) {
+    padCenter: pad.center,
+    padNormal: pad.normal,
+    update(nightFactor: number, timeSec: number) {
       sideMat.emissiveIntensity = nightFactor * 1.2
       groundMat.emissiveIntensity = nightFactor * 0.95
+      const pulse = 0.7 + 0.3 * Math.sin(timeSec * 2.4)
+      deckMat.emissiveIntensity = (0.35 + nightFactor * 0.85) * pulse
+      ringMat.opacity = (0.35 + nightFactor * 0.5) * pulse
     },
     dispose() {
       group.remove(ground)
       group.remove(bodies)
+      group.remove(deck)
+      group.remove(ring)
       groundGeo.dispose()
       groundMat.dispose()
       glowTexture.dispose()
@@ -288,6 +285,11 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
       roofMat.dispose()
       windowTexture.dispose()
       bodies.dispose()
+      deckGeo.dispose()
+      deckMat.dispose()
+      markTex.dispose()
+      ringGeo.dispose()
+      ringMat.dispose()
     },
   }
 }

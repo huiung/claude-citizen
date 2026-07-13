@@ -41,6 +41,8 @@ export interface PlayerProgress {
   daily?: DailyState
   pilot?: { level: number; xp: number }
   campaign?: { step: number; progress: number; sectorUnlocked: number }
+  /** landing visit-collection — real megacity names, server-whitelisted */
+  visitedCities?: string[]
 }
 
 export interface MarketListingItem {

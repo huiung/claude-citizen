@@ -103,4 +103,21 @@ describe('real-earth city sites', () => {
       _resetEarthDataForTests()
     }
   })
+
+  it('real-earth sites carry the megacity name (visit-collection key)', async () => {
+    const { _setEarthRastersForTests, _resetEarthDataForTests } = await import('./earthData')
+    _setEarthRastersForTests(new Uint8ClampedArray(8), new Uint8ClampedArray(8).fill(255), 4, 2)
+    try {
+      const real = computeCitySites(EARTH_SEED, EARTH_RADIUS, 8)
+      expect(real.find((s) => s.name === 'Seoul')).toBeDefined()
+      expect(real.filter((s) => s.name).length).toBe(real.length)
+    } finally {
+      _resetEarthDataForTests()
+    }
+  })
+
+  it('procedural sites carry no name — landing collection is real-Earth only', () => {
+    const procedural = computeCitySites(EARTH_SEED, EARTH_RADIUS, 8)
+    expect(procedural.every((s) => s.name === undefined)).toBe(true)
+  })
 })
