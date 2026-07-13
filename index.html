@@ -133,14 +133,15 @@
     #pilot-track { display: inline-block; width: 90px; height: 6px; background: #14303a; border-radius: 3px; overflow: hidden; }
     #pilot-xp-bar { display: block; height: 100%; width: 0%; background: #ffd24d; transition: width .3s ease-out; }
     #pilot-bonus { color: #9fb4bf; font-size: 10px; }
-    #promotion {
+    #promotion, #landing-toast {
       position: fixed; left: 50%; top: 24%; transform: translateX(-50%); pointer-events: none; z-index: 7;
       font-size: 18px; letter-spacing: 3px; color: #ffe08a; text-align: center;
       background: rgba(22, 16, 2, .6); border: 1px solid rgba(255, 224, 138, .55);
       padding: 10px 26px; border-radius: 5px; text-shadow: 0 0 12px rgba(255, 224, 138, .6);
       transition: opacity .5s; opacity: 1;
     }
-    #promotion[hidden] { display: none; }
+    #landing-toast { top: 31%; } /* stacks under a simultaneous rank promotion */
+    #promotion[hidden], #landing-toast[hidden] { display: none; }
     #hull-line { margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 12px; }
     #hull-track {
       display: inline-block; width: 130px; height: 9px; border-radius: 4px; overflow: hidden;
@@ -865,6 +866,7 @@
     </div>
   </div>
   <div id="promotion" hidden></div>
+  <div id="landing-toast" hidden></div>
   <div id="dock-prompt" hidden>▸ PRESS SPACE TO DOCK</div>
   <div id="mine-prompt" hidden>⛏ MINING ORE — hold to extract</div>
   <div id="leaderboard-panel" hidden>

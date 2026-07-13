@@ -55,7 +55,9 @@ import { engineGlowStyle, type EngineGlowStyle } from './render/engineGlow'
 import { createSeasonHubLifeRig, updateSeasonHubLifeRig } from './render/seasonHub'
 import { buildBlackHole } from './render/blackHole'
 import { applyPlanetAssetTextures, loadPlanetAssetTextures } from './render/planetAssetTextures'
-import { computeCitySites, type CitySite } from './render/citySites'
+import { computeCitySites, EARTH_CITIES, type CitySite } from './render/citySites'
+import { computePadWorld, PAD_RADIUS } from './render/cityPad'
+import { computeLandingEligibility, landingReward } from './sim/landing'
 import { earthHighColorLoaded, isEarthDataReady, latLonToDir, loadEarthData, sampleCloudCover } from './render/earthData'
 import { computeAtmoFog, computeCelestialHide, computeCloudFogBoost } from './render/atmoImmersion'
 import { buildCityChunk, selectChunkSite, type CityChunk } from './render/cityChunk'
@@ -254,6 +256,18 @@ function showPromotion(name: string): void {
     promotionEl.style.opacity = '0'
     setTimeout(() => { promotionEl.hidden = true }, 500)
   }, 3200)
+}
+const landingToastEl = document.getElementById('landing-toast')!
+let landingToastTimer: ReturnType<typeof setTimeout> | undefined
+function showLandingToast(text: string): void {
+  landingToastEl.textContent = text
+  landingToastEl.hidden = false
+  landingToastEl.style.opacity = '1'
+  clearTimeout(landingToastTimer)
+  landingToastTimer = setTimeout(() => {
+    landingToastEl.style.opacity = '0'
+    setTimeout(() => { landingToastEl.hidden = true }, 500)
+  }, 3800)
 }
 const dockPromptEl = document.getElementById('dock-prompt')!
 const mineEl = document.getElementById('mine-prompt')!
@@ -1196,6 +1210,67 @@ const EARTH = PLANETS.find((p) => p.name === 'Earth')!
 let citySites: CitySite[] | null = null
 let citySplats: THREE.Group | null = null
 const cityChunks = new Map<number, CityChunk>()
+
+// --- Skypad landing: guidance beam + settle-down state machine + visit collection ---
+const padBeamMat = new THREE.MeshBasicMaterial({
+  color: 0x8fd8ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending,
+  depthWrite: false, fog: false, side: THREE.DoubleSide,
+})
+const padBeam = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 2600, 8, 1, true), padBeamMat)
+padBeam.visible = false
+scene.add(padBeam)
+// Pad world transform is deterministic (cityPad) — cache per site so the beam can stand
+// on the true spot while the chunk itself hasn't streamed in yet.
+let padWorldCache: { idx: number; center: THREE.Vector3; normal: THREE.Vector3 } | null = null
+const _padUp = new THREE.Vector3()
+
+type LandingPhase = 'none' | 'settling' | 'landed'
+let landingPhase: LandingPhase = 'none'
+let landingT = 0
+let landingCityIdx: number | null = null
+let landEligible = false
+const visitedCities = new Set<string>()
+const landingFromPos = new THREE.Vector3()
+const landingFromQuat = new THREE.Quaternion()
+const landingTargetPos = new THREE.Vector3()
+const landingTargetQuat = new THREE.Quaternion()
+const landingNormal = new THREE.Vector3()
+
+function beginLanding(idx: number, padCenter: THREE.Vector3, padNormal: THREE.Vector3): void {
+  landingPhase = 'settling'
+  landingT = 0
+  landingCityIdx = idx
+  landingNormal.copy(padNormal)
+  landingFromPos.copy(ship.position)
+  landingFromQuat.copy(ship.quaternion)
+  landingTargetPos.copy(padCenter).addScaledVector(padNormal, 2.2)
+  // Keep the nose heading: project the current forward onto the deck plane, up = pad normal.
+  const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(ship.quaternion)
+  fwd.addScaledVector(padNormal, -fwd.dot(padNormal))
+  if (fwd.lengthSq() < 1e-6) fwd.set(1, 0, 0).addScaledVector(padNormal, -padNormal.x).normalize()
+  // Matrix4.lookAt: z = eye - target → with eye at origin and target = fwd the object's
+  // -Z (ship nose) faces fwd.
+  const m = new THREE.Matrix4().lookAt(new THREE.Vector3(), fwd.normalize(), padNormal)
+  landingTargetQuat.setFromRotationMatrix(m)
+  ship.velocity.set(0, 0, 0)
+  audio.blip('nav')
+}
+
+function grantLandingReward(): void {
+  audio.blip('dock')
+  const name = landingCityIdx !== null ? citySites?.[landingCityIdx]?.name : undefined
+  if (!name) { showLandingToast('◈ LANDED'); return } // procedural (unnamed) city — no collection
+  const r = landingReward(name, visitedCities)
+  if (r.first) visitedCities.add(name)
+  gainCredits(econ, r.credits)
+  if (!r.first) playerHealth.hull = playerHealth.max
+  saveEconomy(econ)
+  net.saveProgress(currentProgress())
+  updateWalletHUD()
+  showLandingToast(r.first
+    ? `🏙 FIRST LANDING — ${name.toUpperCase()}  +${r.credits} cr · CITIES ${r.count}/${EARTH_CITIES.length}`
+    : `◈ ${name.toUpperCase()} — +${r.credits} cr · HULL REPAIRED`)
+}
 const _cityShipDir = new THREE.Vector3()
 const _citySunDir = new THREE.Vector3()
 
@@ -1223,6 +1298,7 @@ void loadEarthData().then(() => {
   if (citySplats) { scene.remove(citySplats); disposeObject(citySplats) }
   citySplats = null
   citySites = null
+  padWorldCache = null // pad spots move with the site table
   for (const [i, chunk] of cityChunks) { scene.remove(chunk.group); chunk.dispose(); cityChunks.delete(i) }
   // Whichever Earth group is live when the 3600px map lands, patch it in place — builds
   // that raced ahead of the download hold the 2048 startup map by reference forever.
@@ -1241,6 +1317,7 @@ function updateCities(): void {
   const dist = ship.position.distanceTo(EARTH.position)
   if (dist > EARTH.radius * 3) {
     if (citySplats) citySplats.visible = false
+    padBeam.visible = false
     for (const [idx, chunk] of cityChunks) {
       scene.remove(chunk.group)
       chunk.dispose()
@@ -1263,8 +1340,11 @@ function updateCities(): void {
   _citySunDir.copy(SUN_POSITION).sub(EARTH.position).normalize()
   const alt = dist - EARTH.radius
   // One streamed chunk at a time (see selectChunkSite for why — real megacities overlap).
+  // While landing/landed the active chunk is pinned — the deck must not vanish underfoot.
   const active = cityChunks.keys().next() // invariant: at most one chunk exists
-  const selected = selectChunkSite(citySites, _cityShipDir, EARTH.radius, alt, active.done ? null : active.value)
+  const selected = landingPhase !== 'none' && landingCityIdx !== null
+    ? landingCityIdx
+    : selectChunkSite(citySites, _cityShipDir, EARTH.radius, alt, active.done ? null : active.value)
   for (const [i, chunk] of cityChunks) {
     if (i === selected) continue
     scene.remove(chunk.group)
@@ -1275,6 +1355,21 @@ function updateCities(): void {
     const built = buildCityChunk(citySites[selected], EARTH.position, EARTH.seed, EARTH.radius)
     scene.add(built.group)
     cityChunks.set(selected, built)
+  }
+
+  // Guidance beam: stands on the pad spot from 3500u down, before the chunk itself
+  // streams in (<1200u) — the "there's somewhere to land" signal during descent.
+  if (selected !== null && alt < 3500 && landingPhase === 'none') {
+    if (padWorldCache?.idx !== selected) {
+      const pw = computePadWorld(citySites[selected], EARTH.position, EARTH.seed, EARTH.radius)
+      padWorldCache = { idx: selected, center: pw.center, normal: pw.normal }
+    }
+    padBeam.position.copy(padWorldCache.center).addScaledVector(padWorldCache.normal, 1300)
+    padBeam.quaternion.setFromUnitVectors(_padUp.set(0, 1, 0), padWorldCache.normal)
+    padBeamMat.opacity = 0.3 * Math.min(1, Math.max(0, (3500 - alt) / 1500))
+    padBeam.visible = true
+  } else {
+    padBeam.visible = false
   }
   for (const [i, chunk] of cityChunks) {
     chunk.update(cityNightFactor(citySites[i].direction.dot(_citySunDir)), performance.now() / 1000)
@@ -2659,6 +2754,7 @@ function currentProgress(): PlayerProgress {
     daily: dailyState,
     pilot: { level: pilot.level, xp: pilot.xp },
     campaign: { step: campaign.step, progress: campaign.progress, sectorUnlocked: campaign.sectorUnlocked },
+    visitedCities: [...visitedCities],
   }
 }
 
@@ -2737,6 +2833,8 @@ function applyServerProgress(p: PlayerProgress): void {
     campaign.progress = Math.max(0, p.campaign.progress)
     campaign.sectorUnlocked = Math.max(1, p.campaign.sectorUnlocked)
   }
+  visitedCities.clear()
+  for (const c of p.visitedCities ?? []) visitedCities.add(c)
   dailyState = p.daily ? { ...emptyDaily(), ...p.daily } : emptyDaily()
   initDaily(Date.now())
   ownedShips.clear()
@@ -3500,6 +3598,10 @@ addEventListener('keydown', (e) => {
     audio.blip('nav')
   }
   if (e.code === 'Space' && running && !docked && !spectating && dockable) dock(dockable)
+  if (e.code === 'Space' && running && !docked && !spectating && !dockable && landEligible && landingPhase === 'none') {
+    const entry = cityChunks.entries().next()
+    if (!entry.done) beginLanding(entry.value[0], entry.value[1].padCenter, entry.value[1].padNormal)
+  }
   if (e.code === 'KeyN' && running && !docked && !spectating && quantum.phase === 'idle') {
     cycleQuantumDestination()
   }
@@ -5031,7 +5133,27 @@ function frame(now: number): void {
       // during TRANSIT the quantum drive (above) owns movement — don't fight it
     } else {
       input = readInput(dt)
-      stepShip(ship, input, dt, flightTuning)
+      if (landingPhase === 'settling') {
+        // Skypad auto settle-down: ease position/attitude onto the deck, then reward.
+        landingT = Math.min(1, landingT + dt / 1.5)
+        const e = 1 - Math.pow(1 - landingT, 3)
+        ship.position.lerpVectors(landingFromPos, landingTargetPos, e)
+        ship.quaternion.slerpQuaternions(landingFromQuat, landingTargetQuat, e)
+        ship.velocity.set(0, 0, 0)
+        if (landingT >= 1) {
+          landingPhase = 'landed'
+          grantLandingReward()
+        }
+      } else if (landingPhase === 'landed') {
+        ship.position.copy(landingTargetPos)
+        ship.velocity.set(0, 0, 0)
+        if (input.thrust.lengthSq() > 0.01) {
+          landingPhase = 'none'
+          ship.velocity.copy(landingNormal).multiplyScalar(25) // gentle lift off the deck
+        }
+      } else {
+        stepShip(ship, input, dt, flightTuning)
+      }
     }
     if (quantum.phase === 'idle') {
       ship.velocity.addScaledVector(gravityAccel(ship.position, _bhGrav), dt)
@@ -5189,7 +5311,21 @@ function frame(now: number): void {
     if (now - lastOreStream > 400) { streamOre(); lastOreStream = now }
 
     dockable = dockableTarget(ship.position, ship.velocity.length(), dockTargets)
-    dockPromptEl.hidden = dockable === null
+    // Skypad landing shares the dock prompt: stations live in space, pads on the ground,
+    // so the two never compete — but the dock text must be restored when it wins.
+    const activeChunk = cityChunks.values().next()
+    landEligible = landingPhase === 'none' && !activeChunk.done
+      && computeLandingEligibility(ship.position, ship.velocity, activeChunk.value.padCenter, activeChunk.value.padNormal, PAD_RADIUS)
+    if (dockable !== null) {
+      dockPromptEl.textContent = '▸ PRESS SPACE TO DOCK'
+      dockPromptEl.hidden = false
+    } else if (landEligible) {
+      const idx = cityChunks.keys().next().value as number
+      dockPromptEl.textContent = `▸ PRESS SPACE TO LAND — ${citySites?.[idx]?.name?.toUpperCase() ?? 'CITY'}`
+      dockPromptEl.hidden = false
+    } else {
+      dockPromptEl.hidden = true
+    }
 
     net.sendState(
       [ship.position.x, ship.position.y, ship.position.z],
