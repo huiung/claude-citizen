@@ -5,6 +5,7 @@ import {
   CITY_BLOCK, CITY_ROAD, CITY_TERRAIN_SCALE, CITY_TIER_RADIUS, cityGroundRadius, cityTangentFrame,
   computeCityLayout, SHEET_LIFT, SKIRT_MARGIN,
 } from './cityLayout'
+import { computePropLayout } from './cityProps'
 import type { CitySite } from './citySites'
 
 // Layout primitives live in cityLayout (shared with cityPad); re-exported so existing
@@ -187,10 +188,14 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
 
   // --- Buildings ---
   const bodyPlacements: Placement[] = []
-  for (const b of buildingSpecs) {
+  const placementBySpec = new Map<number, Placement>() // spec idx → placement (water-skips excluded)
+  buildingSpecs.forEach((b, i) => {
     const placed = place(b.x, b.z, b.w, b.d, b.h)
-    if (placed) bodyPlacements.push(placed)
-  }
+    if (placed) {
+      bodyPlacements.push(placed)
+      placementBySpec.set(i, placed)
+    }
+  })
 
   const unitBox = new THREE.BoxGeometry(1, 1, 1)
   unitBox.translate(0, 0.5, 0) // base-anchored so height scales upward
@@ -231,6 +236,84 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   bodies.instanceMatrix.needsUpdate = true
   if (bodies.instanceColor) bodies.instanceColor.needsUpdate = true
 
+  // --- Props: roof masts/tanks, blinking aviation beacons, street lamps (layout is
+  // cityProps' deterministic pass; everything below is one InstancedMesh each) ---
+  const props = computePropLayout(site.seed, site.tier, buildingSpecs)
+  const roofTop = (p: Placement) => p.ground + SHEET_LIFT - 2 + p.h // top face of the base-anchored unit box
+
+  const mastGeo = new THREE.BoxGeometry(0.8, 1, 0.8)
+  mastGeo.translate(0, 0.5, 0)
+  const mastMat = new THREE.MeshStandardMaterial({ color: 0x6a7077, roughness: 0.8, metalness: 0.3 })
+  const mastPlacements = props.masts.filter((e) => placementBySpec.has(e.buildingIdx))
+  const masts = new THREE.InstancedMesh(mastGeo, mastMat, mastPlacements.length)
+  mastPlacements.forEach((e, i) => {
+    const p = placementBySpec.get(e.buildingIdx)!
+    q.setFromUnitVectors(up, p.dir)
+    pos.copy(planetPos).addScaledVector(p.dir, roofTop(p)).addScaledVector(u, e.ox).addScaledVector(v, e.oz)
+    masts.setMatrixAt(i, m.compose(pos, q, scl.set(1, e.h, 1)))
+  })
+  masts.instanceMatrix.needsUpdate = true
+
+  const tankGeo = new THREE.CylinderGeometry(1, 1, 1, 6)
+  tankGeo.translate(0, 0.5, 0)
+  const tankMat = new THREE.MeshStandardMaterial({ color: 0x9aa2ab, roughness: 0.85, metalness: 0.1 })
+  const tankPlacements = props.tanks.filter((e) => placementBySpec.has(e.buildingIdx))
+  const tanks = new THREE.InstancedMesh(tankGeo, tankMat, tankPlacements.length)
+  tankPlacements.forEach((e, i) => {
+    const p = placementBySpec.get(e.buildingIdx)!
+    q.setFromUnitVectors(up, p.dir)
+    pos.copy(planetPos).addScaledVector(p.dir, roofTop(p)).addScaledVector(u, e.ox).addScaledVector(v, e.oz)
+    tanks.setMatrixAt(i, m.compose(pos, q, scl.set(e.r, e.r * 1.2, e.r)))
+  })
+  tanks.instanceMatrix.needsUpdate = true
+
+  const beaconGeo = new THREE.BoxGeometry(1.4, 1.4, 1.4)
+  const makeBeacons = (list: { buildingIdx: number }[]) => {
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x8a8f96, roughness: 0.7, metalness: 0.2, emissive: 0xff2222, emissiveIntensity: 0,
+    })
+    const kept = list.filter((e) => placementBySpec.has(e.buildingIdx))
+    const mesh = new THREE.InstancedMesh(beaconGeo, mat, kept.length)
+    kept.forEach((e, i) => {
+      const p = placementBySpec.get(e.buildingIdx)!
+      q.setFromUnitVectors(up, p.dir)
+      pos.copy(planetPos).addScaledVector(p.dir, roofTop(p) + 0.7)
+      mesh.setMatrixAt(i, m.compose(pos, q, scl.set(1, 1, 1)))
+    })
+    mesh.instanceMatrix.needsUpdate = true
+    return { mesh, mat }
+  }
+  const beaconA = makeBeacons(props.beaconsA)
+  const beaconB = makeBeacons(props.beaconsB)
+
+  // Street lamps: pole + warm head on every grid intersection (water spots skipped —
+  // no lamps standing in a harbor).
+  const lampSpots: { dir: THREE.Vector3; g: number }[] = []
+  for (const l of props.lamps) {
+    const dirL = n.clone().multiplyScalar(radius).addScaledVector(u, l.x).addScaledVector(v, l.z).normalize()
+    const t = samplePlanetSurface('earth', planetSeed, dirL.x, dirL.y, dirL.z, undefined, radius)
+    if (t.height < 0.05) continue
+    lampSpots.push({ dir: dirL, g: cityGroundRadius(radius, t.height) + SHEET_LIFT })
+  }
+  const lampPoleGeo = new THREE.BoxGeometry(0.5, 1, 0.5)
+  lampPoleGeo.translate(0, 0.5, 0)
+  const lampPoleMat = new THREE.MeshStandardMaterial({ color: 0x5d646c, roughness: 0.85, metalness: 0.2 })
+  const lampPoles = new THREE.InstancedMesh(lampPoleGeo, lampPoleMat, lampSpots.length)
+  const lampHeadGeo = new THREE.BoxGeometry(2.4, 0.8, 0.8)
+  const lampHeadMat = new THREE.MeshStandardMaterial({
+    color: 0x8a8f96, roughness: 0.7, metalness: 0.2, emissive: 0xffc27a, emissiveIntensity: 0,
+  })
+  const lampHeads = new THREE.InstancedMesh(lampHeadGeo, lampHeadMat, lampSpots.length)
+  lampSpots.forEach((s, i) => {
+    q.setFromUnitVectors(up, s.dir)
+    pos.copy(planetPos).addScaledVector(s.dir, s.g)
+    lampPoles.setMatrixAt(i, m.compose(pos, q, scl.set(1, 9, 1)))
+    pos.copy(planetPos).addScaledVector(s.dir, s.g + 9)
+    lampHeads.setMatrixAt(i, m.compose(pos, q, scl.set(1, 1, 1)))
+  })
+  lampPoles.instanceMatrix.needsUpdate = true
+  lampHeads.instanceMatrix.needsUpdate = true
+
   // --- Skypad: landing deck + pulsing edge ring (spot chosen by cityPad's
   // deterministic lot, shared with the guidance beam in main) ---
   const pad = computePadWorld(site, planetPos, planetSeed, radius)
@@ -256,11 +339,38 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   ring.rotateX(Math.PI / 2) // lay the torus flat on the deck face
   ring.position.copy(pad.center).addScaledVector(pad.normal, 0.8)
 
+  // Pad control lights: four cyan pylons on the deck corners — a soft always-on guide
+  // that strengthens at night.
+  const padLightGeo = new THREE.BoxGeometry(1, 1, 1)
+  padLightGeo.translate(0, 0.5, 0)
+  const padLightMat = new THREE.MeshStandardMaterial({
+    color: 0x8a9099, roughness: 0.7, metalness: 0.2, emissive: 0x7ee8ff, emissiveIntensity: 0.5,
+  })
+  const padLights = new THREE.InstancedMesh(padLightGeo, padLightMat, 4)
+  const padFrame = cityTangentFrame(pad.normal)
+  q.setFromUnitVectors(up, pad.normal)
+  for (let i = 0; i < 4; i++) {
+    const sx = i % 2 === 0 ? 1 : -1
+    const sz = i < 2 ? 1 : -1
+    pos.copy(pad.center)
+      .addScaledVector(padFrame.u, sx * (PAD_RADIUS - 4))
+      .addScaledVector(padFrame.v, sz * (PAD_RADIUS - 4))
+    padLights.setMatrixAt(i, m.compose(pos, q, scl.set(1, 4, 1)))
+  }
+  padLights.instanceMatrix.needsUpdate = true
+
   const group = new THREE.Group()
   group.add(ground)
   group.add(bodies)
+  group.add(masts)
+  group.add(tanks)
+  group.add(beaconA.mesh)
+  group.add(beaconB.mesh)
+  group.add(lampPoles)
+  group.add(lampHeads)
   group.add(deck)
   group.add(ring)
+  group.add(padLights)
   return {
     group,
     padCenter: pad.center,
@@ -271,12 +381,16 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
       const pulse = 0.7 + 0.3 * Math.sin(timeSec * 2.4)
       deckMat.emissiveIntensity = (0.35 + nightFactor * 0.85) * pulse
       ringMat.opacity = (0.35 + nightFactor * 0.5) * pulse
+      // Aviation beacons blink in alternating phase groups; lamps are a steady warm line.
+      const blinkA = Math.max(0, Math.sin(timeSec * 2.2))
+      const blinkB = Math.max(0, Math.sin(timeSec * 2.2 + Math.PI))
+      beaconA.mat.emissiveIntensity = nightFactor * (0.25 + 0.75 * blinkA) * 2.2
+      beaconB.mat.emissiveIntensity = nightFactor * (0.25 + 0.75 * blinkB) * 2.2
+      lampHeadMat.emissiveIntensity = nightFactor * 1.1
+      padLightMat.emissiveIntensity = 0.5 + nightFactor * 1.0
     },
     dispose() {
-      group.remove(ground)
-      group.remove(bodies)
-      group.remove(deck)
-      group.remove(ring)
+      group.clear()
       groundGeo.dispose()
       groundMat.dispose()
       glowTexture.dispose()
@@ -285,11 +399,31 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
       roofMat.dispose()
       windowTexture.dispose()
       bodies.dispose()
+      mastGeo.dispose()
+      mastMat.dispose()
+      masts.dispose()
+      tankGeo.dispose()
+      tankMat.dispose()
+      tanks.dispose()
+      beaconGeo.dispose()
+      beaconA.mat.dispose()
+      beaconA.mesh.dispose()
+      beaconB.mat.dispose()
+      beaconB.mesh.dispose()
+      lampPoleGeo.dispose()
+      lampPoleMat.dispose()
+      lampPoles.dispose()
+      lampHeadGeo.dispose()
+      lampHeadMat.dispose()
+      lampHeads.dispose()
       deckGeo.dispose()
       deckMat.dispose()
       markTex.dispose()
       ringGeo.dispose()
       ringMat.dispose()
+      padLightGeo.dispose()
+      padLightMat.dispose()
+      padLights.dispose()
     },
   }
 }

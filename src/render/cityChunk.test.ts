@@ -87,9 +87,9 @@ describe('buildCityChunk', () => {
     const chunk = buildCityChunk(sites[0], planetPos, 1274, 4300)
     const instanced = chunk.group.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
     const plain = chunk.group.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh && !(c instanceof THREE.InstancedMesh))
-    expect(instanced.length).toBe(1) // bodies
+    expect(instanced.length).toBe(8) // bodies + masts + tanks + beacons A/B + lamp poles/heads + pad lights
     expect(plain.length).toBe(3) // ground sheet + skypad deck + edge ring
-    const [bodies] = instanced
+    const bodies = instanced.reduce((a, b) => (a.count >= b.count ? a : b)) // 최다 인스턴스 = 건물
     const [ground] = plain // insertion order: ground first (deck/ring asserted in the skypad test)
     expect(bodies.count).toBeGreaterThanOrEqual(450)
     const groundMat = ground.material as THREE.MeshStandardMaterial
@@ -127,7 +127,8 @@ describe('buildCityChunk', () => {
     chunk.update(1, 0)
     const instanced = chunk.group.children.filter((c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh)
     const plain = chunk.group.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh && !(c instanceof THREE.InstancedMesh))
-    const side = (instanced[0].material as THREE.Material[])[0] as THREE.MeshStandardMaterial // sides material
+    const bodiesMesh = instanced.reduce((a, b) => (a.count >= b.count ? a : b))
+    const side = (bodiesMesh.material as THREE.Material[])[0] as THREE.MeshStandardMaterial // sides material
     const groundMat = plain[0].material as THREE.MeshStandardMaterial
     expect(side.emissiveIntensity).toBeGreaterThan(0.6)
     expect(groundMat.emissiveIntensity).toBeGreaterThan(0.4)
