@@ -1229,6 +1229,9 @@ let landingPhase: LandingPhase = 'none'
 let landingT = 0
 let landingCityIdx: number | null = null
 let landEligible = false
+// Liftoff leaves the ship inside the eligibility envelope (alt ~2, speed 25) — require
+// leaving it once before the LAND prompt re-arms, or it reappears the frame after takeoff.
+let landRearmed = true
 const visitedCities = new Set<string>()
 const landingFromPos = new THREE.Vector3()
 const landingFromQuat = new THREE.Quaternion()
@@ -1247,7 +1250,9 @@ function beginLanding(idx: number, padCenter: THREE.Vector3, padNormal: THREE.Ve
   // Keep the nose heading: project the current forward onto the deck plane, up = pad normal.
   const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(ship.quaternion)
   fwd.addScaledVector(padNormal, -fwd.dot(padNormal))
-  if (fwd.lengthSq() < 1e-6) fwd.set(1, 0, 0).addScaledVector(padNormal, -padNormal.x).normalize()
+  // Nose parallel to the pad normal: any deck-plane direction works — build one that is
+  // perpendicular by construction (an axis-projection could degenerate to zero again).
+  if (fwd.lengthSq() < 1e-6) fwd.crossVectors(padNormal, Math.abs(padNormal.y) < 0.9 ? _padUp.set(0, 1, 0) : _padUp.set(1, 0, 0))
   // Matrix4.lookAt: z = eye - target → with eye at origin and target = fwd the object's
   // -Z (ship nose) faces fwd.
   const m = new THREE.Matrix4().lookAt(new THREE.Vector3(), fwd.normalize(), padNormal)
@@ -2040,6 +2045,12 @@ function cycleQuantumDestination(direction: 1 | -1 = 1): void {
 
 function toggleQuantumTravel(): void {
   if (!running || docked) return
+  // Jumping off the skypad IS the liftoff — clear the pin first (no reward), or the
+  // landed branch would warp the ship back onto the pad when the drive drops out.
+  if (landingPhase !== 'none') {
+    landingPhase = 'none'
+    landingCityIdx = null
+  }
   if (quantum.phase === 'idle') {
     const dest = destinationArrival()
     const started = startTravel(quantum, dest.position)
@@ -2463,6 +2474,8 @@ function respawnPlayer(now: number): void {
   spawnExplosion(ship.position, now)
   audio.blip('explosion')
   damageFlash()
+  landingPhase = 'none' // never respawn pinned to a pad
+  landingCityIdx = null
   ship.position.copy(randomSpawn())
   faceRefinery()
   ship.velocity.set(0, 0, 0)
@@ -3523,7 +3536,15 @@ if (MOBILE_COMPANION) {
   bindMobileHold(mobileBoostEl, (held) => { mobileFlightState.boostHeld = held })
   bindMobileHold(mobileBrakeEl, (held) => { mobileFlightState.brakeHeld = held })
   bindMobileHold(mobileMineEl, (held) => { mobileMineHeld = held })
-  mobileDockEl.addEventListener('click', () => { if (running && !docked && dockable) dock(dockable) })
+  mobileDockEl.addEventListener('click', () => {
+    if (!running || docked) return
+    if (dockable) { dock(dockable); return }
+    // The shared prompt reads "LAND" over a skypad — the dock button must land too.
+    if (quantum.phase === 'idle' && landEligible && landingPhase === 'none') {
+      const entry = cityChunks.entries().next()
+      if (!entry.done) beginLanding(entry.value[0], entry.value[1].padCenter, entry.value[1].padNormal)
+    }
+  })
   mobileJumpEl.addEventListener('click', toggleQuantumTravel)
   mobileNextEl.addEventListener('click', () => cycleQuantumDestination())
   mobileCameraEl.addEventListener('click', () => {
@@ -3598,7 +3619,7 @@ addEventListener('keydown', (e) => {
     audio.blip('nav')
   }
   if (e.code === 'Space' && running && !docked && !spectating && dockable) dock(dockable)
-  if (e.code === 'Space' && running && !docked && !spectating && !dockable && landEligible && landingPhase === 'none') {
+  if (e.code === 'Space' && running && !docked && !spectating && !dockable && quantum.phase === 'idle' && landEligible && landingPhase === 'none') {
     const entry = cityChunks.entries().next()
     if (!entry.done) beginLanding(entry.value[0], entry.value[1].padCenter, entry.value[1].padNormal)
   }
@@ -4613,6 +4634,8 @@ function applyFlightPlan(id: FlightPlanId): void {
 
 function placePlayerAt(position: THREE.Vector3, target: THREE.Vector3): void {
   cancelTravel(quantum)
+  landingPhase = 'none' // same defense as cancelTravel — teleports must unpin the pad
+  landingCityIdx = null
   ship.position.copy(position)
   ship.velocity.set(0, 0, 0)
   faceTarget(target)
@@ -5156,6 +5179,7 @@ function frame(now: number): void {
         ship.velocity.set(0, 0, 0)
         if (input.thrust.lengthSq() > 0.01) {
           landingPhase = 'none'
+          landRearmed = false
           ship.velocity.copy(landingNormal).multiplyScalar(25) // gentle lift off the deck
         }
       } else {
@@ -5210,7 +5234,9 @@ function frame(now: number): void {
       bhPressure = 0
       if (!blackHoleEl.hidden) blackHoleEl.hidden = true
     }
-    resolvePlanetCollisions()
+    // The terrain clamp's probe-ring max + clearance can sit above the pad deck on rough
+    // sites and would shove the pinned ship every frame — the pad IS the resolved surface.
+    if (landingPhase === 'none') resolvePlanetCollisions()
     resolveCapitalCollision()
     enforceRankedArenaAccess(now)
     enforceMobilePvpExclusion(now)
@@ -5321,8 +5347,10 @@ function frame(now: number): void {
     // Skypad landing shares the dock prompt: stations live in space, pads on the ground,
     // so the two never compete — but the dock text must be restored when it wins.
     const activeChunk = cityChunks.values().next()
-    landEligible = landingPhase === 'none' && !activeChunk.done
+    const inEnvelope = landingPhase === 'none' && !activeChunk.done
       && computeLandingEligibility(ship.position, ship.velocity, activeChunk.value.padCenter, activeChunk.value.padNormal, PAD_RADIUS)
+    if (!inEnvelope) landRearmed = true
+    landEligible = inEnvelope && landRearmed
     if (dockable !== null) {
       dockPromptEl.textContent = '▸ PRESS SPACE TO DOCK'
       dockPromptEl.hidden = false

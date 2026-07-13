@@ -1,10 +1,15 @@
 import * as THREE from 'three'
 import { samplePlanetSurface } from './planetTextures'
-import { CITY_BLOCK, CITY_ROAD, CITY_TIER_RADIUS, computeCityLayout } from './cityChunk'
+import {
+  CITY_BLOCK, CITY_ROAD, CITY_TIER_RADIUS, cityGroundRadius, cityTangentFrame,
+  computeCityLayout, SHEET_LIFT, SKIRT_MARGIN,
+} from './cityLayout'
 import type { CitySite } from './citySites'
 
 /** Landing deck radius (tangent-plane units ≈ metres). */
 export const PAD_RADIUS = 45
+/** Deck slab thickness — padCenter sits on the TOP face. */
+export const PAD_DECK_HEIGHT = 3
 
 /** The city-local cell the skypad sits on — seed-deterministic. Replays
  *  computeCityLayout to avoid building-occupied cells and walks the free cells
@@ -29,7 +34,7 @@ export function computePadLot(
       const x = -extent + cell * (gx + 0.5)
       const z = -extent + cell * (gz + 0.5)
       const r = Math.hypot(x, z)
-      if (r > extent - PAD_RADIUS - 24) continue // matches the sheet's SKIRT_MARGIN
+      if (r > extent - PAD_RADIUS - SKIRT_MARGIN) continue // the sheet's skirt dives past here
       cand.push({ x, z, r })
     }
   }
@@ -45,8 +50,7 @@ export function computePadWorld(
   site: CitySite, planetPos: THREE.Vector3, planetSeed: number, radius: number,
 ): { center: THREE.Vector3; normal: THREE.Vector3 } {
   const n = site.direction
-  const u = (Math.abs(n.y) > 0.99 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)).cross(n).normalize()
-  const v = n.clone().cross(u).normalize()
+  const { u, v } = cityTangentFrame(n) // the exact frame buildCityChunk lays the sheet with
   const isWater = (x: number, z: number) => {
     const d = n.clone().multiplyScalar(radius).addScaledVector(u, x).addScaledVector(v, z).normalize()
     return samplePlanetSurface('earth', planetSeed, d.x, d.y, d.z, undefined, radius).height < 0.05
@@ -54,8 +58,8 @@ export function computePadWorld(
   const lot = computePadLot(site.seed, site.tier, isWater)
   const normal = n.clone().multiplyScalar(radius).addScaledVector(u, lot.x).addScaledVector(v, lot.z).normalize()
   const t = samplePlanetSurface('earth', planetSeed, normal.x, normal.y, normal.z, undefined, radius)
-  // Same terrain frame as the ground sheet: water clamp + SHEET_LIFT(30), deck top +3.
-  const ground = radius + Math.max(0.05, t.height) * radius * 0.055 * 1.6 + 30 + 3
+  // Same terrain frame as the ground sheet, lifted with it, deck top on top.
+  const ground = cityGroundRadius(radius, t.height) + SHEET_LIFT + PAD_DECK_HEIGHT
   return { center: planetPos.clone().addScaledVector(normal, ground), normal }
 }
 

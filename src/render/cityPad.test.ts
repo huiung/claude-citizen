@@ -1,6 +1,7 @@
+import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 import { CITY_BLOCK, CITY_ROAD, CITY_TIER_RADIUS, computeCityLayout } from './cityChunk'
-import { computePadLot, computePadMarkingPixels, PAD_RADIUS } from './cityPad'
+import { computePadLot, computePadMarkingPixels, computePadWorld, PAD_RADIUS } from './cityPad'
 
 describe('computePadLot', () => {
   it('is deterministic', () => {
@@ -35,6 +36,21 @@ describe('computePadLot', () => {
   it('falls back to the nearest free cell when everything is blocked', () => {
     const free = computePadLot(1234, 2)
     expect(computePadLot(1234, 2, () => true)).toEqual(free)
+  })
+})
+
+describe('computePadWorld', () => {
+  const planetPos = new THREE.Vector3(10, -20, 30)
+  const site = { direction: new THREE.Vector3(1, 0.2, 0.3).normalize(), tier: 2 as const, seed: 777 }
+
+  it('is deterministic and puts the deck top in the lifted-fabric altitude band', () => {
+    const a = computePadWorld(site, planetPos, 1274, 4300)
+    const b = computePadWorld(site, planetPos, 1274, 4300)
+    expect(a.center.distanceTo(b.center)).toBe(0) // beam and chunk must agree exactly
+    expect(a.normal.length()).toBeCloseTo(1, 9)
+    const r = a.center.distanceTo(planetPos)
+    expect(r).toBeGreaterThan(4300) // above the sphere (SHEET_LIFT + deck)
+    expect(r).toBeLessThan(4300 * 1.05) // but still near the surface
   })
 })
 

@@ -298,3 +298,10 @@ describe('visitedCities sanitization', () => {
     expect(sanitizeProgress({ visitedCities: 'Seoul' }).visitedCities).toEqual([])
   })
 })
+
+describe('economy guard field passthrough', () => {
+  it('preserves non-economy fields (visitedCities) through the guarded spread', () => {
+    const g = guardEconomyGrowth({ credits: 0, earned: 0, visitedCities: ['Seoul'] }, null, 1_000_000)
+    expect(g.visitedCities).toEqual(['Seoul'])
+  })
+})
