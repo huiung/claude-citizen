@@ -18,8 +18,8 @@ describe('computePropLayout', () => {
       const b = buildings[m.buildingIdx]
       expect(Math.abs(m.ox)).toBeLessThanOrEqual(b.w / 2)
       expect(Math.abs(m.oz)).toBeLessThanOrEqual(b.d / 2)
-      expect(m.h).toBeGreaterThanOrEqual(6)
-      expect(m.h).toBeLessThanOrEqual(14)
+      expect(m.h).toBeGreaterThanOrEqual(9)
+      expect(m.h).toBeLessThanOrEqual(18)
     }
   })
 

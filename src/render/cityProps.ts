@@ -33,7 +33,7 @@ export function computePropLayout(siteSeed: number, tier: 0 | 1 | 2, buildings: 
         buildingIdx: i,
         ox: (rand() - 0.5) * (b.w - 2),
         oz: (rand() - 0.5) * (b.d - 2),
-        h: 6 + rand() * 8,
+        h: 9 + rand() * 9,
       })
     }
     if (b.w * b.d >= 400 && rand() < 0.25) {

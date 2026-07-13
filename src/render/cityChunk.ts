@@ -241,7 +241,7 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   const props = computePropLayout(site.seed, site.tier, buildingSpecs)
   const roofTop = (p: Placement) => p.ground + SHEET_LIFT - 2 + p.h // top face of the base-anchored unit box
 
-  const mastGeo = new THREE.BoxGeometry(0.8, 1, 0.8)
+  const mastGeo = new THREE.BoxGeometry(1.8, 1, 1.8)
   mastGeo.translate(0, 0.5, 0)
   const mastMat = new THREE.MeshStandardMaterial({ color: 0x6a7077, roughness: 0.8, metalness: 0.3 })
   const mastPlacements = props.masts.filter((e) => placementBySpec.has(e.buildingIdx))
@@ -267,7 +267,7 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   })
   tanks.instanceMatrix.needsUpdate = true
 
-  const beaconGeo = new THREE.BoxGeometry(1.4, 1.4, 1.4)
+  const beaconGeo = new THREE.BoxGeometry(2.4, 2.4, 2.4)
   const makeBeacons = (list: { buildingIdx: number }[]) => {
     const mat = new THREE.MeshStandardMaterial({
       color: 0x8a8f96, roughness: 0.7, metalness: 0.2, emissive: 0xff2222, emissiveIntensity: 0,
@@ -277,7 +277,7 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
     kept.forEach((e, i) => {
       const p = placementBySpec.get(e.buildingIdx)!
       q.setFromUnitVectors(up, p.dir)
-      pos.copy(planetPos).addScaledVector(p.dir, roofTop(p) + 0.7)
+      pos.copy(planetPos).addScaledVector(p.dir, roofTop(p) + 1.2)
       mesh.setMatrixAt(i, m.compose(pos, q, scl.set(1, 1, 1)))
     })
     mesh.instanceMatrix.needsUpdate = true
@@ -295,11 +295,11 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
     if (t.height < 0.05) continue
     lampSpots.push({ dir: dirL, g: cityGroundRadius(radius, t.height) + SHEET_LIFT })
   }
-  const lampPoleGeo = new THREE.BoxGeometry(0.5, 1, 0.5)
+  const lampPoleGeo = new THREE.BoxGeometry(0.9, 1, 0.9)
   lampPoleGeo.translate(0, 0.5, 0)
   const lampPoleMat = new THREE.MeshStandardMaterial({ color: 0x5d646c, roughness: 0.85, metalness: 0.2 })
   const lampPoles = new THREE.InstancedMesh(lampPoleGeo, lampPoleMat, lampSpots.length)
-  const lampHeadGeo = new THREE.BoxGeometry(2.4, 0.8, 0.8)
+  const lampHeadGeo = new THREE.BoxGeometry(4.2, 1, 1)
   const lampHeadMat = new THREE.MeshStandardMaterial({
     color: 0x8a8f96, roughness: 0.7, metalness: 0.2, emissive: 0xffc27a, emissiveIntensity: 0,
   })
@@ -307,8 +307,8 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   lampSpots.forEach((s, i) => {
     q.setFromUnitVectors(up, s.dir)
     pos.copy(planetPos).addScaledVector(s.dir, s.g)
-    lampPoles.setMatrixAt(i, m.compose(pos, q, scl.set(1, 9, 1)))
-    pos.copy(planetPos).addScaledVector(s.dir, s.g + 9)
+    lampPoles.setMatrixAt(i, m.compose(pos, q, scl.set(1, 12, 1)))
+    pos.copy(planetPos).addScaledVector(s.dir, s.g + 12)
     lampHeads.setMatrixAt(i, m.compose(pos, q, scl.set(1, 1, 1)))
   })
   lampPoles.instanceMatrix.needsUpdate = true
@@ -341,7 +341,7 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
 
   // Pad control lights: four cyan pylons on the deck corners — a soft always-on guide
   // that strengthens at night.
-  const padLightGeo = new THREE.BoxGeometry(1, 1, 1)
+  const padLightGeo = new THREE.BoxGeometry(1.4, 1, 1.4)
   padLightGeo.translate(0, 0.5, 0)
   const padLightMat = new THREE.MeshStandardMaterial({
     color: 0x8a9099, roughness: 0.7, metalness: 0.2, emissive: 0x7ee8ff, emissiveIntensity: 0.5,
@@ -355,7 +355,7 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
     pos.copy(pad.center)
       .addScaledVector(padFrame.u, sx * (PAD_RADIUS - 4))
       .addScaledVector(padFrame.v, sz * (PAD_RADIUS - 4))
-    padLights.setMatrixAt(i, m.compose(pos, q, scl.set(1, 4, 1)))
+    padLights.setMatrixAt(i, m.compose(pos, q, scl.set(1, 6, 1)))
   }
   padLights.instanceMatrix.needsUpdate = true
 
@@ -384,9 +384,9 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
       // Aviation beacons blink in alternating phase groups; lamps are a steady warm line.
       const blinkA = Math.max(0, Math.sin(timeSec * 2.2))
       const blinkB = Math.max(0, Math.sin(timeSec * 2.2 + Math.PI))
-      beaconA.mat.emissiveIntensity = nightFactor * (0.25 + 0.75 * blinkA) * 2.2
-      beaconB.mat.emissiveIntensity = nightFactor * (0.25 + 0.75 * blinkB) * 2.2
-      lampHeadMat.emissiveIntensity = nightFactor * 1.1
+      beaconA.mat.emissiveIntensity = nightFactor * (0.25 + 0.75 * blinkA) * 4.0
+      beaconB.mat.emissiveIntensity = nightFactor * (0.25 + 0.75 * blinkB) * 4.0
+      lampHeadMat.emissiveIntensity = nightFactor * 1.8
       padLightMat.emissiveIntensity = 0.5 + nightFactor * 1.0
     },
     dispose() {
