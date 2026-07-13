@@ -284,3 +284,17 @@ describe('guardPilotGrowth', () => {
     expect(r.pilot).toEqual({ level: 8, xp: 100 }) // floored to the stored total
   })
 })
+
+describe('visitedCities sanitization', () => {
+  it('whitelists real megacity names, dedupes, and keeps insertion order', () => {
+    const clean = sanitizeProgress({
+      visitedCities: ['Seoul', 'Seoul', 'Atlantis', 'Tokyo', 42, 'São Paulo'],
+    })
+    expect(clean.visitedCities).toEqual(['Seoul', 'Tokyo', 'São Paulo'])
+  })
+
+  it('defaults to an empty array when absent or malformed', () => {
+    expect(sanitizeProgress({}).visitedCities).toEqual([])
+    expect(sanitizeProgress({ visitedCities: 'Seoul' }).visitedCities).toEqual([])
+  })
+})
