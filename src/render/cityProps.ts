@@ -37,11 +37,12 @@ export function computePropLayout(siteSeed: number, tier: 0 | 1 | 2, buildings: 
       })
     }
     if (b.w * b.d >= 400 && rand() < 0.25) {
+      const r = 3 + rand() * 2.5
       tanks.push({
         buildingIdx: i,
-        ox: (rand() - 0.5) * (b.w - 8),
-        oz: (rand() - 0.5) * (b.d - 8),
-        r: 3 + rand() * 2.5,
+        ox: (rand() - 0.5) * Math.max(0, b.w - 2 * r - 2),
+        oz: (rand() - 0.5) * Math.max(0, b.d - 2 * r - 2),
+        r,
       })
     }
   })

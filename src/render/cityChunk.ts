@@ -218,6 +218,7 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   unitBox.addGroup(12, 12, 1) // +y, -y roof/underside
   unitBox.addGroup(24, 12, 0) // +z, -z sides
   const bodies = new THREE.InstancedMesh(unitBox, [sideMat, roofMat], bodyPlacements.length)
+  bodies.name = 'bodies'
 
   const m = new THREE.Matrix4()
   const q = new THREE.Quaternion()
@@ -240,6 +241,7 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   // cityProps' deterministic pass; everything below is one InstancedMesh each) ---
   const props = computePropLayout(site.seed, site.tier, buildingSpecs)
   const roofTop = (p: Placement) => p.ground + SHEET_LIFT - 2 + p.h // top face of the base-anchored unit box
+  const off = new THREE.Vector3() // roof offsets live in the building's box frame, not the site tangent frame
 
   const mastGeo = new THREE.BoxGeometry(1.8, 1, 1.8)
   mastGeo.translate(0, 0.5, 0)
@@ -249,7 +251,7 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   mastPlacements.forEach((e, i) => {
     const p = placementBySpec.get(e.buildingIdx)!
     q.setFromUnitVectors(up, p.dir)
-    pos.copy(planetPos).addScaledVector(p.dir, roofTop(p)).addScaledVector(u, e.ox).addScaledVector(v, e.oz)
+    pos.copy(planetPos).addScaledVector(p.dir, roofTop(p)).add(off.set(e.ox, 0, e.oz).applyQuaternion(q))
     masts.setMatrixAt(i, m.compose(pos, q, scl.set(1, e.h, 1)))
   })
   masts.instanceMatrix.needsUpdate = true
@@ -262,7 +264,7 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   tankPlacements.forEach((e, i) => {
     const p = placementBySpec.get(e.buildingIdx)!
     q.setFromUnitVectors(up, p.dir)
-    pos.copy(planetPos).addScaledVector(p.dir, roofTop(p)).addScaledVector(u, e.ox).addScaledVector(v, e.oz)
+    pos.copy(planetPos).addScaledVector(p.dir, roofTop(p)).add(off.set(e.ox, 0, e.oz).applyQuaternion(q))
     tanks.setMatrixAt(i, m.compose(pos, q, scl.set(e.r, e.r * 1.2, e.r)))
   })
   tanks.instanceMatrix.needsUpdate = true
@@ -306,8 +308,8 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   const lampHeads = new THREE.InstancedMesh(lampHeadGeo, lampHeadMat, lampSpots.length)
   lampSpots.forEach((s, i) => {
     q.setFromUnitVectors(up, s.dir)
-    pos.copy(planetPos).addScaledVector(s.dir, s.g)
-    lampPoles.setMatrixAt(i, m.compose(pos, q, scl.set(1, 12, 1)))
+    pos.copy(planetPos).addScaledVector(s.dir, s.g - 2) // sink into the sheet like buildings do — no floating bases
+    lampPoles.setMatrixAt(i, m.compose(pos, q, scl.set(1, 14, 1)))
     pos.copy(planetPos).addScaledVector(s.dir, s.g + 12)
     lampHeads.setMatrixAt(i, m.compose(pos, q, scl.set(1, 1, 1)))
   })
@@ -352,9 +354,9 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   for (let i = 0; i < 4; i++) {
     const sx = i % 2 === 0 ? 1 : -1
     const sz = i < 2 ? 1 : -1
-    pos.copy(pad.center)
-      .addScaledVector(padFrame.u, sx * (PAD_RADIUS - 4))
-      .addScaledVector(padFrame.v, sz * (PAD_RADIUS - 4))
+    pos.copy(pad.center) // per-axis /√2 keeps the corner pylons at PAD_RADIUS-4 radially — on the deck
+      .addScaledVector(padFrame.u, sx * (PAD_RADIUS - 4) * Math.SQRT1_2)
+      .addScaledVector(padFrame.v, sz * (PAD_RADIUS - 4) * Math.SQRT1_2)
     padLights.setMatrixAt(i, m.compose(pos, q, scl.set(1, 6, 1)))
   }
   padLights.instanceMatrix.needsUpdate = true

@@ -23,11 +23,13 @@ describe('computePropLayout', () => {
     }
   })
 
-  it('puts tanks only on large-footprint buildings', () => {
+  it('puts tanks only on large-footprint buildings, fully inside the roof', () => {
     expect(layout.tanks.length).toBeGreaterThan(0)
     for (const t of layout.tanks) {
       const b = buildings[t.buildingIdx]
       expect(b.w * b.d).toBeGreaterThanOrEqual(400)
+      expect(Math.abs(t.ox) + t.r).toBeLessThanOrEqual(b.w / 2)
+      expect(Math.abs(t.oz) + t.r).toBeLessThanOrEqual(b.d / 2)
     }
   })
 
