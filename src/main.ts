@@ -4559,6 +4559,13 @@ if (import.meta.env.DEV && URL_PARAMS.get('earthview')) {
     }
     if (which === 'seoul') place(37.57, 126.98, 0.5)
     else if (which === 'seoul-low') place(37.57, 126.98, 0.22) // inside the chunk-build band
+    else if (which === 'seoul-pad') {
+      // Directly over the Seoul skypad, inside the landing-eligibility band — SPACE lands.
+      const sites = computeCitySites(EARTH.seed, EARTH.radius, 8)
+      const seoul = sites.find((s) => s.name === 'Seoul') ?? sites[0]
+      const pw = computePadWorld(seoul, EARTH.position, EARTH.seed, EARTH.radius)
+      placePlayerAt(pw.center.clone().addScaledVector(pw.normal, 18), pw.center)
+    }
     else if (which === 'nyc') place(40.71, -74.01, 0.5) // ~164° from the sub-solar point → night side
     else if (which === 'nyc-low') place(40.71, -74.01, 0.22)
     else if (which === 'glint') {
