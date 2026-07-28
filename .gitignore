@@ -11,3 +11,7 @@ docs/superpowers/
 # Social showcase capture artifacts (video/poster) — too big for git, generate locally
 public/social/*.mp4
 public/social/*-poster.png
+
+# Gameplay screenshot captures (scripts/capture-gameplay.mjs) — large PNGs regenerated on demand
+# for before/after comparisons, not meant to be tracked in history.
+docs/screenshots/
