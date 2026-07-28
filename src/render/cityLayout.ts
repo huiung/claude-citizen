@@ -45,6 +45,27 @@ export function cityTangentFrame(n: THREE.Vector3): { u: THREE.Vector3; v: THREE
   return { u, v: n.clone().cross(u).normalize() }
 }
 
+/** Ground-sheet grid resolution, per axis. Shared with anything that has to reproduce the sheet's
+ *  surface rather than just its analytic input: the mesh is flat between vertices, so a walker
+ *  following the continuous terrain sample would sink into it and float over it by metres. */
+export const CITY_SHEET_SEGMENTS = 40
+
+/** Tangent-plane (x, z) of a direction on the planet, in the site's frame.
+ *
+ *  Exact inverse of the `normalize(n*radius + u*x + v*z)` parametrisation that the sheet, the
+ *  buildings and the pad are all laid out with — the direction only fixes x and z up to scale, and
+ *  dividing by the n component recovers the scale. Exact matters here because the city footprint
+ *  reaches 1400 units on a 4300-unit planet, ~18° of arc, where a small-angle approximation would
+ *  be off by tens of metres at the rim.
+ */
+export function cityLocalFromDirection(
+  n: THREE.Vector3, u: THREE.Vector3, v: THREE.Vector3, radius: number, dir: THREE.Vector3,
+): { x: number; z: number } {
+  const dn = dir.dot(n)
+  if (dn <= 1e-6) return { x: 0, z: 0 } // over the horizon from this site — no meaningful local frame
+  return { x: (radius * dir.dot(u)) / dn, z: (radius * dir.dot(v)) / dn }
+}
+
 export interface BuildingSpec { x: number; z: number; w: number; d: number; h: number }
 
 /** Dense block-grid, pure and deterministic: 3-5 tight-footprint (12-32u) buildings per
