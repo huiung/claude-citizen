@@ -25,6 +25,7 @@ const HTML_FILES = [
   'wiki.html',
   'public/social/comet-wake-showcase.html',
   'public/social/abyssal-driller-showcase.html',
+  'public/social/ship-studio.html',
 ].map((f) => join(ROOT, f))
 
 // Ids that are legitimately referenced from src/ but will never appear in any HTML file we
