@@ -52,7 +52,8 @@ const landingMusicToggleEl = document.getElementById('landing-music-toggle') as 
 const buyCitizenEl = document.getElementById('buy-citizen') as HTMLAnchorElement
 const gateMsgEl = document.getElementById('gate-msg')!
 const browseBtnEl = document.getElementById('browse-btn')!
-connectWalletBtn.hidden = true // LAUNCH absorbs connect; keep the standalone button hidden
+connectWalletBtn.hidden = true // Hidden: open access means LAUNCH no longer triggers wallet connect, and no other
+// visible control on the landing page presses this button (its click handler and lockWalletButton's status label remain wired up)
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:8080`
 const STATS_URL = WS_URL.replace(/^ws/, 'http') + '/stats'
@@ -81,7 +82,6 @@ let pendingPubkey: string | null = null
 let netConnected = false
 let launchStarted = false
 let holderBalance = 0
-let pendingLaunch = false
 let leaderboardOffset = 0
 let leaderboardMode: LeaderboardMode = defaultLandingLeaderboardMode(MOBILE_COMPANION)
 const landingMusic = new LandingMusic()
@@ -248,12 +248,11 @@ function setWalletStatus(text: string): void {
 
 function refreshLaunchGateUI(): void {
   const connected = Boolean(walletSession)
-  const canFly = connected && holderBalance >= 1
+  // Nothing gates LAUNCH. The buy link is an upsell for a connected wallet with no tokens;
+  // an unconnected visitor sees no warning at all — they can just fly.
   buyCitizenEl.hidden = !(connected && holderBalance < 1)
-  gateMsgEl.hidden = canFly
-  gateMsgEl.textContent = !connected
-    ? 'Press LAUNCH to connect your wallet and fly — or Browse.'
-    : holderBalance < 1 ? '⚠ This wallet holds no $CITIZEN. You need ≥1 to fly — grab some, or Browse.' : ''
+  gateMsgEl.hidden = true
+  gateMsgEl.textContent = ''
 }
 refreshLaunchGateUI()
 
@@ -294,8 +293,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', activeIdentity(playerToke
   onHolder(_tier, balance) {
     holderBalance = balance
     refreshLaunchGateUI()
-    if (pendingLaunch && balance >= 1) { pendingLaunch = false; void beginLaunch() }
-    else if (pendingLaunch && balance < 1) { pendingLaunch = false; refreshLaunchGateUI() } // connected but no token
+    // No auto-launch: LAUNCH never waits on a balance now.
   },
   onCallsign(name) {
     applyLockedCallsign(name)
@@ -328,18 +326,16 @@ disconnectWalletBtn.addEventListener('click', () => {
 
 function startWalletConnect(): void {
   if (!hasWallet()) {
-    pendingLaunch = false
     if (isMobileBrowser()) { setWalletStatus('Opening in Phantom — tap Connect there…'); location.href = phantomBrowseUrl(); return }
     setWalletStatus('No Solana wallet found - install the Phantom extension.'); return
   }
-  if (!netConnected) { pendingLaunch = false; setWalletStatus('Not connected to server - try again in a moment.'); return }
+  if (!netConnected) { setWalletStatus('Not connected to server - try again in a moment.'); return }
   setWalletStatus('Connecting...')
   connectWallet().then((pubkey) => {
     pendingPubkey = pubkey
     setWalletStatus('Approve the signature in your wallet...')
     net.requestChallenge(pubkey)
   }).catch((e) => {
-    pendingLaunch = false
     setWalletStatus(e instanceof WalletError && e.message === NO_WALLET
       ? 'No Solana wallet found - install Phantom.'
       : 'Connection cancelled.')
@@ -358,15 +354,8 @@ function setLaunchStatus(text: string): void {
 
 async function beginLaunch(): Promise<void> {
   if (launchStarted) return
-  // Holder gate — production only, and never for operator/automation flows. `import.meta.env.DEV` is
-  // true under `npm run dev`, false in the `vite build` output, so local dev flies freely (no
-  // wallet/HELIUS) while prod stays gated. `CAPTURE_LAUNCH.autoLaunch` covers ?bot=1 / ?capture=og /
-  // ?showcase=holder — these auto-fly for footage and have no wallet to gate on; the relay is still
-  // the real gate at `join` (the showcase bot is exempt only with the matching botSecret).
-  if (!import.meta.env.DEV && !CAPTURE_LAUNCH.autoLaunch) {
-    if (!walletSession) { pendingLaunch = true; startWalletConnect(); return }   // connect → onHolder auto-launches at ≥1
-    if (holderBalance < 1) { refreshLaunchGateUI(); return }                      // connected but 0 → show buy warning, don't launch
-  }
+  // Open access: LAUNCH always flies. Connecting a wallet is optional and only buys cosmetics
+  // and ranked eligibility, so it must never block the first click.
   launchStarted = true
   landingMusic.start()
   const callsign = nicknameEl.value.trim() || 'PILOT'
