@@ -38,6 +38,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 
 ## What works today
 
+- **CLAUDE flies with you:** a standalone AI pilot (real Claude API calls, openly an AI) joins the multiplayer relay as pilot CLAUDE, flies a loop between named landmarks so it's actually around to meet, and replies to your in-sector chat. Runs as its own service (`npm run bot`) — see [`bot/README.md`](./bot/README.md)
 - 6DOF spaceflight in your browser — coupled (flight assist) and decoupled (full Newton) modes
 - A refinery, a mining colony, planets, an asteroid belt — the world is procedurally generated (ships & sound effects are hand-made or CC0)
 - **Mine ORE** from asteroids with a mining laser — ore veins deplete and fresh ones respawn around you, so you prospect and move on instead of parking on one rock forever
@@ -49,7 +50,8 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **An endless procedural galaxy:** fly any direction and planets, moons, stations, and derelicts keep appearing — some planets are vast
 - **Deep space:** the farther you fly from the core, the more rare gold ore veins (credit jackpots) and tougher, higher-bounty pirates appear — a HUD gauge tracks how deep (and dangerous) you are. Risk and reward scale together
 - **A named solar system:** Sun + Mercury through Saturn at a compressed scale, each with a procedurally textured surface (oceans/continents, gas bands, ice caps) — and they're solid, so you fly *around* them, not through
-- **Drop to the surface:** approach an earth-type world and it resolves into continents, rivers, forests, deserts and snow-capped peaks (procedural, higher-detail up close); the sky fills in with day/night atmosphere, an altimeter kicks in, and collision follows the *real terrain* — so you can skim low over its hills and valleys instead of bouncing off a sphere
+- **Drop to the surface:** approach an earth-type world and it resolves into continents, rivers, forests, deserts and snow-capped peaks (procedural, higher-detail up close); the sky fills in with day/night atmosphere, an altimeter kicks in, and collision follows the *real terrain* — so you can skim low over its hills and valleys instead of bouncing off a sphere. Dive in hot and re-entry heat kicks in: a plasma sheath (driven by atmospheric density × descent angle × speed), screen shake, a whiteout crossing the cloud layer, and fog/sky color shifting through the descent
+- **Earth skypad landings:** touch down on a named Earth megacity's skypad — first visit pays 1,500 cr and grows your cities-visited collection, a revisit pays 150 cr and repairs your hull; thrust to lift back off. Earth-only for now
 - **Quantum travel:** pick a destination with `[N]` or open the **Solar Atlas** with `[M]` and click a planet, charge the drive, and jump to any planet in the system or the deep-space PvP arena approach lanes — warp streaks, a wide-FOV cruise, and a named arrival
 - **A cinematic sky:** bloom glow, sunlit planet atmospheres (bright day limb, a warm sunset terminator, dark night side), a procedural nebula backdrop, slowly rotating worlds, and parallax dust that streams past for a sense of speed
 - **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor (detailed 3D models), each trading cargo/speed/toughness, unlocked as you climb the ranks
@@ -61,10 +63,17 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 - **Leaderboards:** Career ranks the top 100 pilots by *lifetime* credits earned; Ranked PvP tracks ranked arena kills. Wallet-connected pilots display as callsign (short wallet), while anonymous Career pilots keep their callsign only. Page through both on the landing screen and in-game (`[L]`)
 - **Pilot ranks:** six tiers (Cadet → Admiral) earned by *lifetime* credits, so spending never demotes you — each rank brings a growing **earnings bonus** (+0% → +50% on every payout) and **unlocks new ships**, so there's always a reason to keep flying. HUD progress track, promotion banner, and rank tags on the leaderboard
 - **Pilot Level & campaign:** a separate *active* growth spine alongside Career Rank — hunt raiders and run a **Sector 1 quest chain** to earn XP and **level up** (HUD shows your level + a gold XP bar; level-up banners fire). Pirates now come in tiers — **grunt → elite → named miniboss** — and the campaign hunts you toward named raiders (*Vex Marrow*, then the *Raider Captain*) before unlocking the next sector; named kills drop guaranteed crafting cores. Vertical slice: Sector 1, levels 1–5
+- **Crafting & cosmetics:** refine credits into Craft Cores at the station Forge, then spend cores + credits crafting cosmetic kits (trail, hull, aura) with a pity-ramped rarity roll — common through legendary, guaranteed epic-or-better by the 20th craft since your last one. Equip whatever you've forged into its slot
+- **Player marketplace:** list crafted cosmetics for sale — for credits, or for real $CITIZEN with on-chain settlement (seller gets 95%, treasury takes a 5% cut)
+- **In-station casino:** credits-only roulette at the Forge — even-money bets pay 2×, the green 0 gives the house its edge. Credits only: no rank or Career impact
+- **Daily objectives & login streak:** three deterministic daily objectives (`G`) — mine, kill pirates, deliver contracts, earn credits, or dock — reward Craft Cores, with a set-completion bonus and a login-streak bonus (capped at 4 cores/day)
+- **Black hole dive:** a real singularity out past the named system — a steepening gravity well, tidal-shear hull damage that ramps the deeper you go, and instant death past the event horizon. Closest-survived-approach is tracked on a server-persisted leaderboard (VOID tab)
+- **Race mode:** a golden-ring time trial circuit around the Season Hub — thread the gates, beat your best time, climb the server-persisted RACE leaderboard
+- **Mobile companion mode:** a scoped-down flight mode for phones — a virtual stick (pitch/yaw) plus Thrust/Boost/Brake/Mine/Dock/Jump/Nav/Cam buttons. Flight assist is forced on; there's no roll, strafe, or vertical thrust. Mining, docking, trading, upgrades, wallet, quantum travel, and leaderboards all work — but **combat is off**: no pirates, no PvP, no training drones. It's a companion mode, not the full cockpit
 - Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
 - Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
 - **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours. Grab a **Pilot Code** to restore your pilot on another device (one live session per code). Optional wallet linking can claim your anonymous progress to a verified wallet identity; claimed anonymous tokens are retired server-side so old localStorage saves cannot resurrect duplicate leaderboard rows
-- 586 tests, because "built with AI" shouldn't mean "built badly"
+- 807 tests across 89 files, because "built with AI" shouldn't mean "built badly"
 
 ## Controls
 
@@ -87,6 +96,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | L | Toggle the leaderboard |
 | C | Toggle orbit camera |
 | Mouse wheel | Zoom orbit camera (while orbit camera is active) |
+| G | Toggle the daily objectives panel |
 
 ## Roadmap
 
@@ -104,7 +114,9 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 | 9 | Detailed earth-type surfaces, day/night atmosphere, low-altitude terrain-following flight | ✅ shipped |
 | 10 | PvP combat — practice/ranked arenas, 1,000+ token Ranked gate, peer hull bars, kill feed, Ranked PvP leaderboard | phase 1 shipped |
 | 11 | Pilot progression — active Pilot Level spine, Sector 1 campaign quest chain, enemy tiers (grunt/elite/named) | slice shipped (Lv 1–5) |
-| 12 | Full planetary landings — touch down, walk the surface, take off | planned |
+| 12 | Ship-based touchdown/liftoff on Earth skypads, credits + hull repair | ✅ shipped |
+| 12.1 | On-foot landings — walk the surface | not started |
+| 12.2 | Skypad landings on planets beyond Earth | not started |
 | … | … | … |
 | 42 | Getting out of bed animation *(took the original 6 years — we'll take a weekend)* | someday |
 | 1.0 | **Ship before Star Citizen ships** | the whole point |
