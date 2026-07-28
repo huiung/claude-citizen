@@ -3238,8 +3238,8 @@ const solarMap = new SolarSystemMap({
     landmarks: landmarkTargets(MOBILE_COMPANION),
   }),
   onClose: () => {
-    if (MOBILE_COMPANION && running && !docked && !chatOpen) mobileControlsEl.hidden = false
-    if (running && !docked && !chatOpen) requestFlightPointerLock()
+    if (MOBILE_COMPANION && flightSceneActive() && !chatOpen) mobileControlsEl.hidden = false
+    if (flightSceneActive() && !chatOpen) requestFlightPointerLock()
   },
   onSetDestination: setQuantumDestinationFromAtlas,
 })
@@ -3382,13 +3382,13 @@ function openSettingsPanel(): void {
 function closeSettingsPanel(): void {
   if (settingsPanelEl.hidden) return
   settingsPanelEl.hidden = true
-  if (MOBILE_COMPANION && running && !docked && !chatOpen) mobileControlsEl.hidden = false
-  if (running && !docked && !chatOpen && !solarMap.isOpen) requestFlightPointerLock()
+  if (MOBILE_COMPANION && flightSceneActive() && !chatOpen) mobileControlsEl.hidden = false
+  if (flightSceneActive() && !chatOpen && !solarMap.isOpen) requestFlightPointerLock()
 }
 
 function restoreFlightInputAfterPanel(): void {
-  if (MOBILE_COMPANION && running && !docked && !chatOpen && settingsPanelEl.hidden) mobileControlsEl.hidden = false
-  if (running && !docked && !chatOpen && !solarMap.isOpen && settingsPanelEl.hidden && leaderboardPanelEl.hidden && dailyPanelEl.hidden) requestFlightPointerLock()
+  if (MOBILE_COMPANION && flightSceneActive() && !chatOpen && settingsPanelEl.hidden) mobileControlsEl.hidden = false
+  if (flightSceneActive() && !chatOpen && !solarMap.isOpen && settingsPanelEl.hidden && leaderboardPanelEl.hidden && dailyPanelEl.hidden) requestFlightPointerLock()
 }
 
 const inventoryPanel = new InventoryPanel({
@@ -3574,10 +3574,10 @@ addEventListener('keydown', (e) => {
     solarMap.open()
     return
   }
-  if (e.code === 'Enter' && running && !docked && !spectating) { openChat(); return }
+  if (e.code === 'Enter' && shipControlsActive()) { openChat(); return }
   if (e.code === 'Space') e.preventDefault()
   if (e.repeat) return
-  if (e.code === 'KeyO' && running && !docked) {
+  if (e.code === 'KeyO' && flightSceneActive()) {
     e.preventDefault()
     openSettingsPanel()
     return
@@ -3597,31 +3597,31 @@ addEventListener('keydown', (e) => {
     assist = !assist
     assistEl.textContent = assist ? 'COUPLED' : 'DECOUPLED'
   }
-  if (e.code === 'KeyC' && running && !docked && !spectating) {
+  if (e.code === 'KeyC' && shipControlsActive()) {
     cycleCameraView()
     audio.blip('nav')
   }
-  if ((e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') && running && !docked && !spectating) {
+  if ((e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') && shipControlsActive()) {
     setFireMode(e.code === 'Digit1' ? 'rapid' : e.code === 'Digit2' ? 'heavy' : 'scatter')
     audio.blip('nav')
   }
-  if (e.code === 'Space' && running && !docked && !spectating && dockable) dock(dockable)
-  if (e.code === 'Space' && running && !docked && !spectating && !dockable && quantum.phase === 'idle' && landEligible && landingPhase === 'none') {
+  if (e.code === 'Space' && shipControlsActive() && dockable) dock(dockable)
+  if (e.code === 'Space' && shipControlsActive() && !dockable && quantum.phase === 'idle' && landEligible && landingPhase === 'none') {
     const entry = cityChunks.entries().next()
     if (!entry.done) beginLanding(entry.value[0], entry.value[1].padCenter, entry.value[1].padNormal)
   }
-  if (e.code === 'KeyN' && running && !docked && !spectating && quantum.phase === 'idle') {
+  if (e.code === 'KeyN' && shipControlsActive() && quantum.phase === 'idle') {
     cycleQuantumDestination()
   }
-  if (e.code === 'KeyB' && running && !docked && !spectating && quantum.phase === 'idle') {
+  if (e.code === 'KeyB' && shipControlsActive() && quantum.phase === 'idle') {
     cycleQuantumDestination(-1)
   }
-  if (!leaderboardPanelEl.hidden && running && !docked && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
+  if (!leaderboardPanelEl.hidden && flightSceneActive() && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
     e.preventDefault()
     changeLeaderboardPage('hud', e.code === 'ArrowLeft' ? -1 : 1)
     return
   }
-  if (e.code === 'KeyL' && running && !docked) {
+  if (e.code === 'KeyL' && flightSceneActive()) {
     const willShow = leaderboardPanelEl.hidden
     leaderboardPanelEl.hidden = !willShow
     if (willShow) {
@@ -3633,7 +3633,7 @@ addEventListener('keydown', (e) => {
       requestFlightPointerLock()
     }
   }
-  if (e.code === 'KeyG' && running && !docked && !spectating) {
+  if (e.code === 'KeyG' && shipControlsActive()) {
     if (dailyPanelEl.hidden) {
       renderDailyPanel(Date.now())
       dailyPanelEl.hidden = false
@@ -3644,7 +3644,7 @@ addEventListener('keydown', (e) => {
     e.preventDefault()
     return
   }
-  if (e.code === 'KeyJ' && running && !docked && !spectating) {
+  if (e.code === 'KeyJ' && shipControlsActive()) {
     toggleQuantumTravel()
   }
 })
@@ -3657,7 +3657,7 @@ addEventListener('mousemove', (e) => {
   mousePitch = THREE.MathUtils.clamp(mousePitch, -1, 1)
 })
 renderer.domElement.addEventListener('wheel', (e) => {
-  if (!(running && !docked)) return
+  if (!flightSceneActive()) return
   e.preventDefault()
   if (cameraMode === 'orbit') {
     cameraOrbitWheelDelta = queueOrbitZoomDelta(cameraOrbitWheelDelta, e.deltaY)
@@ -3668,7 +3668,7 @@ renderer.domElement.addEventListener('wheel', (e) => {
 // Left mouse = mining laser, right mouse = weapon (only while flying, mouse captured).
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault())
 renderer.domElement.addEventListener('mousedown', (e) => {
-  if (!(running && !docked && !spectating && document.pointerLockElement === renderer.domElement)) return
+  if (!(shipControlsActive() && document.pointerLockElement === renderer.domElement)) return
   if (e.button === 0) miningActive = true
   if (e.button === 2) weaponActive = true
 })
@@ -3989,8 +3989,8 @@ function closeChat(): void {
   chatLogEl.classList.remove('open')
   chatInputEl.hidden = true
   chatInputEl.blur()
-  if (MOBILE_COMPANION && running && !docked) mobileControlsEl.hidden = false
-  if (running && !docked) requestFlightPointerLock()
+  if (MOBILE_COMPANION && flightSceneActive()) mobileControlsEl.hidden = false
+  if (flightSceneActive()) requestFlightPointerLock()
 }
 
 chatInputEl.addEventListener('keydown', (e) => {
@@ -4648,7 +4648,7 @@ for (const button of flightPlanButtons) {
   button.addEventListener('click', () => applyFlightPlan(button.dataset.plan as FlightPlanId))
 }
 renderer.domElement.addEventListener('click', () => {
-  if (running && !docked && !chatOpen && settingsPanelEl.hidden && !solarMap.isOpen && document.pointerLockElement !== renderer.domElement) {
+  if (flightSceneActive() && !chatOpen && settingsPanelEl.hidden && !solarMap.isOpen && document.pointerLockElement !== renderer.domElement) {
     requestFlightPointerLock()
   }
 })
@@ -4669,6 +4669,25 @@ let running = false
 // Free spectator (Browse) mode for non-holders: the world renders and peers interpolate
 // (running=true), but there is no player ship and all flight/combat/dock input is inert.
 let spectating = false
+
+// Player-state gates, named so a future third state (on-foot, outside the ship after
+// landing) only needs updating in these two functions instead of at every call site.
+/**
+ * The flight/world scene is what's on screen: the sim is running and the player isn't
+ * docked (in a station menu). True for BOTH an active pilot and a Browse spectator — use
+ * this for things a spectator should still get, like opening settings/leaderboard, the
+ * camera zoom wheel, or frame-loop world-state work (quantum stepping, loot crates, HUD).
+ * Prefer `shipControlsActive()` instead when the action requires an actual player ship.
+ */
+function flightSceneActive(): boolean { return running && !docked }
+/**
+ * The player is actively piloting their own ship: running, not docked, and not just
+ * spectating (Browse has no ship). Use this for anything ship-specific — weapons, mining,
+ * docking, landing, quantum destination changes, camera cycling — that a spectator must
+ * never trigger. Prefer `flightSceneActive()` when spectators should be allowed too.
+ */
+function shipControlsActive(): boolean { return running && !docked && !spectating }
+
 let last = performance.now()
 let hiddenQuantumAt: number | null = null
 
@@ -4873,7 +4892,7 @@ function catchUpHiddenQuantum(now = performance.now()): void {
   if (hiddenQuantumAt === null) return
   const elapsed = (now - hiddenQuantumAt) / 1000
   hiddenQuantumAt = null
-  if (running && !docked && quantum.phase !== 'idle') {
+  if (flightSceneActive() && quantum.phase !== 'idle') {
     const qr = catchUpQuantum(quantum, ship.position, ship.velocity, elapsed)
     syncQuantumShipVisual()
     updateQuantumHud(qr)
@@ -4957,7 +4976,7 @@ function frame(now: number): void {
     for (const lod of planetLODs) lod.update(camera) // swap planet detail by distance
   }
 
-  if (running && !docked && quantum.phase !== 'idle') {
+  if (flightSceneActive() && quantum.phase !== 'idle') {
     // Quantum jump in progress: the drive flies the ship; normal flight/combat is suspended.
     pvpEl.hidden = true
     const qr = stepQuantum(quantum, ship.position, ship.velocity, dt)
@@ -4978,7 +4997,7 @@ function frame(now: number): void {
       selectedShipType,
       activeHolderShipVisual(),
     )
-  } else if (running && !docked && !spectating) {
+  } else if (shipControlsActive()) {
     // Idle: small nav hint under the minimap (no big banner).
     quantumEl.hidden = true
     const dest = destinationArrival()
@@ -5610,7 +5629,7 @@ function frame(now: number): void {
   // Subtle quantum motion: faint streaks ease in during the jump (spool-up pulls them gently
   // toward the vanishing point, travel lets them drift past). Kept light — easy on the eyes.
   let warpIntensity = 0, warpInward = false
-  if (running && !docked) {
+  if (flightSceneActive()) {
     if (quantum.phase === 'spooling') {
       warpIntensity = (1 - quantum.spoolRemaining / QUANTUM_TUNING.spoolTime) * 0.3
       warpInward = true
@@ -5627,7 +5646,7 @@ function frame(now: number): void {
   if (shouldShowCombatHud({ running, docked, bot: BOT, botActivityKind: botActivity?.kind })) drawCombatHud(now)
   else cctx.clearRect(0, 0, combatCanvas.width, combatCanvas.height)
 
-  if (running && !docked) updateLootCrates(now, dt) // spin / magnet / collect loot crates
+  if (flightSceneActive()) updateLootCrates(now, dt) // spin / magnet / collect loot crates
 
   // Engine bloom lives on the craft's own engine bells. Holder cosmetics stay on
   // name/chat styling and prestige hull parts, so the drive color remains stock.
@@ -5646,7 +5665,7 @@ function frame(now: number): void {
   // Onboarding objective — new pilots get a "next step" until they hunt their first pirate.
   // (Frozen if kicked: the objective slot shows the "signed in elsewhere" warning instead.)
   if (!sessionKicked) {
-    const obj = running && !docked ? currentObjective() : null
+    const obj = flightSceneActive() ? currentObjective() : null
     objectiveEl.hidden = !obj
     if (obj) objectiveEl.textContent = `${obj.kind === 'campaign' ? 'CAMPAIGN' : 'PILOT JOURNEY'} - ${obj.text}`
   }
