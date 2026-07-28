@@ -27,6 +27,10 @@ const DETAIL_TEXTURE_SIZE = 256
  *  shows plate seams at a plausible spacing rather than either a single giant plate or noise. */
 const TILE_WORLD_SIZE = 0.9
 
+/** Strength of the normal perturbation. The faceted silhouette should stay the primary read, so
+ *  this is deliberately below the point where the plating starts to look embossed. */
+const DETAIL_NORMAL_SCALE = 0.55
+
 /** Repeat values are snapped to these, so a fleet needs this many Texture instances at most. */
 const REPEAT_BUCKETS = [1, 2, 3, 5, 8] as const
 
@@ -247,10 +251,22 @@ export function tuneHullMaterialsForNoEnvironment(root: THREE.Object3D): void {
   })
 }
 
+/** Overrides for the detail pass, so the ship studio can sweep several values in one capture run
+ *  instead of needing a source edit and a reload per value. Production passes nothing and gets the
+ *  constants above. */
+export interface HullDetailTuning {
+  /** Strength of the normal perturbation. 0 leaves the surface geometrically flat. */
+  normalScale?: number
+  /** Model units one detail tile spans — smaller means denser, finer plating. */
+  tileWorldSize?: number
+}
+
 /** Attach detail maps to every reflective hull material under `root`, in place.
  *  Idempotent: a material that already carries a normalMap is left alone, so calling this twice
  *  (or on an already-processed cached model) cannot stack textures. */
-export function applyHullDetail(root: THREE.Object3D): void {
+export function applyHullDetail(root: THREE.Object3D, tuning: HullDetailTuning = {}): void {
+  const normalScale = tuning.normalScale ?? DETAIL_NORMAL_SCALE
+  const tileWorldSize = tuning.tileWorldSize ?? TILE_WORLD_SIZE
   if (!detailSource()) return // no canvas here — hulls load undetailed rather than not at all
   root.traverse((obj) => {
     const mesh = obj as THREE.Mesh
@@ -266,7 +282,7 @@ export function applyHullDetail(root: THREE.Object3D): void {
     // Largest two extents drive density: for a thin plate the thickness should not decide the tiling.
     const extents = [_size.x, _size.y, _size.z].sort((a, b) => b - a)
     const face = Math.max(1e-3, (extents[0] + extents[1]) * 0.5)
-    const repeat = snapRepeat(face / TILE_WORLD_SIZE)
+    const repeat = snapRepeat(face / tileWorldSize)
 
     for (const raw of materials) {
       const mat = raw as THREE.MeshStandardMaterial
@@ -279,8 +295,27 @@ export function applyHullDetail(root: THREE.Object3D): void {
       if (!pair) return
       const { normal, roughness } = pair
       mat.normalMap = normal
-      mat.normalScale.set(0.55, 0.55) // subtle — the faceted silhouette stays the read, not the noise
+      mat.normalScale.set(normalScale, normalScale)
       mat.roughnessMap = roughness
+      mat.needsUpdate = true
+    }
+  })
+}
+
+/** Remove the detail maps this module attached. Exists for the studio's A/B rig: `?detail=off`
+ *  against `?detail=on` is the only comparison that answers "is the detail map visible at all",
+ *  and re-tuning needs the maps off before `applyHullDetail` will re-attach them (it skips any
+ *  material that already has a normalMap). Not used in the game. */
+export function stripHullDetail(root: THREE.Object3D): void {
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh
+    if (!mesh.isMesh) return
+    for (const raw of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      const mat = raw as THREE.MeshStandardMaterial
+      if (!mat || !('roughness' in mat)) continue
+      if (!mat.normalMap) continue
+      mat.normalMap = null
+      mat.roughnessMap = null
       mat.needsUpdate = true
     }
   })

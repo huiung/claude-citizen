@@ -34,6 +34,13 @@ export interface StudioParams {
   pitchRad: number
   /** Camera distance as a multiple of the hull's bounding-box diagonal, or null to auto-frame. */
   dist: number | null
+  /** Whether the procedural detail maps are attached. `off` is the control half of the A/B that
+   *  answers whether they are visible at all — the question a single capture cannot answer. */
+  detail: boolean
+  /** Overrides for the detail pass, or null to use the module's shipped constants. Sweeping these
+   *  from the URL means one capture run covers several values instead of one edit-reload per value. */
+  normalScale: number | null
+  tileWorldSize: number | null
 }
 
 /** Default 3/4 view — shows a lit face, a shadowed face and the silhouette in one frame, which is
@@ -49,6 +56,15 @@ function pickEnum<T extends string>(raw: string | null, allowed: readonly T[], f
 function num(raw: string | null, fallback: number): number {
   const v = Number(raw)
   return Number.isFinite(v) ? v : fallback
+}
+
+/** A number the caller actually supplied, or null. Distinct from `num` because for the detail
+ *  overrides "absent" must mean "use the shipped constant", which no sentinel number can express —
+ *  0 is a meaningful normalScale (flat) and would be swallowed by a `|| fallback`. */
+function optNum(raw: string | null, min: number): number | null {
+  if (raw === null) return null
+  const v = Number(raw)
+  return Number.isFinite(v) && v >= min ? v : null
 }
 
 export function parseStudioParams(search: URLSearchParams): StudioParams {
@@ -70,6 +86,11 @@ export function parseStudioParams(search: URLSearchParams): StudioParams {
     yawRad: THREE.MathUtils.degToRad(num(search.get('yaw'), defaultYaw)),
     pitchRad: THREE.MathUtils.degToRad(num(search.get('pitch'), defaultPitch)),
     dist: distRaw !== null && Number.isFinite(distParsed) && distParsed > 0 ? distParsed : null,
+    detail: pickEnum(search.get('detail'), ['on', 'off'] as const, 'on') === 'on',
+    normalScale: optNum(search.get('nscale'), 0),
+    // A tile smaller than this would alias into noise before it read as plating, so reject it
+    // rather than capture a frame that says "detail does not work" when the value was the problem.
+    tileWorldSize: optNum(search.get('tile'), 0.05),
   }
 }
 

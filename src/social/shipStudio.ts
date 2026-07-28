@@ -23,12 +23,21 @@
  *                                             pilot's look direction
  *                                             when ?cam=cockpit          (default 3/4 view, 0/0 in cockpit)
  *    ?dist=<number>                           camera distance            (default auto from bbox; ignored in cockpit)
+ *    ?detail=on|off                           procedural detail maps     (default on)
+ *    ?nscale=<number>                         normalScale override       (default the module's own)
+ *    ?tile=<number>                           detail tile size, in model
+ *                                             units                      (default the module's own)
+ *
+ *  A note on ?detail: it is the control half of an A/B, and the only way to answer "are the detail
+ *  maps visible at all". They were committed while the hulls were still too dark to show anything,
+ *  so "the capture looks flat" and "the maps are not attached" are indistinguishable in one frame.
  */
 import * as THREE from 'three'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { addCraftEngineGlowRig, buildCraft, loadCraftModelForType } from '../render/shipyard'
+import { applyHullDetail, stripHullDetail } from '../render/hullDetail'
 import { buildLights, buildNebula, buildStarfield } from '../render/world'
 import { SUN_COLOR } from '../sim/solarSystem'
 import type { ShipType } from '../sim/shipTypes'
@@ -158,16 +167,54 @@ addEventListener('resize', () => {
   render()
 })
 
+/** Re-run the detail pass on the loaded hull with this page's overrides.
+ *
+ *  Safe to mutate: cloneCraftModelInstance() gives every spawned hull its own material copies, so
+ *  nothing here leaks back into the loader's cached source or into a later capture in the same run.
+ *  The strip is unconditional because applyHullDetail() skips materials that already carry a
+ *  normalMap — without it, `?nscale=` and `?tile=` would silently do nothing.
+ */
+function applyDetailOverrides(group: THREE.Group): void {
+  if (params.detail && params.normalScale === null && params.tileWorldSize === null) return
+  stripHullDetail(group)
+  if (!params.detail) return
+  applyHullDetail(group, {
+    normalScale: params.normalScale ?? undefined,
+    tileWorldSize: params.tileWorldSize ?? undefined,
+  })
+}
+
+/** Count what the detail pass actually reached. A PNG cannot distinguish "the map is attached and
+ *  too subtle to see" from "the map was never attached", and those need opposite fixes. */
+function detailReport(group: THREE.Group): string {
+  const seen = new Set<THREE.Material>()
+  let lit = 0
+  let detailed = 0
+  group.traverse((obj) => {
+    const mesh = obj as THREE.Mesh
+    if (!mesh.isMesh) return
+    for (const raw of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      const mat = raw as THREE.MeshStandardMaterial
+      if (!mat || !('roughness' in mat) || seen.has(mat)) continue
+      seen.add(mat)
+      lit++
+      if (mat.normalMap) detailed++
+    }
+  })
+  return `detail ${detailed}/${lit} mats`
+}
+
 async function boot(): Promise<void> {
   // buildCraft() is the procedural placeholder; the real hull players fly is the GLB. Judge the GLB.
   const model = await loadCraftModelForType(params.ship, params.tier, params.visual)
   if (model) {
     scene.remove(ship)
     addCraftEngineGlowRig(model, params.ship)
+    applyDetailOverrides(model)
     ship = model
     scene.add(ship)
     placeShip(ship)
-    updateLabel()
+    updateLabel(`  ·  ${detailReport(ship)}`)
   } else {
     updateLabel('  ·  GLB MISSING (procedural fallback)')
   }
