@@ -168,8 +168,84 @@ function isEmissiveSurface(mat: THREE.MeshStandardMaterial): boolean {
   return /glow|emissive|light|glass|window|canop/i.test(mat.name)
 }
 
+/** Reflectance floor for a hull surface, as relative luminance.
+ *
+ *  The generated GLBs contain surfaces far below anything a camera could resolve: the
+ *  `dark_gunmetal` shared by every hull sits at 0.011 — 1.1% reflectance, darker than coal (~4%)
+ *  and approaching a light trap. At metalness 0.72 with no environment map to sample, such a
+ *  surface has neither a diffuse response (metalness cancels it) nor a specular one (nothing to
+ *  reflect), so it renders black under any light rig. Two separate attempts to fix this with
+ *  lighting — an image-based environment, then a brighter hemisphere fill — both measured as no
+ *  change, for exactly this reason.
+ *
+ *  0.085 is roughly dark grey machine paint: still clearly the "dark" material next to a lighter
+ *  hull panel, but able to describe a shape. */
+const MIN_BASE_LUMINANCE = 0.085
+
+/** Metalness ceiling while the scene has no environment map.
+ *
+ *  In PBR a metal's appearance IS its reflection of the surroundings; its diffuse term is scaled
+ *  toward zero as metalness rises. High metalness is therefore only meaningful with something to
+ *  reflect. Until a proper environment probe exists (the Star Citizen approach: capture the
+ *  genuinely bright nearby planet, not a fabricated dark box), capping metalness converts hulls
+ *  from black mirrors-of-nothing into surfaces that respond to the lights that do exist. */
+const MAX_METALNESS_WITHOUT_ENV = 0.4
+
+const _lumColor = new THREE.Color()
+
+function relativeLuminance(c: THREE.Color): number {
+  return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b
+}
+
+/** Raise `color` to at least the luminance floor, preserving hue. Returns true if it changed.
+ *  Exported shape is pure so the thresholds are testable without a GPU. */
+export function liftToLuminanceFloor(color: THREE.Color, floor = MIN_BASE_LUMINANCE): boolean {
+  const lum = relativeLuminance(color)
+  if (lum >= floor) return false
+  if (lum <= 1e-6) {
+    // Pure black carries no hue to preserve — go neutral rather than pick one arbitrarily.
+    color.setScalar(floor)
+    return true
+  }
+  const scale = floor / lum
+  // Scaling can push a saturated channel past 1; clamping there would shift the hue, so cap the
+  // scale at whatever keeps the brightest channel in range and accept a slightly lower luminance.
+  const maxChannel = Math.max(color.r, color.g, color.b)
+  color.multiplyScalar(Math.min(scale, maxChannel > 0 ? 1 / maxChannel : scale))
+  return true
+}
+
 const _box = new THREE.Box3()
 const _size = new THREE.Vector3()
+
+/** Make hull materials respond to the lights the scene actually has.
+ *
+ *  Applied at load to every generated hull, so it covers all twelve GLBs — the four base classes,
+ *  the five holder skins and the capital ships — without regenerating any of them. Three of the
+ *  four base-hull generator scripts are lost, so a load-time pass is also the only route that
+ *  reaches the whole fleet.
+ *
+ *  Leaves emissive surfaces alone: they are their own light source, and dimming or de-metalling a
+ *  glow disc or a nav light would only break the one part of the ship that already reads.
+ */
+export function tuneHullMaterialsForNoEnvironment(root: THREE.Object3D): void {
+  const seen = new Set<THREE.Material>()
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh
+    if (!mesh.isMesh) return
+    for (const raw of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      const mat = raw as THREE.MeshStandardMaterial
+      if (!mat || !('roughness' in mat) || seen.has(mat)) continue
+      seen.add(mat)
+      if (isEmissiveSurface(mat)) continue
+
+      if (mat.metalness > MAX_METALNESS_WITHOUT_ENV) mat.metalness = MAX_METALNESS_WITHOUT_ENV
+      _lumColor.copy(mat.color)
+      if (liftToLuminanceFloor(_lumColor)) mat.color.copy(_lumColor)
+      mat.needsUpdate = true
+    }
+  })
+}
 
 /** Attach detail maps to every reflective hull material under `root`, in place.
  *  Idempotent: a material that already carries a normalMap is left alone, so calling this twice
