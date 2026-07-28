@@ -51,7 +51,6 @@ const walletHintEl = document.getElementById('wallet-hint')!
 const walletStatusEl = document.getElementById('wallet-status')!
 const landingMusicToggleEl = document.getElementById('landing-music-toggle') as HTMLButtonElement
 const buyCitizenEl = document.getElementById('buy-citizen') as HTMLAnchorElement
-const gateMsgEl = document.getElementById('gate-msg')!
 const browseBtnEl = document.getElementById('browse-btn')!
 // Visible, secondary affordance — open access means LAUNCH never triggers this anymore, so it stands on its
 // own as a quiet upsell for holder cosmetics / Ranked PvP eligibility. lockWalletButton() below swaps its
@@ -254,8 +253,6 @@ function refreshLaunchGateUI(): void {
   // Nothing gates LAUNCH. The buy link is an upsell for a connected wallet with no tokens;
   // an unconnected visitor sees no warning at all — they can just fly.
   buyCitizenEl.hidden = !(connected && holderBalance < 1)
-  gateMsgEl.hidden = true
-  gateMsgEl.textContent = ''
 }
 refreshLaunchGateUI()
 
