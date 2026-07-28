@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { applyHullDetail } from './hullDetail'
 import type { ShipType } from '../sim/shipTypes'
 import type { HolderShipVisualId } from '../ui/holderShipVisual'
 
@@ -173,6 +174,16 @@ export function createCraftModelLoader(
     if (!source) {
       source = loadScene(url)
         .then((model) => normalizeCraftModel(model, targetSize))
+        // Detail maps go on the cached source, so this runs once per (url, size) rather than per
+        // spawned instance — clones then share the same materials and the same textures.
+        // Isolated from the .catch below on purpose: detail is cosmetic, and letting it share that
+        // handler would turn "no canvas 2d context" into "this hull failed to load", silently
+        // dropping every player back to the procedural placeholder.
+        .then((model) => {
+          if (!model) return model
+          try { applyHullDetail(model) } catch { /* keep the undetailed hull */ }
+          return model
+        })
         .catch(() => null)
       sourceCache.set(key, source)
     }

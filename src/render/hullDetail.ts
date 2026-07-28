@@ -1,0 +1,223 @@
+import * as THREE from 'three'
+
+/** Procedural surface detail for generated hulls.
+ *
+ *  Why: the ship GLBs ship with `images: 0, textures: 0` — every hull material is a flat solid
+ *  colour. A flat-coloured panel has no surface information for light to catch, so it reads as
+ *  paper no matter how well it is lit. This is the third of the three gaps against Star Citizen's
+ *  look (the others being self-illumination and environment probes); it is the one that survives
+ *  any lighting change, because it is about the surface rather than the light.
+ *
+ *  Why this approach and not lights: adding a light in three.js extends the per-fragment light
+ *  loop for EVERY lit material in the scene — planets, stations, asteroids included, not just the
+ *  ship. A detail map adds one texture fetch on hull materials only and leaves the light loop
+ *  untouched, so the cost is bounded and local.
+ *
+ *  The hulls already carry TEXCOORD_0 on every primitive, so no re-UVing is needed. Those UVs are
+ *  default per-primitive box UVs though: every panel spans the full 0..1 range regardless of its
+ *  physical size. A single shared repeat would therefore render the same detail huge on a wing and
+ *  microscopic on a strut. `repeat` is scaled per mesh from its bounding box to hold texel density
+ *  roughly constant — quantised into a few buckets so the whole fleet shares a handful of Texture
+ *  instances rather than uploading one per mesh (repeat lives on the Texture, not the Material).
+ */
+
+const DETAIL_TEXTURE_SIZE = 256
+
+/** Physical size (in model units) that one tile of detail should span. Chosen so a ~7-unit hull
+ *  shows plate seams at a plausible spacing rather than either a single giant plate or noise. */
+const TILE_WORLD_SIZE = 0.9
+
+/** Repeat values are snapped to these, so a fleet needs this many Texture instances at most. */
+const REPEAT_BUCKETS = [1, 2, 3, 5, 8] as const
+
+function snapRepeat(raw: number): number {
+  let best: number = REPEAT_BUCKETS[0]
+  for (const b of REPEAT_BUCKETS) {
+    if (Math.abs(b - raw) < Math.abs(best - raw)) best = b
+  }
+  return best
+}
+
+/** Tangent-space normal map: plate seams plus fine machining noise. Flat RGB (128,128,255) is
+ *  "no perturbation", so every feature is a deviation from that. */
+function drawDetailNormalCanvas(): HTMLCanvasElement | null {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = DETAIL_TEXTURE_SIZE
+  // No 2D context: headless test envs, and browsers that refuse one under memory pressure or a
+  // hardened canvas policy. Detail is cosmetic, so bail out — never let it break hull loading.
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+
+  ctx.fillStyle = 'rgb(128,128,255)'
+  ctx.fillRect(0, 0, DETAIL_TEXTURE_SIZE, DETAIL_TEXTURE_SIZE)
+
+  // Plate seams: a groove reads as one dark and one light lip, which is what makes it look cut
+  // into the surface rather than drawn on it.
+  const seam = (x: number, y: number, w: number, h: number) => {
+    ctx.fillStyle = 'rgb(96,128,236)'
+    ctx.fillRect(x, y, w, h)
+    ctx.fillStyle = 'rgb(160,128,236)'
+    ctx.fillRect(x + (w > h ? 0 : 1), y + (w > h ? 1 : 0), w, h)
+  }
+  seam(0, DETAIL_TEXTURE_SIZE * 0.5, DETAIL_TEXTURE_SIZE, 1) // horizontal plate join
+  seam(DETAIL_TEXTURE_SIZE * 0.33, 0, 1, DETAIL_TEXTURE_SIZE * 0.5) // two shorter verticals, so
+  seam(DETAIL_TEXTURE_SIZE * 0.72, DETAIL_TEXTURE_SIZE * 0.5, 1, DETAIL_TEXTURE_SIZE * 0.5) // the
+  // tiling does not read as a regular grid.
+
+  // Fine machining noise. Deterministic (no Math.random) so the texture is identical across
+  // reloads and two studio captures never differ by the noise.
+  let seed = 0x9e3779b9
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0
+    return seed / 0xffffffff
+  }
+  for (let i = 0; i < 2600; i++) {
+    const x = Math.floor(rand() * DETAIL_TEXTURE_SIZE)
+    const y = Math.floor(rand() * DETAIL_TEXTURE_SIZE)
+    const bump = rand() > 0.5
+    ctx.fillStyle = bump ? 'rgba(150,138,252,0.5)' : 'rgba(106,118,252,0.5)'
+    ctx.fillRect(x, y, 1 + Math.floor(rand() * 2), 1)
+  }
+
+  return canvas
+}
+
+/** Roughness variation: mottling so specular highlights break up instead of sweeping a uniform
+ *  sheen across a whole panel. Mid grey = leave the material's own roughness roughly alone. */
+function drawDetailRoughnessCanvas(): HTMLCanvasElement | null {
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = DETAIL_TEXTURE_SIZE
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.fillStyle = 'rgb(150,150,150)'
+  ctx.fillRect(0, 0, DETAIL_TEXTURE_SIZE, DETAIL_TEXTURE_SIZE)
+
+  let seed = 0x85ebca6b
+  const rand = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0
+    return seed / 0xffffffff
+  }
+  for (let i = 0; i < 700; i++) {
+    const x = rand() * DETAIL_TEXTURE_SIZE
+    const y = rand() * DETAIL_TEXTURE_SIZE
+    const r = 3 + rand() * 14
+    const light = rand() > 0.5
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r)
+    g.addColorStop(0, light ? 'rgba(196,196,196,0.34)' : 'rgba(104,104,104,0.34)')
+    g.addColorStop(1, 'rgba(150,150,150,0)')
+    ctx.fillStyle = g
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  return canvas
+}
+
+interface DetailSource {
+  normal: HTMLCanvasElement
+  roughness: HTMLCanvasElement
+  /** One Texture pair per repeat bucket, shared across every hull in the fleet. */
+  byRepeat: Map<number, { normal: THREE.Texture; roughness: THREE.Texture }>
+}
+
+let source: DetailSource | null = null
+/** Distinguishes "not built yet" from "cannot be built here", so a failed attempt is not retried
+ *  for every mesh of every hull. */
+let sourceUnavailable = false
+
+function detailSource(): DetailSource | null {
+  if (sourceUnavailable) return null
+  if (!source) {
+    const normal = drawDetailNormalCanvas()
+    const roughness = drawDetailRoughnessCanvas()
+    if (!normal || !roughness) { sourceUnavailable = true; return null }
+    source = { normal, roughness, byRepeat: new Map() }
+  }
+  return source
+}
+
+function texturesForRepeat(repeat: number): { normal: THREE.Texture; roughness: THREE.Texture } | null {
+  const src = detailSource()
+  if (!src) return null
+  const existing = src.byRepeat.get(repeat)
+  if (existing) return existing
+
+  const make = (canvas: HTMLCanvasElement, colorSpace: THREE.ColorSpace): THREE.Texture => {
+    const tex = new THREE.CanvasTexture(canvas)
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping
+    tex.repeat.set(repeat, repeat)
+    tex.colorSpace = colorSpace
+    tex.anisotropy = 4
+    tex.needsUpdate = true
+    return tex
+  }
+  // Normal and roughness are DATA, not colour — sampling them through sRGB decode would skew both.
+  const pair = {
+    normal: make(src.normal, THREE.NoColorSpace),
+    roughness: make(src.roughness, THREE.NoColorSpace),
+  }
+  src.byRepeat.set(repeat, pair)
+  return pair
+}
+
+/** True for materials that are their own light source — glow discs, nav lights, canopy glass.
+ *  Perturbing the normal of a panel that emits rather than reflects only adds noise to a flat
+ *  colour, and a roughness map does nothing at all for it. */
+function isEmissiveSurface(mat: THREE.MeshStandardMaterial): boolean {
+  if (mat.emissive && mat.emissive.getHex() !== 0x000000 && mat.emissiveIntensity > 0) return true
+  return /glow|emissive|light|glass|window|canop/i.test(mat.name)
+}
+
+const _box = new THREE.Box3()
+const _size = new THREE.Vector3()
+
+/** Attach detail maps to every reflective hull material under `root`, in place.
+ *  Idempotent: a material that already carries a normalMap is left alone, so calling this twice
+ *  (or on an already-processed cached model) cannot stack textures. */
+export function applyHullDetail(root: THREE.Object3D): void {
+  if (!detailSource()) return // no canvas here — hulls load undetailed rather than not at all
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh
+    if (!mesh.isMesh || !mesh.geometry) return
+    // No UVs means no way to place the map; the generated hulls all have them, but imported or
+    // future assets might not, and a missing TEXCOORD_0 would sample garbage.
+    if (!mesh.geometry.getAttribute('uv')) return
+
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+
+    _box.setFromBufferAttribute(mesh.geometry.getAttribute('position') as THREE.BufferAttribute)
+    _box.getSize(_size)
+    // Largest two extents drive density: for a thin plate the thickness should not decide the tiling.
+    const extents = [_size.x, _size.y, _size.z].sort((a, b) => b - a)
+    const face = Math.max(1e-3, (extents[0] + extents[1]) * 0.5)
+    const repeat = snapRepeat(face / TILE_WORLD_SIZE)
+
+    for (const raw of materials) {
+      const mat = raw as THREE.MeshStandardMaterial
+      if (!mat || !(mat as THREE.Material).isMaterial) continue
+      if (!('roughness' in mat)) continue // not a Standard/Physical material
+      if (mat.normalMap) continue // already detailed
+      if (isEmissiveSurface(mat)) continue
+
+      const pair = texturesForRepeat(repeat)
+      if (!pair) return
+      const { normal, roughness } = pair
+      mat.normalMap = normal
+      mat.normalScale.set(0.55, 0.55) // subtle — the faceted silhouette stays the read, not the noise
+      mat.roughnessMap = roughness
+      mat.needsUpdate = true
+    }
+  })
+}
+
+/** Release the shared textures. For tests and hot-reload; the fleet normally keeps them forever. */
+export function disposeHullDetail(): void {
+  if (!source) return
+  for (const { normal, roughness } of source.byRepeat.values()) {
+    normal.dispose()
+    roughness.dispose()
+  }
+  source = null
+}
+
+export const HULL_DETAIL_INTERNALS = { REPEAT_BUCKETS, TILE_WORLD_SIZE, snapRepeat, isEmissiveSurface }
