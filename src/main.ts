@@ -348,9 +348,9 @@ function loadToken(): string {
 }
 const playerToken = loadToken()
 
-// Wallet session — flying now REQUIRES a linked wallet holding ≥1 $CITIZEN; Browse is the only
-// no-wallet path. When linked, the verified pubkey becomes the active identity; otherwise the
-// anonymous token is used (for Browse/presence).
+// Wallet session — optional. Flying is free; linking a wallet only adds holder cosmetics and
+// Ranked PvP eligibility. When linked, the verified pubkey becomes the active identity;
+// otherwise the anonymous token is used.
 let walletSession = loadWalletSession(localStorage)
 const identity = activeIdentity(playerToken, walletSession)
 
@@ -376,8 +376,9 @@ restoreBtn.addEventListener('click', () => {
   setTimeout(() => location.reload(), 400)
 })
 
-// Connect Wallet (SIWS) — link a Solana wallet to fly: a wallet holding ≥1 $CITIZEN is required
-// to LAUNCH (Browse is the only no-wallet path).
+// Connect Wallet (SIWS) — optional. Linking buys holder cosmetics and Ranked PvP eligibility;
+// it is never required to LAUNCH. In-game this element only displays state — linking happens
+// on the landing page.
 // Declared here (before NetClient) so the auth callbacks in the events object can see them.
 const connectWalletBtn = document.getElementById('connect-wallet') as HTMLButtonElement
 const disconnectWalletBtn = document.getElementById('disconnect-wallet') as HTMLButtonElement
