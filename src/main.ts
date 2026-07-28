@@ -146,15 +146,20 @@ import {
 import { hudShipIdentity } from './ui/shipIdentity'
 import { readLocalDevHolderOverride } from './ui/devHolder'
 import {
+  COCKPIT_NEAR_PLANE,
+  FLIGHT_BASE_FOV,
   defaultOrbitDistance,
   defaultRearDistance,
   nextCameraMode,
   orbitCameraOffset,
   queueOrbitZoomDelta,
   rearCameraOffset,
+  resolveCockpitEyeAnchor,
+  showHullInteriorFaces,
   zoomOrbitDistance,
   zoomRearDistance,
   type CameraMode,
+  type HullInteriorFaces,
 } from './ui/cameraView'
 import {
   DEFAULT_AMBIENT_VOLUME,
@@ -661,7 +666,10 @@ appEl.appendChild(labelRenderer.domElement)
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x010206)
-const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.5, 500000)
+// Near plane is swapped for COCKPIT_NEAR_PLANE while the cockpit view is active — at 0.5 the canopy
+// sits inside the near plane and gets clipped away. See updateCamera().
+const FLIGHT_NEAR_PLANE = 0.5
+const camera = new THREE.PerspectiveCamera(FLIGHT_BASE_FOV, innerWidth / innerHeight, FLIGHT_NEAR_PLANE, 500000)
 
 function buildPvpArenaMarker(center: THREE.Vector3, radius: number, color: number): THREE.Group {
   const group = new THREE.Group()
@@ -1609,6 +1617,37 @@ faceRefinery()
 let shipMesh = buildCraft(selectedShipType, PLAYER_TINT)
 scene.add(shipMesh)
 
+// --- Cockpit camera rig
+// Both the eye point and the interior-face override are properties of the hull that is loaded, not
+// of the frame, so they are rebuilt on hull swaps only. resolveCockpitEyeAnchor() walks the whole
+// node tree (166 nodes on the biggest hull) and searching that per frame for a value that never
+// changes would be pure waste.
+const cockpitEye = new THREE.Vector3()
+let cockpitInterior: HullInteriorFaces | null = null
+let cockpitViewActive = false
+function refreshCockpitRig(): void {
+  // Restore before dropping the handle. Strictly this is belt-and-braces today: the outgoing hull's
+  // materials are its own (cloneCraftModelInstance clones them per instance, and buildCraft mints
+  // fresh ones), so nothing else can observe them and setPlayerCraft has usually disposed them by
+  // now. It stays because the cost is a loop over ~40 materials on a hull swap, and the failure it
+  // guards against — DoubleSide leaking onto a shared material and silently changing every hull in
+  // the scene — is the kind that shows up as an unexplained rendering change months later.
+  cockpitInterior?.restore()
+  cockpitInterior = null
+  cockpitEye.copy(resolveCockpitEyeAnchor(shipMesh))
+  if (cockpitViewActive) cockpitInterior = showHullInteriorFaces(shipMesh)
+}
+function setCockpitViewActive(active: boolean): void {
+  cockpitViewActive = active
+  if (active) {
+    cockpitInterior ??= showHullInteriorFaces(shipMesh)
+  } else {
+    cockpitInterior?.restore()
+    cockpitInterior = null
+  }
+}
+refreshCockpitRig()
+
 const blackHoleVisual = buildBlackHole()
 scene.add(blackHoleVisual.group)
 const blackHoleEl = document.getElementById('black-hole') as HTMLElement
@@ -2173,13 +2212,25 @@ function singularityDeath(now: number): void {
   refreshWallet()
 }
 
+/** Jitter the camera by `amp` world units, shared by the two trauma shakes.
+ *
+ *  Ceiling for the cockpit view: the shakes are authored against a chase boom fourteen units out,
+ *  where 200 units of jitter reads as the ship coming apart. On a rigid cockpit mount the same
+ *  number teleports the eye clear of an eight-unit hull every frame, which reads as a broken camera
+ *  rather than as trauma. Clamped instead of scaled so the shake still ramps with the trauma value
+ *  and only its top end is reined in. */
+const COCKPIT_SHAKE_MAX_AMP = 0.5
+function jitterCamera(amp: number): void {
+  const a = cameraMode === 'cockpit' ? Math.min(amp, COCKPIT_SHAKE_MAX_AMP) : amp
+  camera.position.x += (Math.random() - 0.5) * a
+  camera.position.y += (Math.random() - 0.5) * a
+  camera.position.z += (Math.random() - 0.5) * a
+}
+
 /** Jitter the camera by the current black-hole trauma, then decay it. Call once per frame. */
 function applyBlackHoleShake(dt: number): void {
   if (bhShake <= 0.0001) { bhShake = 0; return }
-  const amp = bhShake * bhShake * 200
-  camera.position.x += (Math.random() - 0.5) * amp
-  camera.position.y += (Math.random() - 0.5) * amp
-  camera.position.z += (Math.random() - 0.5) * amp
+  jitterCamera(bhShake * bhShake * 200)
   bhShake = Math.max(0, bhShake - dt * 1.6)
 }
 
@@ -2450,6 +2501,7 @@ function setPlayerCraft(type: ShipType): void {
   playerEngineGlows = collectCraftEngineGlows(shipMesh)
   playerCosmetics = createShipCosmetics(shipMesh, scene)
   applyPlayerCosmetics()
+  refreshCockpitRig() // the eye point belongs to this hull; the procedural one uses the fallback anchor
   selectedShipType = type
   playerHealth.max = SHIP_STATS[type].hull + unlocksForLevel(pilot.level).hullBonus
   playerHealth.hull = playerHealth.max
@@ -2471,6 +2523,7 @@ function setPlayerCraft(type: ShipType): void {
     playerEngineGlows = collectCraftEngineGlows(shipMesh)
     playerCosmetics = createShipCosmetics(shipMesh, scene)
     applyPlayerCosmetics()
+    refreshCockpitRig() // re-derive from the GLB's canopy node, replacing the procedural fallback anchor
   })
 }
 
@@ -3293,12 +3346,13 @@ let mobileMineHeld = false
 let mobileStickPointerId: number | null = null
 function cycleCameraView(): void {
   cameraMode = nextCameraMode(cameraMode)
-  if (cameraMode === 'rear') {
+  if (cameraMode === 'orbit') {
+    cameraRearWheelDelta = 0
+  } else {
     cameraOrbitElapsed = 0
     cameraOrbitWheelDelta = 0
-  } else {
-    cameraRearWheelDelta = 0
   }
+  setCockpitViewActive(cameraMode === 'cockpit')
 }
 
 function setMobileHeld(btn: HTMLButtonElement, held: boolean): void {
@@ -3498,6 +3552,10 @@ addEventListener('mousemove', (e) => {
 renderer.domElement.addEventListener('wheel', (e) => {
   if (!flightSceneActive()) return
   e.preventDefault()
+  // The cockpit eye is fixed to the hull, so there is no boom to zoom. Swallowing the wheel rather
+  // than letting it fall through to the rear branch keeps it from banking up a queued delta that
+  // would snap the rear camera to a new distance the moment the pilot cycles back to it.
+  if (cameraMode === 'cockpit') return
   if (cameraMode === 'orbit') {
     cameraOrbitWheelDelta = queueOrbitZoomDelta(cameraOrbitWheelDelta, e.deltaY)
   } else {
@@ -4110,6 +4168,26 @@ function updateCamera(dt: number): void {
   if (_gTarget.lengthSq() > G_SWAY_MAX * G_SWAY_MAX) _gTarget.setLength(G_SWAY_MAX)
   gSway.lerp(_gTarget, 1 - Math.exp(-G_SWAY_RESP * dt))
 
+  // The canopy is a few tenths of a unit from the eye, so the flight near plane would clip it and
+  // the surrounding frame straight out of the view. Cheap to swap: updateProjectionMatrix() runs
+  // below every frame anyway for the FOV.
+  camera.near = cameraMode === 'cockpit' ? COCKPIT_NEAR_PLANE : FLIGHT_NEAR_PLANE
+
+  // Cockpit is a rigid mount, not a chase boom: the eye is bolted to the hull, so the camera takes
+  // the ship's transform outright. Deliberately skipped here, unlike every other view —
+  //   * the position lerp, which would let the eye trail outside the canopy during a hard turn and
+  //     briefly show the pilot the outside of their own ship;
+  //   * gSway, which reaches 2.6 units and would push the eye clean through the hull;
+  //   * the quaternion slerp, which would make the whole interior swim relative to the frame.
+  // Speed still reads through the shared FOV punch below, and through the world going past.
+  if (cameraMode === 'cockpit') {
+    camOffset.copy(cockpitEye).applyQuaternion(ship.quaternion)
+    camera.position.copy(ship.position).add(camOffset)
+    camera.quaternion.copy(ship.quaternion)
+    applyCameraFov(dt)
+    return
+  }
+
   // Ignition kick: pull the camera back along its boom and punch FOV for a beat.
   if (cameraMode === 'orbit') {
     cameraOrbitElapsed += dt
@@ -4135,9 +4213,15 @@ function updateCamera(dt: number): void {
   } else {
     camera.quaternion.slerp(ship.quaternion, 1 - Math.exp(-10 * dt))
   }
-  // FOV gives a gentle sense of speed: a touch wider under boost / quantum travel. No hard punches.
-  // Near the black hole it stretches hard (up to +20°) — a cheap "space is warping / lensing" feel.
-  const targetFov = (quantum.phase === 'traveling' ? 78 : camBoost ? 82 : 72) + boostKick * 6
+  applyCameraFov(dt)
+}
+
+// FOV gives a gentle sense of speed: a touch wider under boost / quantum travel. No hard punches.
+// Near the black hole it stretches hard (up to +20°) — a cheap "space is warping / lensing" feel.
+// Split out of updateCamera() so the cockpit branch, which returns early rather than falling through
+// the chase-boom maths, still gets the same speed cue and the same projection refresh.
+function applyCameraFov(dt: number): void {
+  const targetFov = (quantum.phase === 'traveling' ? 78 : camBoost ? 82 : FLIGHT_BASE_FOV) + boostKick * 6
     + bhPressure * 20
   camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-6 * dt))
   camera.updateProjectionMatrix()
@@ -4498,10 +4582,7 @@ function updateEntryFx(dt: number): void {
 /** Same trauma pattern as applyBlackHoleShake, smaller amplitude, own decay. */
 function applyEntryShake(dt: number): void {
   if (entryShake <= 0.0001) { entryShake = 0; return }
-  const amp = entryShake * entryShake * 60
-  camera.position.x += (Math.random() - 0.5) * amp
-  camera.position.y += (Math.random() - 0.5) * amp
-  camera.position.z += (Math.random() - 0.5) * amp
+  jitterCamera(entryShake * entryShake * 60)
   entryShake = Math.max(0, entryShake - dt * 2.2)
 }
 

@@ -20,11 +20,16 @@ export const STUDIO_HULL_TINT: Record<ShipType, number> = {
 
 export type StudioRig = 'game' | 'showcase'
 
+/** `external` orbits the hull; `cockpit` puts the camera on the hull's cockpit eye anchor, the same
+ *  one main.ts flies, so the in-cockpit view can be judged without flying the game. */
+export type StudioCam = 'external' | 'cockpit'
+
 export interface StudioParams {
   ship: ShipType
   visual: HolderShipVisualId
   tier: number
   rig: StudioRig
+  cam: StudioCam
   yawRad: number
   pitchRad: number
   /** Camera distance as a multiple of the hull's bounding-box diagonal, or null to auto-frame. */
@@ -49,13 +54,21 @@ function num(raw: string | null, fallback: number): number {
 export function parseStudioParams(search: URLSearchParams): StudioParams {
   const distRaw = search.get('dist')
   const distParsed = Number(distRaw)
+  const cam = pickEnum(search.get('cam'), ['external', 'cockpit'] as const, 'external')
+  // yaw/pitch mean different things per camera — hull orientation for `external`, where the pilot is
+  // looking for `cockpit` — so they need different defaults. The 3/4 default is what makes an
+  // external shot readable, but in the cockpit it would point the pilot backwards over their
+  // shoulder, which is not the shot anyone reaching for ?cam=cockpit is asking for.
+  const defaultYaw = cam === 'cockpit' ? 0 : DEFAULT_YAW_DEG
+  const defaultPitch = cam === 'cockpit' ? 0 : DEFAULT_PITCH_DEG
   return {
     ship: pickEnum(search.get('ship'), SHIP_TYPES, 'interceptor'),
     visual: pickEnum(search.get('visual'), VISUALS, 'standard'),
     tier: Math.max(0, Math.min(3, Math.floor(num(search.get('tier'), 0)))),
     rig: pickEnum(search.get('rig'), ['game', 'showcase'] as const, 'game'),
-    yawRad: THREE.MathUtils.degToRad(num(search.get('yaw'), DEFAULT_YAW_DEG)),
-    pitchRad: THREE.MathUtils.degToRad(num(search.get('pitch'), DEFAULT_PITCH_DEG)),
+    cam,
+    yawRad: THREE.MathUtils.degToRad(num(search.get('yaw'), defaultYaw)),
+    pitchRad: THREE.MathUtils.degToRad(num(search.get('pitch'), defaultPitch)),
     dist: distRaw !== null && Number.isFinite(distParsed) && distParsed > 0 ? distParsed : null,
   }
 }

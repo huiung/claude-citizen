@@ -1,9 +1,23 @@
 import * as THREE from 'three'
 
 /** `cockpit` sits at the hull's canopy looking forward — the view that makes flying read as being
- *  inside a ship rather than steering a small object from behind. Cycle order puts it first because
- *  it is the intended default once it is complete; until then `rear` remains the initial mode. */
+ *  inside a ship rather than steering a small object from behind. `rear` is still the mode the game
+ *  starts in; cockpit is a mode a pilot opts into with C. */
 export type CameraMode = 'cockpit' | 'rear' | 'orbit'
+
+/** Near plane for the cockpit view. The eye sits a fraction of a unit off the canopy glass, so the
+ *  flight near plane (0.5) clips the glass and the hull around it straight out of the frame and the
+ *  view degenerates into the rear view's framing minus the ship. main.ts creates the renderer with
+ *  `logarithmicDepthBuffer: true`, which is what makes a near plane this tight affordable: depth
+ *  precision no longer depends on the near/far ratio, so dropping to 0.05 costs nothing at the
+ *  far end where the planets and the star field live. */
+export const COCKPIT_NEAR_PLANE = 0.05
+
+/** The flight camera's resting field of view, before the boost / quantum / black-hole widening.
+ *  Shared with the ship studio so a cockpit capture is framed through the same lens the player gets:
+ *  the studio's own 55° is right for external shots but crops away most of the hull that a cockpit
+ *  view is supposed to have in its periphery, which would make the harness flatter its subject. */
+export const FLIGHT_BASE_FOV = 72
 
 const ORBIT_RADIUS = 8.3
 const ORBIT_MIN_RADIUS = 4.5
@@ -17,37 +31,251 @@ const REAR_MIN_RADIUS = 10
 const REAR_MAX_RADIUS = 26
 const REAR_ZOOM_PER_WHEEL_UNIT = 0.006
 
-// 'cockpit' is deliberately NOT in the cycle yet. main.ts branches on `cameraMode === 'orbit'` and
-// otherwise falls through to the rear path, so a reachable 'cockpit' would silently render the rear
-// view under a different name. Add it here in the same change that wires updateCamera().
-const CAMERA_MODE_CYCLE: readonly CameraMode[] = ['rear', 'orbit']
+// updateCamera() now has a real cockpit branch, so 'cockpit' is reachable. It sits after 'orbit'
+// rather than first so the existing rear -> orbit step is unchanged for anyone used to tapping C
+// once; 'rear' is still the mode the game starts in.
+const CAMERA_MODE_CYCLE: readonly CameraMode[] = ['rear', 'orbit', 'cockpit']
 
 export function nextCameraMode(mode: CameraMode): CameraMode {
   const i = CAMERA_MODE_CYCLE.indexOf(mode)
   return CAMERA_MODE_CYCLE[(i + 1) % CAMERA_MODE_CYCLE.length]
 }
 
-/** Where the eye sits, in hull-local space, given the canopy mesh's local centre and the hull's
- *  bounding box. Pulled slightly back and down from the glass so the canopy frame stays in the
- *  periphery instead of filling the screen, and so the near plane does not clip through it.
+/** Where the eye sits, in hull-local space, given the canopy mesh's local bounding box and the
+ *  hull's forward extent.
  *
- *  Every hull but `miner` carries a canopy/cockpit node by name (`narrow_cyan_predator_canopy`,
- *  `raised_cockpit_pod`, `forward_command_bridge`, `low_cockpit`, `control bridge`), so the anchor
- *  is derived rather than hand-authored per ship. Forward is -Z throughout, matching the GLBs'
- *  `extras: { forward: "-Z" }`.
+ *  This takes the canopy's BOX, not its centre, and puts the eye just OUTSIDE the glass rather than
+ *  behind it. Both of those reverse the shape this function had as groundwork, because the assumption
+ *  underneath it does not hold for a single hull in the fleet: none of them has a cockpit interior.
+ *  Measured off the GLBs, every "canopy" is a thin glass plate laid on the hull's skin —
+ *
+ *    hauler   wide_cyan_bridge_window       1.49 x 0.40 x 0.31
+ *    miner    wide_worksite_visor           1.27 x 0.27 x 0.26
+ *    fighter  large_cyan_bubble_canopy      0.63 x 0.31 x 0.74
+ *
+ *  — 0.2 to 0.5 units tall, with solid chassis directly behind. A setback of 0.5, which is what
+ *  `hullLength * 0.06` gives for these hulls, is larger than the whole canopy, so the eye landed
+ *  inside the fuselage: captures came back as flat-shaded walls at point-blank range, the interior
+ *  faces of a solid block.
+ *
+ *  So the eye goes just ABOVE and just BEHIND the glass — on the hull's skin at the canopy, looking
+ *  forward over it, rather than out of a room that was never modelled. `resolveCockpitEyeAnchor` then
+ *  lifts it clear of any structure it still overlaps.
+ *
+ *  Behind rather than in front of the glass is the second thing captures forced. On `hauler`, `miner`
+ *  and `holder-abyssal-driller` the canopy is on the hull's front FACE — the hauler's window spans
+ *  z -4.48..-4.17 and the hull ends at -4.48 — so an eye at the glass's leading edge has the entire
+ *  ship behind it and the forward view came back as bare star field, no hull, no frame, nothing for
+ *  the pilot to place themselves against. Sitting `aftBias` back puts the hull in frame on every
+ *  class. How much is still very much per hull, and that is the assets talking, not this function:
+ *  the interceptor and fighter frame their canopy and wings handsomely, while the boxy hauler and
+ *  miner give a flat roof receding to a level horizon, because that is the shape they are.
+ *
+ *  Every player-flyable hull carries a canopy/cockpit node by name (`narrow_cyan_predator_canopy`,
+ *  `raised_cockpit_pod`, `forward_command_bridge`, `low_cockpit`, `wide_worksite_visor`), so the
+ *  anchor is derived rather than hand-authored per ship. Forward is -Z throughout, which the four
+ *  base hulls state outright in their root node's `extras: { forward: "-Z" }`; the holder skins
+ *  carry no extras but are modelled to the same convention.
  */
-export function cockpitEyeOffset(canopyLocalCenter: THREE.Vector3, hullLength: number): THREE.Vector3 {
-  const setback = THREE.MathUtils.clamp(hullLength * 0.06, 0.12, 0.6)
+export function cockpitEyeOffset(canopyLocalBox: THREE.Box3, hullLength: number): THREE.Vector3 {
+  // Both offsets scale off the hull so they land the same relative to an 8-unit interceptor and a
+  // 15-unit corvette, then clamp. Clearance below ~0.06 grazes the glass it is meant to sit on;
+  // above ~0.25 the eye visibly floats. Aft bias below ~0.3 leaves too thin a sliver of hull in
+  // frame on the nose-canopy hulls; above ~0.7 it stops reading as the cockpit and starts reading
+  // as a very short chase boom.
+  const clearance = THREE.MathUtils.clamp(hullLength * 0.03, 0.06, 0.25)
+  const aftBias = THREE.MathUtils.clamp(hullLength * 0.06, 0.3, 0.7)
   return new THREE.Vector3(
-    canopyLocalCenter.x,
-    canopyLocalCenter.y - setback * 0.35,
-    canopyLocalCenter.z + setback, // +Z is aft, so this moves the eye back from the glass
+    (canopyLocalBox.min.x + canopyLocalBox.max.x) * 0.5,
+    canopyLocalBox.max.y + clearance, // above the glass, where a bubble canopy's crown would be
+    canopyLocalBox.max.z + aftBias, // +Z is aft, so this sits behind the glass looking over it
   )
 }
 
-/** Name test for the canopy/cockpit node a hull's eye anchor is derived from. */
+/** How far above the hull's skin the eye is held once it has been lifted clear of structure. */
+const COCKPIT_HULL_CLEARANCE = 0.14
+
+/** Name test for the canopy/cockpit node a hull's eye anchor is derived from.
+ *
+ *  `visor` and a whole `cab` segment are in here because `miner` was believed to have no canopy node
+ *  at all: it carries `blocky_operator_cab` and `wide_worksite_visor` — a real cockpit, just not
+ *  named after glass. `holder-abyssal-driller` has `amber_mining_visor` for the same reason. Those
+ *  three are the only names the two extra alternatives add across all thirteen GLBs, so the miner
+ *  gets a derived anchor instead of a guessed one and no other hull changes.
+ *
+ *  `cab` is anchored to segment boundaries (`(^|_)cab(_|$)`) so it cannot fire on an unrelated
+ *  substring; a bare /cab/ would match things like `cable` or `cabin_strut` that are not eye points.
+ */
 export function isCanopyNodeName(name: string): boolean {
-  return /canop|cockpit|bridge_window|bridge$|deck window/i.test(name)
+  return /canop|cockpit|bridge_window|bridge$|deck window|visor|(^|_)cab(_|$)/i.test(name)
+}
+
+/** Eye point for a hull with no canopy node at all, in hull-local space.
+ *
+ *  Reached by the procedural `buildCraft()` hulls, whose meshes are unnamed, and by
+ *  `capital-dreadnought`. The procedural hull is on screen for the frames before the GLB swaps in —
+ *  and permanently if the GLB 404s — so this path has to put the eye somewhere sane, not just
+ *  somewhere that does not throw.
+ *
+ *  A fraction along the forward extent rather than a fixed distance: hull lengths across the fleet
+ *  run from 6 to 17 units, and any absolute offset that sits inside the interceptor is outside the
+ *  corvette. Biased up from mid-height because a cockpit is on top of a hull, never in its middle.
+ */
+function fallbackCanopyBox(hullBox: THREE.Box3): THREE.Box3 {
+  const size = hullBox.getSize(new THREE.Vector3())
+  const center = hullBox.getCenter(new THREE.Vector3())
+  const z = hullBox.min.z + size.z * 0.18
+  return new THREE.Box3(
+    new THREE.Vector3(center.x - size.x * 0.05, hullBox.max.y - size.y * 0.05, z),
+    new THREE.Vector3(center.x + size.x * 0.05, hullBox.max.y, z + size.z * 0.05),
+  )
+}
+
+/** Bounding box of `root`'s meshes expressed in the space `toLocal` maps world space into.
+ *
+ *  `Box3.setFromObject` would give a world-space box, which is useless here: the hull is parented to
+ *  a group that carries the ship's live position and orientation, so a world box changes every
+ *  frame and cannot be cached. Going through each mesh's geometry box and `matrixWorld` instead
+ *  yields a box in the hull group's own space, which is stable for the lifetime of the hull.
+ */
+function localMeshBox(root: THREE.Object3D, toLocal: THREE.Matrix4, target: THREE.Box3): THREE.Box3 {
+  const box = new THREE.Box3()
+  const matrix = new THREE.Matrix4()
+  target.makeEmpty()
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh
+    if (!mesh.isMesh || !mesh.geometry) return
+    if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox()
+    if (!mesh.geometry.boundingBox) return
+    box.copy(mesh.geometry.boundingBox).applyMatrix4(matrix.multiplyMatrices(toLocal, mesh.matrixWorld))
+    target.union(box)
+  })
+  return target
+}
+
+/** How far ahead of the eye structure is allowed to veto the eye's height, as a fraction of the
+ *  hull's length. */
+const COCKPIT_FORWARD_PROBE = 0.25
+
+/** Raise `eye` until it is above the structure it sits in AND the structure directly ahead of it.
+ *
+ *  Two separate failures made this necessary, both found by looking at captures rather than by
+ *  reasoning about the assets:
+ *
+ *    * Sitting in it. The eye is placed off the canopy alone, and the canopy is not always the tallest
+ *      thing around it — `holder-eclipse-corvette`'s `raised_command_bridge` tops out at y 0.55 with
+ *      superstructure reaching y 3.4 — so a canopy-relative eye is simply inside the ship.
+ *    * Sitting behind it. Clearing only what the eye is inside leaves whatever is ahead of it free to
+ *      fill the entire forward view, which is exactly what the corvette did: a lit wall of hull from
+ *      edge to edge, sky visible only in the two top corners.
+ *
+ *  Hence the forward probe. It is a quarter of the hull rather than the whole thing because a hull's
+ *  full length always reaches its own nose, and every hull's nose is taller than the skin right at
+ *  the canopy — probing the lot would push the eye above the entire ship on all nine hulls and turn a
+ *  cockpit view into a mast cam.
+ *
+ *  The x test uses the mesh's own footprint, not a hull-wide box, so wingtips and outrigger nacelles
+ *  off to the side do not vote on the height of an eye that sits on the centreline.
+ *
+ *  Box-level, not triangle-level, on purpose: a box is conservative in the direction that matters —
+ *  it can only ever lift the eye further out, never leave it embedded — and it needs no raycasts.
+ */
+function liftClearOfStructure(
+  hull: THREE.Object3D,
+  toLocal: THREE.Matrix4,
+  eye: THREE.Vector3,
+  hullLength: number,
+): void {
+  const box = new THREE.Box3()
+  const matrix = new THREE.Matrix4()
+  const probeFrom = eye.z - hullLength * COCKPIT_FORWARD_PROBE
+  let top = -Infinity
+  hull.traverse((child) => {
+    const mesh = child as THREE.Mesh
+    if (!mesh.isMesh || !mesh.geometry) return
+    if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox()
+    if (!mesh.geometry.boundingBox) return
+    box.copy(mesh.geometry.boundingBox).applyMatrix4(matrix.multiplyMatrices(toLocal, mesh.matrixWorld))
+    if (eye.x < box.min.x || eye.x > box.max.x) return
+    if (box.min.z > eye.z || box.max.z < probeFrom) return // neither under the eye nor just ahead of it
+    if (eye.y > box.max.y) return // already above this one
+    top = Math.max(top, box.max.y)
+  })
+  if (top > -Infinity) eye.y = top + COCKPIT_HULL_CLEARANCE
+}
+
+/** Resolve the cockpit eye point for a loaded hull, in the hull group's local space.
+ *
+ *  Result is a fixed property of the hull, so callers cache it per hull rather than searching the
+ *  node tree every frame — the capital carrier alone is 166 nodes.
+ *
+ *  Picks the MOST FORWARD canopy candidate, not the first one found. `holder-doge-runner` has both
+ *  `flush_blue_canopy` at the nose and `dark_gold_tail_bridge` at z = +3.1, and the latter matches
+ *  `bridge$`; taking traversal order would seat the pilot in the tail looking down the length of
+ *  their own ship.
+ */
+export function resolveCockpitEyeAnchor(hull: THREE.Object3D): THREE.Vector3 {
+  hull.updateWorldMatrix(false, true)
+  const toLocal = new THREE.Matrix4().copy(hull.matrixWorld).invert()
+  const hullBox = localMeshBox(hull, toLocal, new THREE.Box3())
+  if (hullBox.isEmpty()) return new THREE.Vector3() // nothing loaded yet; centre is as good as it gets
+  const hullLength = hullBox.getSize(new THREE.Vector3()).z
+
+  let canopyBox: THREE.Box3 | null = null
+  const candidateBox = new THREE.Box3()
+  hull.traverse((child) => {
+    if (!isCanopyNodeName(child.name)) return
+    if (localMeshBox(child, toLocal, candidateBox).isEmpty()) return
+    if (!canopyBox || candidateBox.min.z < canopyBox.min.z) canopyBox = candidateBox.clone()
+  })
+
+  const eye = cockpitEyeOffset(canopyBox ?? fallbackCanopyBox(hullBox), hullLength)
+  liftClearOfStructure(hull, toLocal, eye, hullLength)
+  return eye
+}
+
+/** Restores the `side` each material was authored with. */
+export interface HullInteriorFaces {
+  restore(): void
+}
+
+/** Make a hull's surfaces visible from inside it, returning a handle that undoes the change.
+ *
+ *  Hull and canopy materials are single-sided, which is correct for every view from outside. From
+ *  the cockpit the camera is *inside* that shell, so backface culling removes exactly the surfaces
+ *  that should be surrounding the pilot: the canopy frame vanishes and the hull reads as a hole
+ *  onto the star field.
+ *
+ *  Scope is deliberately the whole hull rather than the meshes near the eye. A distance test sounds
+ *  cheaper but is wrong at the edges — on the corvette the bridge sits amidships, so its own nose is
+ *  ten units ahead and still needs to occlude — and these hulls are 19 to 91 nodes, one instance,
+ *  so untangling that to save a few backface fragments buys nothing measurable.
+ *
+ *  Scope is also this hull *instance* only, and only while the cockpit view is active. Materials are
+ *  cloned per instance by `cloneCraftModelInstance`, so peers and pirates keep their culling; and
+ *  restoring on exit keeps the rear and orbit views pixel-identical to before this change, which
+ *  matters because DoubleSide is not a no-op out there — it would reveal the back of every
+ *  single-quad panel and window the hulls are built from.
+ */
+export function showHullInteriorFaces(hull: THREE.Object3D): HullInteriorFaces {
+  const authored: { material: THREE.Material; side: THREE.Side }[] = []
+  const seen = new Set<THREE.Material>()
+  hull.traverse((child) => {
+    const mesh = child as THREE.Mesh
+    if (!mesh.isMesh) return
+    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      if (!material || seen.has(material)) continue
+      seen.add(material)
+      authored.push({ material, side: material.side })
+      material.side = THREE.DoubleSide
+    }
+  })
+  return {
+    restore(): void {
+      for (const entry of authored) entry.material.side = entry.side
+      authored.length = 0
+    },
+  }
 }
 
 export function rearCameraOffset(boostKick: number, distance = REAR_RADIUS): THREE.Vector3 {

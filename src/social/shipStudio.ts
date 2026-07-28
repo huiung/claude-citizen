@@ -18,8 +18,11 @@
  *    ?visual=<holder visual id>               holder skin                (default standard)
  *    ?tier=0..3                               holder tier                (default 0)
  *    ?rig=game|showcase                       lighting rig               (default game)
- *    ?yaw=<deg>&pitch=<deg>                   hull orientation           (default 3/4 view)
- *    ?dist=<number>                           camera distance            (default auto from bbox)
+ *    ?cam=external|cockpit                    camera mount               (default external)
+ *    ?yaw=<deg>&pitch=<deg>                   hull orientation, or the
+ *                                             pilot's look direction
+ *                                             when ?cam=cockpit          (default 3/4 view, 0/0 in cockpit)
+ *    ?dist=<number>                           camera distance            (default auto from bbox; ignored in cockpit)
  */
 import * as THREE from 'three'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
@@ -30,6 +33,7 @@ import { buildLights, buildNebula, buildStarfield } from '../render/world'
 import { SUN_COLOR } from '../sim/solarSystem'
 import type { ShipType } from '../sim/shipTypes'
 import type { HolderShipVisualId } from '../ui/holderShipVisual'
+import { COCKPIT_NEAR_PLANE, FLIGHT_BASE_FOV, resolveCockpitEyeAnchor, showHullInteriorFaces } from '../ui/cameraView'
 import { parseStudioParams, studioCameraPosition, STUDIO_HULL_TINT } from './shipStudioParams'
 
 const params = parseStudioParams(new URLSearchParams(location.search))
@@ -73,7 +77,51 @@ if (params.rig === 'game') {
 let ship: THREE.Group = buildCraft(params.ship, STUDIO_HULL_TINT[params.ship])
 scene.add(ship)
 
+const _cockpitLookAt = new THREE.Vector3()
+const _cockpitAim = new THREE.Quaternion()
+const _cockpitEuler = new THREE.Euler(0, 0, 0, 'YXZ')
+
+/** Reproduce main.ts's cockpit mount on a stationary hull.
+ *
+ *  The hull is left unrotated and the camera is aimed instead. In flight the eye is bolted to the
+ *  hull and turns with it, so hull rotation and camera rotation are the same rotation; rotating the
+ *  hull here as `external` does would only move the interior out from around a fixed camera. yaw and
+ *  pitch therefore steer the pilot's head, which is what makes it possible to capture the canopy roof
+ *  and the side frames rather than only the forward view.
+ *
+ *  Near plane and the DoubleSide override come from the same module the game uses, on purpose: if
+ *  either were reproduced by hand here, this rig could show a good cockpit while the game showed a
+ *  hole, and the harness would be worse than no harness.
+ */
+/** Where the eye ended up, and the hull box it ended up in — reported on the page because a cockpit
+ *  capture is otherwise impossible to diagnose. "A dark flat plane fills the lower frame" is the same
+ *  picture whether the eye is resting on the hull's roof or buried just under it, and the second one
+ *  is a bug. With the numbers on screen the capture answers that itself. */
+let cockpitDebug = ''
+
+function placeCockpitCamera(group: THREE.Group): void {
+  group.rotation.set(0, 0, 0)
+  group.updateMatrixWorld(true)
+  camera.near = COCKPIT_NEAR_PLANE
+  camera.fov = FLIGHT_BASE_FOV
+  camera.updateProjectionMatrix()
+  camera.position.copy(resolveCockpitEyeAnchor(group))
+  const hull = new THREE.Box3().setFromObject(group)
+  const f = (v: THREE.Vector3): string => `${v.x.toFixed(2)},${v.y.toFixed(2)},${v.z.toFixed(2)}`
+  cockpitDebug = `eye[${f(camera.position)}] hull[${f(hull.min)} .. ${f(hull.max)}]`
+  // Yaw before pitch (YXZ), so pitching up at the canopy roof does not roll the horizon.
+  _cockpitEuler.set(params.pitchRad, params.yawRad, 0)
+  _cockpitAim.setFromEuler(_cockpitEuler)
+  _cockpitLookAt.set(0, 0, -1).applyQuaternion(_cockpitAim).add(camera.position)
+  camera.lookAt(_cockpitLookAt)
+  showHullInteriorFaces(group) // never restored: this page renders one frame in one mode and exits
+}
+
 function placeShip(group: THREE.Group): void {
+  if (params.cam === 'cockpit') {
+    placeCockpitCamera(group)
+    return
+  }
   group.rotation.set(params.pitchRad, params.yawRad, 0)
   const size = new THREE.Box3().setFromObject(group).getSize(new THREE.Vector3())
   camera.position.copy(studioCameraPosition(size, params.dist))
@@ -81,11 +129,20 @@ function placeShip(group: THREE.Group): void {
 }
 placeShip(ship)
 
-labelEl.textContent = [
-  params.ship.toUpperCase(),
-  params.visual !== 'standard' ? params.visual : null,
-  `rig=${params.rig}`,
-].filter(Boolean).join('  ·  ')
+// Rebuilt after the GLB swaps in, not just for the placeholder: the cockpit numbers are derived from
+// whichever hull is actually in the scene, and reporting the placeholder's would be worse than
+// reporting none.
+function updateLabel(suffix = ''): void {
+  const deg = (rad: number): number => Math.round(THREE.MathUtils.radToDeg(rad))
+  labelEl.textContent = [
+    params.ship.toUpperCase(),
+    params.visual !== 'standard' ? params.visual : null,
+    `rig=${params.rig}`,
+    params.cam === 'cockpit' ? `cockpit yaw=${deg(params.yawRad)} pitch=${deg(params.pitchRad)}` : null,
+    params.cam === 'cockpit' ? cockpitDebug : null,
+  ].filter(Boolean).join('  ·  ') + suffix
+}
+updateLabel()
 
 // Nothing animates — one render is the whole output, so a capture never races an animation.
 // Re-render only on resize and after the GLB swaps in.
@@ -110,8 +167,9 @@ async function boot(): Promise<void> {
     ship = model
     scene.add(ship)
     placeShip(ship)
+    updateLabel()
   } else {
-    labelEl.textContent += '  ·  GLB MISSING (procedural fallback)'
+    updateLabel('  ·  GLB MISSING (procedural fallback)')
   }
   render()
   // Capture tooling polls this instead of guessing a settle delay.
