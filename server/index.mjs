@@ -431,7 +431,7 @@ wss.on('connection', (ws) => {
       }
       if (isBot) { client.tier = 3; client.isBot = true }
       if (!client.authed) applySession(client, msg.sessionId)
-      await refreshHolder(ws, client)               // resolve verified holder balance (cached) before gating
+      await refreshHolder(ws, client)               // resolve verified holder balance (cached) for cosmetics + ranked
       if (!clients.has(ws)) return                  // disconnected during the async lookup
       // Open access: anyone may fly. Identity is the wallet when linked, otherwise the local
       // session applied above. refreshHolder still ran — cosmetics and the ranked gate

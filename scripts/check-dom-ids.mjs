@@ -17,22 +17,25 @@ import { join, extname } from 'node:path'
 
 const ROOT = new URL('..', import.meta.url).pathname
 const SRC_DIR = join(ROOT, 'src')
-const HTML_FILES = ['index.html', 'wiki.html'].map((f) => join(ROOT, f))
+// The standalone showcase pages are included so their ids are genuinely validated rather than
+// waved through by the allowlist — renaming an id there while src/social/*Showcase.ts keeps the
+// old string is the same crash class this script exists to catch.
+const HTML_FILES = [
+  'index.html',
+  'wiki.html',
+  'public/social/comet-wake-showcase.html',
+  'public/social/abyssal-driller-showcase.html',
+].map((f) => join(ROOT, f))
 
-// Ids that are legitimately referenced from src/ but will never appear in index.html or
-// wiki.html. Keep this list short and each entry justified — anything else missing is a bug.
+// Ids that are legitimately referenced from src/ but will never appear in any HTML file we
+// scan. Keep this list short and each entry justified — anything else missing is a bug.
+// Prefer adding the owning HTML file to HTML_FILES over adding an entry here: an allowlisted
+// id is unvalidated forever, whereas a scanned file keeps catching renames.
 const ALLOWLIST = new Set([
   // src/ui/solarSystemMap.ts injects this <style> element itself at runtime; the
   // getElementById call is only an existence guard against double-injection, never a
-  // lookup of something index.html/wiki.html is expected to provide.
+  // lookup of something an HTML file is expected to provide.
   'solar-map-style',
-  // These three belong to the standalone showcase pages under public/social/
-  // (comet-wake-showcase.html, abyssal-driller-showcase.html), loaded by
-  // src/social/*Showcase.ts. Those pages are never loaded by index.html or wiki.html,
-  // so their ids are intentionally absent from both.
-  'showcase-root',
-  'rarity',
-  'variant',
 ])
 
 // Matches document.getElementById('foo') / getElementById("foo") — string-literal

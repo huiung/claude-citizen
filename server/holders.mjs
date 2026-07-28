@@ -51,8 +51,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 /** Query Helius for `pubkey`'s holding of `mint` and resolve a status `{ balance, tier, ok }`.
  *  `ok` distinguishes a VERIFIED result (success, even a genuine 0 balance) from a FAILED lookup
  *  (network, rate limit, RPC error, missing key). The caller must never cache a failed lookup as a
- *  real 0 — a transient Helius blip would otherwise lock a genuine holder out of the gate for the
- *  cache TTL. Retries transient failures `retries` times before giving up (still fail-closed:
+ *  real 0 — a transient Helius blip would otherwise cost a genuine holder their cosmetics and
+ *  ranked-PvP eligibility for the cache TTL. Retries transient failures `retries` times before giving up (still fail-closed:
  *  ok=false carries balance 0). */
 export async function fetchHolderStatus(pubkey, { apiKey, mint, fetchImpl = fetch, retries = 1, retryDelayMs = 250 } = {}) {
   if (!apiKey || !mint || !pubkey) return { balance: 0, tier: 0, ok: false }

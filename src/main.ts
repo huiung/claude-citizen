@@ -429,8 +429,7 @@ function startWalletConnect(): void {
 connectWalletBtn.hidden = true // wallet linking lives on the landing page; in-game only displays state
 connectWalletBtn.addEventListener('click', () => startWalletConnect())
 
-// Holder gate (landing): LAUNCH unlocks only for a connected wallet holding ≥1 $CITIZEN.
-// Non-holders can still BROWSE (wired in a later task). Drives launch.disabled + buy link + message.
+// Holder balance for the buy-link upsell. Nothing gates LAUNCH — flying is free.
 // Own var (not selfHolderBalance, which is declared far below) so the initial render is TDZ-safe.
 let holderBalance = 0
 function walletConnected(): boolean { return Boolean(walletSession) }
@@ -3084,7 +3083,7 @@ function applyLocalDevHolderOverride(): void {
   if (!override) return
   selfTier = override.tier
   selfHolderBalance = override.balance
-  holderBalance = selfHolderBalance // keep the landing gate in sync so the dev override can unlock LAUNCH
+  holderBalance = selfHolderBalance // keep the buy-link upsell in sync with the dev override
   refreshLaunchGateUI()
 }
 applyLocalDevHolderOverride()
@@ -3714,7 +3713,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     saveWalletSession(localStorage, walletSession)
     pendingPubkey = null
     lockWalletButton(pubkey)
-    refreshLaunchGateUI() // wallet linked — re-evaluate the gate (the 'holder' balance will refine it)
+    refreshLaunchGateUI() // wallet linked — refresh the buy-link upsell (the 'holder' balance will refine it)
     setWalletStatus(`Connected ${pubkey.slice(0, 4)}…${pubkey.slice(-4)} — press LAUNCH to play`)
     if (name && name.toLowerCase() !== 'pilot') {
       nicknameEl.value = name
@@ -4387,9 +4386,9 @@ function enterBrowseMode(): void {
 
 function launch(): void {
   if (running) return
-  // No client gate here: this is the in-game entry, called by landing.ts's beginLaunch AFTER the
-  // landing has gated on wallet + holder balance. The relay also enforces the gate at `join`. Gating
-  // here would wrongly bail (main.ts's holderBalance is still 0 the instant the game module loads).
+  // Nothing gates flight, here or anywhere: the landing page and the relay both admit everyone.
+  // Even if that changed, gating here would be wrong — main.ts's holderBalance is still 0 the
+  // instant the game module loads, so any balance check would bail on a legitimate holder.
   spectating = false // clear any prior Browse state so a real launch flies normally
   // Note: the relay-side `spectating` flag is intentionally NOT cleared on launch — it's idempotent
   // per-recipient (an active pilot skips the spectator branch) and harmless to leave set.
