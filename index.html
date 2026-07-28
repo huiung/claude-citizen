@@ -555,7 +555,10 @@
     #pilot-code button { background: #123c20; color: #9fffb0; border: 1px solid #3fae5f; padding: 4px 10px; font-family: inherit; font-size: 10px; letter-spacing: 1px; cursor: pointer; border-radius: 3px; }
     #pilot-code button:hover { background: #1b5a30; }
     #pc-status { font-size: 10px; color: #ffe08a; min-height: 12px; }
-    #wallet-box { margin: 8px auto 0; }
+    /* text-align centres the inline children (the connect button and the status span).
+       #wallet-hint centres itself via auto margins; the button did not, and only became
+       visible when wallet linking moved out from behind the removed launch gate. */
+    #wallet-box { margin: 8px auto 0; text-align: center; }
     #wallet-hint { display: block; font-size: 11px; color: #7fc99a; opacity: .8; max-width: 340px; margin: 0 auto 6px; text-align: center; }
     #wallet-hint[hidden] { display: none; }
     #connect-wallet { font: 12px "Share Tech Mono", ui-monospace, monospace; color: #9fffb0; background: transparent; border: 1px solid rgba(159,255,176,.5); border-radius: 4px; padding: 6px 12px; cursor: pointer; }
