@@ -76,20 +76,6 @@
       position: fixed; right: 16px; bottom: 16px; pointer-events: none;
       font-size: 11px; line-height: 1.6; opacity: .55; text-align: right;
     }
-    #browse-banner {
-      position: fixed; left: 50%; top: 16px; transform: translateX(-50%);
-      z-index: 20; padding: 8px 16px; border-radius: 6px;
-      background: rgba(0, 16, 8, .82); border: 1px solid rgba(159, 255, 176, .45);
-      color: #9fffb0; font-size: 12px; letter-spacing: 1px; white-space: nowrap;
-      text-shadow: 0 0 6px rgba(80, 255, 120, .5);
-    }
-    #browse-banner[hidden] { display: none; }
-    #browse-banner a { color: #ffe08a; text-decoration: none; border-bottom: 1px solid rgba(255,224,138,.5); }
-    #browse-banner button {
-      background: transparent; color: #9fffb0; border: 1px solid rgba(159,255,176,.5);
-      border-radius: 4px; padding: 2px 10px; font: inherit; letter-spacing: 1px; cursor: pointer;
-    }
-    #browse-banner button:hover { background: rgba(159,255,176,.12); }
     #minimap-wrap {
       position: fixed; right: 16px; top: 92px; pointer-events: none; text-align: center;
     }
@@ -532,7 +518,6 @@
     }
     #overlay button:hover { background: #1b5a30; }
     #overlay button:disabled { opacity: .5; cursor: default; background: #0d2614; border-color: rgba(63,174,95,.4); }
-    #browse-btn { background: transparent; border-color: rgba(159,255,176,.5); padding: 8px 28px; font-size: 13px; }
     #launch-row { display: flex; gap: 10px; align-items: center; justify-content: center; }
     /* Disconnect sits beside LAUNCH (shown only when a wallet is linked) — smaller, secondary. */
     #disconnect-wallet { padding: 8px 16px; font-size: 12px; letter-spacing: 1px; background: transparent; border-color: rgba(159,255,176,.35); opacity: .8; }
@@ -1001,7 +986,6 @@
     <div id="black-hole" hidden></div>
     <div id="time-trial" hidden>HUB TIME TRIAL</div>
   </div>
-  <div id="browse-banner" hidden><span id="browse-watching">Browsing live</span> <span id="browse-pitch">— flying is free, press Back to launch.</span> <a id="browse-buy" href="https://pump.fun/coin/6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump" target="_blank" rel="noopener">Buy $CITIZEN</a> · <button id="browse-back" type="button">Back</button></div>
   <div id="damage-flash"></div>
   <div id="singularity-flash"></div>
   <div id="time-trial-banner" hidden>RACE STARTED</div>
@@ -1083,7 +1067,6 @@
       <button id="launch">LAUNCH</button>
       <button id="disconnect-wallet" hidden>Disconnect</button>
     </div>
-    <button id="browse-btn" type="button">BROWSE</button>
     <a id="buy-citizen" href="https://pump.fun/coin/6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump" target="_blank" rel="noopener" hidden>BUY $CITIZEN</a>
     <div id="launch-loading" hidden>
       <div id="launch-loading-text">Preparing your sector...</div>

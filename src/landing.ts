@@ -49,7 +49,6 @@ const walletHintEl = document.getElementById('wallet-hint')!
 const walletStatusEl = document.getElementById('wallet-status')!
 const landingMusicToggleEl = document.getElementById('landing-music-toggle') as HTMLButtonElement
 const buyCitizenEl = document.getElementById('buy-citizen') as HTMLAnchorElement
-const browseBtnEl = document.getElementById('browse-btn')!
 // Visible, secondary affordance — open access means LAUNCH never triggers this anymore, so it stands on its
 // own as a quiet upsell for holder cosmetics / Ranked PvP eligibility. lockWalletButton() below swaps its
 // label (and hides the wallet-hint copy) once a session exists; disconnectWalletBtn (beside LAUNCH) covers unlinking.
@@ -386,27 +385,3 @@ async function beginLaunch(): Promise<void> {
 
 launchEl.addEventListener('click', () => { void beginLaunch() })
 nicknameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') void beginLaunch() })
-
-let browseStarted = false
-browseBtnEl.addEventListener('click', async () => {
-  if (browseStarted || launchStarted) return
-  browseStarted = true
-  launchEl.disabled = true
-  launchLoadingEl.hidden = false
-  setLaunchStatus('Loading…')
-  clearInterval(statsTimer)
-  net.disconnect()
-  try {
-    await nextPaint()
-    const game = await import('./main')
-    await nextPaint()
-    landingMusic.stop()
-    game.enterBrowse()
-  } catch (e) {
-    browseStarted = false
-    launchEl.disabled = false
-    launchLoadingEl.hidden = true
-    setLaunchStatus('Browse failed — refresh and try again.')
-    console.error(e)
-  }
-})
