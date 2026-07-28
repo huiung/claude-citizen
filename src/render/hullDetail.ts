@@ -27,9 +27,22 @@ const DETAIL_TEXTURE_SIZE = 256
  *  shows plate seams at a plausible spacing rather than either a single giant plate or noise. */
 const TILE_WORLD_SIZE = 0.9
 
-/** Strength of the normal perturbation. The faceted silhouette should stay the primary read, so
- *  this is deliberately below the point where the plating starts to look embossed. */
-const DETAIL_NORMAL_SCALE = 0.55
+/** Strength of the normal perturbation.
+ *
+ *  Measured, not guessed. Studio A/B at `?dist=0.55` (`?detail=off` against `?nscale=`) shows the
+ *  original 0.55 producing a frame indistinguishable from no detail map at all, on a hull whose
+ *  label confirmed 19 of 30 materials were carrying one. The cause is the source texture rather
+ *  than the code: the seams deviate about 32/255 from flat and the machining noise is drawn at
+ *  half alpha, so a normalScale under 1 leaves a perturbation smaller than the tone curve can
+ *  resolve. 2.5 is where plate seams and surface grain read on the hauler and miner at close and
+ *  mid range; by 4 the noise has coarsened into visible speckle that reads as dirt.
+ *
+ *  Scaling here rather than redrawing the canvases keeps the change to one reviewable number, and
+ *  the deviation stays well inside 8-bit range at 2.5, so nothing bands.
+ *
+ *  This is a close-range effect by design. At the studio's default framing the detail is nearly
+ *  gone even at 3 — that is mipmapping doing its job, not a failure. */
+const DETAIL_NORMAL_SCALE = 2.5
 
 /** Repeat values are snapped to these, so a fleet needs this many Texture instances at most. */
 const REPEAT_BUCKETS = [1, 2, 3, 5, 8] as const
