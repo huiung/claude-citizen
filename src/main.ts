@@ -134,7 +134,7 @@ import {
   leaderboardUrl,
   nextLeaderboardOffset,
   normalizeLeaderboardPage,
-  pvpSeasonCopy,
+  pvpSeasonParts,
   type LeaderboardMode,
   type LeaderboardPage,
   type LeaderboardRow,
@@ -537,8 +537,8 @@ function renderLeaderboardRowsForMode(listEl: HTMLElement, rows: LeaderboardRow[
 function renderPvpSeasonPanel(el: HTMLElement, mode: LeaderboardMode): void {
   el.hidden = mode !== 'pvp'
   if (mode !== 'pvp') return
-  const season = pvpSeasonCopy()
-  el.innerHTML = `<b>${escapeHtml(season.title)}</b><span>${escapeHtml(season.ends)}</span><span>${escapeHtml(season.prizes)}</span><span>${escapeHtml(season.rules)}</span>`
+  const season = pvpSeasonParts()
+  el.innerHTML = `<b>${escapeHtml(season.title)}</b>` + season.details.map((d) => `<span>${escapeHtml(d)}</span>`).join('')
 }
 function syncLeaderboardModeButtons(slot: 'landing' | 'hud'): void {
   const mode = slot === 'landing' ? landingLeaderboardMode : hudLeaderboardMode

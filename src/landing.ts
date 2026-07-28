@@ -15,7 +15,7 @@ import {
   leaderboardUrl,
   nextLeaderboardOffset,
   normalizeLeaderboardPage,
-  pvpSeasonCopy,
+  pvpSeasonParts,
   type LeaderboardMode,
   type LeaderboardRow,
 } from './ui/leaderboard'
@@ -135,8 +135,8 @@ function leaderboardMetric(row: LeaderboardRow): string {
 function renderPvpSeasonPanel(): void {
   lbSeasonLandingEl.hidden = leaderboardMode !== 'pvp'
   if (leaderboardMode !== 'pvp') return
-  const season = pvpSeasonCopy()
-  lbSeasonLandingEl.innerHTML = `<b>${escapeHtml(season.title)}</b><span>${escapeHtml(season.ends)}</span><span>${escapeHtml(season.prizes)}</span><span>${escapeHtml(season.rules)}</span>`
+  const season = pvpSeasonParts()
+  lbSeasonLandingEl.innerHTML = `<b>${escapeHtml(season.title)}</b>` + season.details.map((d) => `<span>${escapeHtml(d)}</span>`).join('')
 }
 
 function syncLeaderboardModeButtons(): void {

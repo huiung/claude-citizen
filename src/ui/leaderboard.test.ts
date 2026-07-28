@@ -9,6 +9,7 @@ import {
   nextLeaderboardOffset,
   normalizeLeaderboardPage,
   pvpSeasonCopy,
+  pvpSeasonParts,
   defaultLandingLeaderboardMode,
 } from './leaderboard'
 
@@ -58,18 +59,35 @@ describe('leaderboard UI paging', () => {
     expect(leaderboardPilotDisplayText({ name: 'PILOT' })).toBe('PILOT')
   })
 
-  it('formats PvP season contest copy for the leaderboard panels', () => {
+  it('formats PvP season contest copy while the season is live', () => {
     expect(pvpSeasonCopy(Date.UTC(2026, 5, 22))).toEqual({
       title: 'SEASON 1 LIVE',
       ends: 'ENDS JUN 30 23:59 UTC',
       prizes: 'TOP 3: 1 / 0.5 / 0.25 SOL',
       rules: 'RANKED ONLY - 1,000+ TOKENS',
     })
-    expect(pvpSeasonCopy(Date.UTC(2026, 6, 1)).title).toBe('SEASON 1 ENDED')
   })
 
-  it('opens mobile companion visitors on the PvP season board', () => {
-    expect(defaultLandingLeaderboardMode(true)).toBe('pvp')
+  it('drops the countdown and the prize table once the season has ended', () => {
+    // A finished contest must not keep advertising SOL payouts. There is no Season 2.
+    const ended = pvpSeasonCopy(Date.UTC(2026, 6, 1))
+    expect(ended.title).toBe('SEASON 1 ENDED')
+    expect(ended.ends).toBe('')
+    expect(ended.prizes).toBe('')
+    expect(ended.rules).toBe('RANKED ONLY - 1,000+ TOKENS')
+  })
+
+  it('renders only the non-empty season details', () => {
+    expect(pvpSeasonParts(Date.UTC(2026, 5, 22)).details).toEqual([
+      'ENDS JUN 30 23:59 UTC',
+      'TOP 3: 1 / 0.5 / 0.25 SOL',
+      'RANKED ONLY - 1,000+ TOKENS',
+    ])
+    expect(pvpSeasonParts(Date.UTC(2026, 6, 1)).details).toEqual(['RANKED ONLY - 1,000+ TOKENS'])
+  })
+
+  it('opens every visitor on the career board, mobile included', () => {
+    expect(defaultLandingLeaderboardMode(true)).toBe('career')
     expect(defaultLandingLeaderboardMode(false)).toBe('career')
   })
 })

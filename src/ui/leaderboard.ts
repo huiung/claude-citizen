@@ -2,8 +2,11 @@ export const LEADERBOARD_PAGE_SIZE = 10
 export const LEADERBOARD_MAX_RANK = 100
 export type LeaderboardMode = 'career' | 'pvp' | 'race' | 'blackhole' | 'pilotlevel'
 
-export function defaultLandingLeaderboardMode(isMobile: boolean): LeaderboardMode {
-  return isMobile ? 'pvp' : 'career'
+// Everyone opens on the career board. Mobile used to open on PvP to showcase the Season 1
+// contest; that season is over and there is no successor, so sending phone visitors straight
+// to a finished contest for a token they don't hold is the worst possible first screen.
+export function defaultLandingLeaderboardMode(_isMobile: boolean): LeaderboardMode {
+  return 'career'
 }
 
 export const PVP_SEASON = {
@@ -95,14 +98,24 @@ export function leaderboardPilotDisplayText(row: LeaderboardRow): string {
   return wallet ? `${callsign}  ${wallet}` : callsign
 }
 
+// Season 1 has ended and no Season 2 is planned. Once ended, the countdown and the prize table
+// are dropped: a finished contest still advertising SOL payouts reads as abandoned at best.
+// The ranked-entry rule stays — Ranked PvP itself is unchanged and still requires the tokens.
+// Callers must skip empty fields rather than rendering blank slots.
 export function pvpSeasonCopy(now = Date.now()): { title: string; ends: string; prizes: string; rules: string } {
-  const status = now <= PVP_SEASON.endUtcMs ? 'LIVE' : 'ENDED'
+  const ended = now > PVP_SEASON.endUtcMs
   return {
-    title: `${PVP_SEASON.title} ${status}`,
-    ends: 'ENDS JUN 30 23:59 UTC',
-    prizes: PVP_SEASON.prizeText,
+    title: `${PVP_SEASON.title} ${ended ? 'ENDED' : 'LIVE'}`,
+    ends: ended ? '' : 'ENDS JUN 30 23:59 UTC',
+    prizes: ended ? '' : PVP_SEASON.prizeText,
     rules: PVP_SEASON.rulesText,
   }
+}
+
+/** Season copy as renderable parts, empties dropped. Both leaderboard panels use this. */
+export function pvpSeasonParts(now = Date.now()): { title: string; details: string[] } {
+  const { title, ends, prizes, rules } = pvpSeasonCopy(now)
+  return { title, details: [ends, prizes, rules].filter((s) => s.length > 0) }
 }
 
 export function normalizeLeaderboardPage(payload: unknown, fallbackOffset = 0): LeaderboardPage {
