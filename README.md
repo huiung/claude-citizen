@@ -15,16 +15,14 @@ https://github.com/huiung/claude-citizen/releases/download/v0.7-cinematic/claude
 > as a comparison target. No assets, names, lore, or code from the original are used —
 > everything here is procedurally generated, hand-made, or CC0-licensed.
 
-> Named-planet imagery: NASA/USGS (public domain) — MESSENGER (Mercury, + USGS DEM relief), Magellan (Venus), Blue Marble (Earth, orbit view), Viking (Mars, + MOLA relief), Cassini (Jupiter).
-
 ## Play now
 
 **▶ Play now: [claudecitizen.com](https://claudecitizen.com)** — no download, no account. Click → fly, in seconds.
 
 Flying is free and needs no wallet. Connect one only if you want holder cosmetics or Ranked PvP.
 
-Other pilots share your sector in real time (and you can chat). Every feature that breaks
-"60 seconds to flight" gets rejected — that's the one rule. Prefer to self-host? See below.
+Every feature that breaks "60 seconds to flight" gets rejected — that's the one rule.
+Prefer to self-host? See below.
 
 ```bash
 git clone https://github.com/huiung/claude-citizen
@@ -39,41 +37,22 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 ## What works today
 
 - **CLAUDE flies with you:** a standalone AI pilot (real Claude API calls, openly an AI) joins the multiplayer relay as pilot CLAUDE, flies a loop between named landmarks so it's actually around to meet, and replies to your in-sector chat. Runs as its own service (`npm run bot`) — see [`bot/README.md`](./bot/README.md)
-- 6DOF spaceflight in your browser — coupled (flight assist) and decoupled (full Newton) modes
-- A refinery, a mining colony, planets, an asteroid belt — the world is procedurally generated (ships & sound effects are hand-made or CC0)
-- **Mine ORE** from asteroids with a mining laser — ore veins deplete and fresh ones respawn around you, so you prospect and move on instead of parking on one rock forever
-- **A living economy:** dock to trade ore and alloy; prices react to your trades and drift back over time
-- **Upgrade your craft:** cargo hold, top speed, boost, and mining yield — five tiers each, a credit sink that scales with your rank
-- **Delivery contracts:** accept haul missions, deliver to the destination outpost for the reward
-- **Pirates:** hostiles hunt you in the sector — shoot back, watch your hull, collect the bounty
-- **PvP Phase 1:** cycle to the deep-space Practice Arena or Ranked Arena beacon with `[N]`, quantum-jump beyond the named solar system, then enter the arena marker to enable pilot-vs-pilot fire, server-authoritative hull damage, peer health bars, kill feed, and a small credit bounty. Practice is open; Ranked requires a verified 1,000+ token balance, uses a wallet-only Ranked PvP leaderboard, and pushes under-threshold pilots back at the boundary. The expanded deep-space arenas give dogfights more room before the bloodbath starts
-- **An endless procedural galaxy:** fly any direction and planets, moons, stations, and derelicts keep appearing — some planets are vast
-- **Deep space:** the farther you fly from the core, the more rare gold ore veins (credit jackpots) and tougher, higher-bounty pirates appear — a HUD gauge tracks how deep (and dangerous) you are. Risk and reward scale together
-- **A named solar system:** Sun + Mercury through Saturn at a compressed scale, each with a procedurally textured surface (oceans/continents, gas bands, ice caps) — and they're solid, so you fly *around* them, not through
-- **Drop to the surface:** approach an earth-type world and it resolves into continents, rivers, forests, deserts and snow-capped peaks (procedural, higher-detail up close); the sky fills in with day/night atmosphere, an altimeter kicks in, and collision follows the *real terrain* — so you can skim low over its hills and valleys instead of bouncing off a sphere. Dive in hot and re-entry heat kicks in: a plasma sheath (driven by atmospheric density × descent angle × speed), screen shake, a whiteout crossing the cloud layer, and fog/sky color shifting through the descent
-- **Earth skypad landings:** touch down on a named Earth megacity's skypad — first visit pays 1,500 cr and grows your cities-visited collection, a revisit pays 150 cr and repairs your hull; thrust to lift back off. Earth-only for now
-- **Quantum travel:** pick a destination with `[N]` or open the **Solar Atlas** with `[M]` and click a planet, charge the drive, and jump to any planet in the system or the deep-space PvP arena approach lanes — warp streaks, a wide-FOV cruise, and a named arrival
-- **A cinematic sky:** bloom glow, sunlit planet atmospheres (bright day limb, a warm sunset terminator, dark night side), a procedural nebula backdrop, slowly rotating worlds, and parallax dust that streams past for a sense of speed
-- **Ship classes:** buy and switch hulls at a station — hauler, fighter, miner, interceptor (detailed 3D models), each trading cargo/speed/toughness, unlocked as you climb the ranks
-- **Holder cosmetics:** verified token holders get tiered nameplate/chat colors. Holder-only HANGAR visuals unlock by tier: T2 gets Doge Runner Mk II; T3 gets Void Interceptor and Sovereign Wraith. Cosmetic only: no stat advantage
-- **Orbit camera:** press `C` to inspect your ship from every angle, then use the mouse wheel to zoom the orbit view in and out
-- **A capital ship:** a procedural dreadnought ~120× your fighter, its hull aglow with hundreds of windows — fly its length for the scale
-- **Game feel:** a chase camera that carries G-force weight, a boost ignition punch (FOV kick + exhaust flare + whoosh), and an air-rush layer that swells with speed
-- **Combat HUD:** target brackets + range, off-screen threat arrows (know where you're being shot from), and a lead indicator so you can actually land hits on pirates
-- **Leaderboards:** Career ranks the top 100 pilots by *lifetime* credits earned; Ranked PvP tracks ranked arena kills. Wallet-connected pilots display as callsign (short wallet), while anonymous Career pilots keep their callsign only. Page through both on the landing screen and in-game (`[L]`)
-- **Pilot ranks:** six tiers (Cadet → Admiral) earned by *lifetime* credits, so spending never demotes you — each rank brings a growing **earnings bonus** (+0% → +50% on every payout) and **unlocks new ships**, so there's always a reason to keep flying. HUD progress track, promotion banner, and rank tags on the leaderboard
-- **Pilot Level & campaign:** a separate *active* growth spine alongside Career Rank — hunt raiders and run a **Sector 1 quest chain** to earn XP and **level up** (HUD shows your level + a gold XP bar; level-up banners fire). Pirates now come in tiers — **grunt → elite → named miniboss** — and the campaign hunts you toward named raiders (*Vex Marrow*, then the *Raider Captain*) before unlocking the next sector; named kills drop guaranteed crafting cores. Vertical slice: Sector 1, levels 1–5
-- **Crafting & cosmetics:** refine credits into Craft Cores at the station Forge, then spend cores + credits crafting cosmetic kits (trail, hull, aura) with a pity-ramped rarity roll — common through legendary, guaranteed epic-or-better by the 20th craft since your last one. Equip whatever you've forged into its slot
-- **Player marketplace:** list crafted cosmetics for sale — for credits, or for real $CITIZEN with on-chain settlement (seller gets 95%, treasury takes a 5% cut)
-- **In-station casino:** credits-only roulette at the Forge — even-money bets pay 2×, the green 0 gives the house its edge. Credits only: no rank or Career impact
-- **Daily objectives & login streak:** three deterministic daily objectives (`G`) — mine, kill pirates, deliver contracts, earn credits, or dock — reward Craft Cores, with a set-completion bonus and a login-streak bonus (capped at 4 cores/day)
-- **Black hole dive:** a real singularity out past the named system — a steepening gravity well, tidal-shear hull damage that ramps the deeper you go, and instant death past the event horizon. Closest-survived-approach is tracked on a server-persisted leaderboard (VOID tab)
-- **Race mode:** a golden-ring time trial circuit around the Season Hub — thread the gates, beat your best time, climb the server-persisted RACE leaderboard
-- **Mobile companion mode:** a scoped-down flight mode for phones — a virtual stick (pitch/yaw) plus Thrust/Boost/Brake/Mine/Dock/Jump/Nav/Cam buttons. Flight assist is forced on; there's no roll, strafe, or vertical thrust. Mining, docking, trading, upgrades, wallet, quantum travel, and leaderboards all work — but **combat is off**: no pirates, no PvP, no training drones. It's a companion mode, not the full cockpit
-- Hybrid audio: procedural engine/mining/quantum beds + CC0 sci-fi event SFX
-- Real-time multiplayer: see other pilots' craft, and chat in-sector (Enter)
-- **Progress saves automatically** — anonymous token, no account; come back later and your credits, cargo, upgrades, and ship are still yours. Grab a **Pilot Code** to restore your pilot on another device (one live session per code). Optional wallet linking can claim your anonymous progress to a verified wallet identity; claimed anonymous tokens are retired server-side so old localStorage saves cannot resurrect duplicate leaderboard rows
-- 807 tests across 89 files, because "built with AI" shouldn't mean "built badly"
+- **6DOF spaceflight in your browser** — coupled (flight assist) and decoupled (full Newton) modes, a chase camera that carries G-force weight, a boost ignition punch, and an air-rush layer that swells with speed
+- **Mine, trade, upgrade:** pull ORE from asteroids with a mining laser (veins deplete and fresh ones respawn, so you prospect and move on), dock to sell into a market whose prices react to your trades and drift back, then sink the credits into cargo hold, top speed, boost, and mining yield — five tiers each
+- **Contracts and pirates:** accept haul missions for a delivery reward, and fight off hostiles that come in tiers — grunt, elite, and named miniboss. Target brackets with range, off-screen threat arrows, and a lead indicator so you can actually land hits
+- **An endless procedural galaxy:** fly any direction and planets, moons, stations, and derelicts keep appearing. The farther you get from the core, the more rare gold ore veins and tougher, higher-bounty pirates you find — a HUD gauge tracks how deep and dangerous you are
+- **A named solar system:** Sun + Mercury through Saturn at a compressed scale, each procedurally textured and *solid*, so you fly around them rather than through. Pick one with `[N]` or click it in the **Solar Atlas** (`[M]`), charge the drive, and quantum-jump — warp streaks, a wide-FOV cruise, and a named arrival
+- **Drop to the surface:** approach an earth-type world and it resolves into continents, rivers, forests, deserts and snow-capped peaks, with day/night atmosphere, an altimeter, and collision that follows the *real terrain* — so you skim its hills instead of bouncing off a sphere. Dive in hot and re-entry heat kicks in: a plasma sheath, screen shake, and a whiteout crossing the cloud layer. Touch down on a named Earth megacity's skypad for credits and a hull repair
+- **A cinematic sky:** bloom glow, sunlit planet atmospheres (bright day limb, warm sunset terminator, dark night side), a procedural nebula backdrop, and parallax dust streaming past for a sense of speed. Out in it: a procedural dreadnought ~120× your fighter, hull aglow with hundreds of windows — fly its length for the scale
+- **Ship classes:** buy and switch between four hulls at a station — hauler, fighter, miner, interceptor — each trading cargo, speed and toughness against the others, unlocked as you climb the ranks. Press `C` for an orbit camera and inspect whatever you're flying
+- **Two progression spines:** Career Rank climbs on *lifetime* credits (Cadet through Warlord, so spending never demotes you), each rank adding an earnings bonus that tops out at +50% and unlocking new ships. Pilot Level is the active one — hunt raiders and run the Sector 1 quest chain for XP. Campaign is a vertical slice: Sector 1, levels 1–5
+- **PvP arenas:** cycle to the deep-space Practice or Ranked beacon with `[N]`, jump out past the named system, and enter the arena marker to enable pilot-vs-pilot fire — server-authoritative hull damage, peer health bars, kill feed, and a small credit bounty. Practice is open to anyone; Ranked requires a verified 1,000+ token balance and keeps its own leaderboard
+- **Crafting, cosmetics, and a marketplace:** refine credits into Craft Cores at the station Forge, then spend cores and credits on cosmetic kits (trail, hull, aura) with a pity-ramped rarity roll that guarantees epic-or-better by the 20th craft. List what you forge for credits or for real $CITIZEN with on-chain settlement (seller gets 95%, treasury takes 5%). Verified token holders also get tiered nameplate colors and holder-only hangar hulls — cosmetic only, no stat advantage
+- **Reasons to log in:** three deterministic daily objectives (`G`) paying Craft Cores with a set-completion and login-streak bonus, credits-only roulette at the Forge, a golden-ring race circuit around the Season Hub, and a real black hole out past the named system — a steepening gravity well with tidal-shear damage and instant death past the horizon. Race times and closest-survived approaches are both server-persisted leaderboards
+- **Leaderboards:** Career ranks the top 100 pilots by lifetime credits earned; Ranked PvP tracks arena kills. Page through both on the landing screen and in-game (`[L]`)
+- **Real-time multiplayer and persistence:** see other pilots' craft and chat in-sector (Enter), over hybrid audio (procedural engine/mining/quantum beds + CC0 sci-fi SFX). Progress saves automatically to an anonymous token — no account — and a **Pilot Code** restores your pilot on another device. Link a wallet to claim that progress to a verified identity
+- **Mobile companion mode:** a scoped-down flight mode for phones — virtual stick plus Thrust/Boost/Brake/Mine/Dock/Jump/Nav/Cam. Flight assist is forced on; no roll, strafe, or vertical thrust. Mining, docking, trading, upgrades, wallet, quantum travel and leaderboards all work, but **combat is off**. It's a companion mode, not the full cockpit
+- **800+ tests across the sim, server, and UI logic**, because "built with AI" shouldn't mean "built badly"
 
 ## Controls
 
@@ -102,16 +81,7 @@ Other pilots on the same server show up next to you in real time. That's it. Tha
 
 | Phase | What | Status |
 |---|---|---|
-| 0 | Flyable browser sandbox + multiplayer presence | ✅ shipped (day one) |
-| 1 | Docking, two-way cargo loop, credits | ✅ shipped |
-| 2 | Mining, dynamic market, craft upgrades, contracts, audio | ✅ shipped |
-| 3 | Pirate threats — combat, hull, bounties, safe zones | ✅ shipped |
-| 4 | Endless procedural galaxy, quantum travel, ship classes | ✅ shipped |
-| 5 | Persistence (anonymous token) + in-sector chat | ✅ shipped |
-| 6 | Hosted, playable at [claudecitizen.com](https://claudecitizen.com) | ✅ shipped |
-| 7 | Low-poly planet surfaces + cinematic sky (bloom, atmospheres, nebula, warp) | ✅ shipped |
-| 8 | Game feel + 3D ship models + capital ship + combat HUD + leaderboard | ✅ shipped |
-| 9 | Detailed earth-type surfaces, day/night atmosphere, low-altitude terrain-following flight | ✅ shipped |
+| 0–9 | Flyable sandbox, multiplayer, docking + economy, mining, combat, endless galaxy, quantum travel, ship classes, persistence, hosting, planet surfaces, cinematic sky | ✅ shipped |
 | 10 | PvP combat — practice/ranked arenas, 1,000+ token Ranked gate, peer hull bars, kill feed, Ranked PvP leaderboard | phase 1 shipped |
 | 11 | Pilot progression — active Pilot Level spine, Sector 1 campaign quest chain, enemy tiers (grunt/elite/named) | slice shipped (Lv 1–5) |
 | 12 | Ship-based touchdown/liftoff on Earth skypads, credits + hull repair | ✅ shipped |
@@ -127,8 +97,8 @@ Every line of this project is written with **Claude** (Anthropic's frontier mode
 driving [Claude Code](https://claude.com/claude-code). One human sets direction, reviews,
 and tunes the flight feel. The AI does the typing.
 
-The dev log lives in [FABLE.md](./FABLE.md) — what got built, what the human did,
-what the model did. Receipts, not claims.
+The full dev log is the [commit history](https://github.com/huiung/claude-citizen/commits/main) —
+every change, dated, with the reasoning in the message. Receipts, not claims.
 
 ## Contributing
 
@@ -142,6 +112,11 @@ Ambitious, probably stupid, doing it anyway.
 $Citizen Token
 
 **CA:** `6FCeoWmjurxX7EsH7zdWRMDn4HGTBhJXLryKTqkepump`
+
+## Credits
+
+Named-planet imagery: NASA/USGS (public domain) — MESSENGER (Mercury, + USGS DEM relief),
+Magellan (Venus), Blue Marble (Earth, orbit view), Viking (Mars, + MOLA relief), Cassini (Jupiter).
 
 ## License
 
