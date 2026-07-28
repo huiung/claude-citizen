@@ -186,9 +186,6 @@ injectAnalytics() // Vercel Web Analytics (no-op off Vercel / in dev)
 
 const INTERP_DELAY_MS = 120
 const URL_PARAMS = new URLSearchParams(location.search)
-const CAPTURE_OG = URL_PARAMS.get('capture') === 'og'
-const SHOWCASE_HOLDER = URL_PARAMS.get('showcase') === 'holder'
-const SHOWCASE_TIME_TRIAL = URL_PARAMS.get('showcase') === 'time-trial'
 const MOBILE_COMPANION = document.documentElement.classList.contains('is-mobile')
 const BOT = URL_PARAMS.get('bot') === '1' // browser autopilot: this tab IS the CLAUDE pilot
 const BOT_COSMETICS = 'comet-wake-kit:legendary,nebula-hull-kit:legendary,void-runner-kit:legendary'
@@ -285,7 +282,7 @@ const flightPlanSkipEl = document.getElementById('flight-plan-skip') as HTMLButt
 const flightPlanButtons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-plan]'))
 // Onboarding: show a "next objective" only to brand-new pilots. localStorage gate (this device
 // hasn't onboarded) is the fast path; a returning token with saved progress also disables it.
-let onboardingActive = !CAPTURE_OG && !BOT && !localStorage.getItem('scc.onboarded')
+let onboardingActive = !BOT && !localStorage.getItem('scc.onboarded')
 let sessionKicked = false // signed in elsewhere — freeze the objective HUD on the warning
 let flightPlanObjective: string | null = null
 let flightPlanObjectiveUntil = 0
@@ -647,7 +644,6 @@ statsTimer = setInterval(refreshLandingStats, 6000)
 const renderer = new THREE.WebGLRenderer({
   antialias: true,
   logarithmicDepthBuffer: true,
-  preserveDrawingBuffer: SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL,
 })
 renderer.setSize(innerWidth, innerHeight)
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
@@ -670,150 +666,6 @@ labelRenderer.domElement.style.position = 'fixed'
 labelRenderer.domElement.style.top = '0'
 labelRenderer.domElement.style.pointerEvents = 'none'
 appEl.appendChild(labelRenderer.domElement)
-
-type HolderShowcaseStep = {
-  tier: number
-  callsign: string
-  label: string
-  color: string
-  chat: string
-}
-const HOLDER_SHOWCASE_STEPS: HolderShowcaseStep[] = [
-  { tier: 0, callsign: 'PILOT', label: 'STANDARD', color: '#d9ecff', chat: '#9fffb0' },
-  { tier: 1, callsign: 'AURIC', label: 'TIER 1 / NAME COLOR', color: '#ffd24a', chat: '#ffd24a' },
-  { tier: 2, callsign: 'ION', label: 'TIER 2 / CHAT COLOR', color: '#4ef0ff', chat: '#4ef0ff' },
-  { tier: 3, callsign: 'VOID', label: 'TIER 3 / VOID INTERCEPTOR', color: '#c08aff', chat: '#c08aff' },
-]
-const HOLDER_SHOWCASE_STEP_MS = 3000
-const showcaseCanvas = SHOWCASE_HOLDER ? document.createElement('canvas') : null
-const showcaseCtx = showcaseCanvas?.getContext('2d') ?? null
-if (showcaseCanvas) {
-  showcaseCanvas.width = 1280
-  showcaseCanvas.height = 720
-}
-let showcaseStart = 0
-let showcaseStepIdx = -1
-
-function holderShowcaseElapsed(now: number): number {
-  if (!showcaseStart) showcaseStart = now
-  return Math.max(0, now - showcaseStart)
-}
-
-function holderShowcaseStepIndex(now: number): number {
-  return Math.min(HOLDER_SHOWCASE_STEPS.length - 1, Math.floor(holderShowcaseElapsed(now) / HOLDER_SHOWCASE_STEP_MS))
-}
-
-function activeHolderShowcaseStep(now: number): HolderShowcaseStep {
-  return HOLDER_SHOWCASE_STEPS[holderShowcaseStepIndex(now)]
-}
-
-function roundRect2d(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
-  ctx.beginPath()
-  ctx.moveTo(x + r, y)
-  ctx.arcTo(x + w, y, x + w, y + h, r)
-  ctx.arcTo(x + w, y + h, x, y + h, r)
-  ctx.arcTo(x, y + h, x, y, r)
-  ctx.arcTo(x, y, x + w, y, r)
-  ctx.closePath()
-}
-
-function updateHolderShowcase(now: number): void {
-  if (!SHOWCASE_HOLDER || !running) return
-  const idx = holderShowcaseStepIndex(now)
-  const step = HOLDER_SHOWCASE_STEPS[idx]
-  selfTier = step.tier
-  camThrust = Math.max(camThrust, 0.82)
-  camBoost = true
-  if (idx !== showcaseStepIdx) {
-    showcaseStepIdx = idx
-    nicknameEl.value = step.callsign
-    setPlayerCraft(selectedShipType)
-    addChatLine(step.callsign, 'holder cosmetics online', step.tier)
-  }
-}
-
-function drawHolderShowcaseComposite(now: number): void {
-  if (!SHOWCASE_HOLDER || !showcaseCanvas || !showcaseCtx) return
-  const step = activeHolderShowcaseStep(now)
-  const w = showcaseCanvas.width
-  const h = showcaseCanvas.height
-  showcaseCtx.clearRect(0, 0, w, h)
-  showcaseCtx.drawImage(renderer.domElement, 0, 0, w, h)
-  const vignette = showcaseCtx.createRadialGradient(w / 2, h / 2, 90, w / 2, h / 2, 720)
-  vignette.addColorStop(0, 'rgba(0,0,0,0)')
-  vignette.addColorStop(1, 'rgba(0,0,0,.52)')
-  showcaseCtx.fillStyle = vignette
-  showcaseCtx.fillRect(0, 0, w, h)
-
-  showcaseCtx.save()
-  showcaseCtx.fillStyle = '#f2f8ff'
-  showcaseCtx.font = '700 28px Orbitron, Segoe UI, sans-serif'
-  showcaseCtx.fillText('CLAUDE CITIZEN HOLDER COSMETICS', 42, 54)
-  showcaseCtx.fillStyle = '#9bb6d7'
-  showcaseCtx.font = '14px Segoe UI, sans-serif'
-  showcaseCtx.fillText('Actual gameplay capture: name color, chat nickname, and prestige ship kit by holder tier.', 44, 80)
-
-  showcaseCtx.shadowColor = step.tier > 0 ? step.color : 'rgba(0,0,0,.9)'
-  showcaseCtx.shadowBlur = step.tier > 0 ? 16 : 6
-  roundRect2d(showcaseCtx, 42, 108, 250, 58, 8)
-  showcaseCtx.fillStyle = step.tier > 0 ? 'rgba(20, 16, 28, .72)' : 'rgba(5, 10, 22, .72)'
-  showcaseCtx.strokeStyle = step.tier > 0 ? step.color : 'rgba(160, 190, 255, .32)'
-  showcaseCtx.lineWidth = 1.2
-  showcaseCtx.fill()
-  showcaseCtx.stroke()
-  showcaseCtx.shadowBlur = 0
-  showcaseCtx.fillStyle = step.color
-  showcaseCtx.font = '700 12px Orbitron, Segoe UI, sans-serif'
-  showcaseCtx.fillText(step.label, 58, 130)
-  showcaseCtx.font = '700 22px Orbitron, Segoe UI, sans-serif'
-  showcaseCtx.fillText(step.callsign, 58, 156)
-
-  roundRect2d(showcaseCtx, 42, h - 88, 340, 48, 7)
-  showcaseCtx.fillStyle = 'rgba(5, 10, 24, .78)'
-  showcaseCtx.strokeStyle = 'rgba(120, 160, 255, .22)'
-  showcaseCtx.fill()
-  showcaseCtx.stroke()
-  showcaseCtx.shadowColor = step.tier > 0 ? step.chat : 'transparent'
-  showcaseCtx.shadowBlur = step.tier > 0 ? 10 : 0
-  showcaseCtx.fillStyle = step.chat
-  showcaseCtx.font = '700 14px Segoe UI, sans-serif'
-  showcaseCtx.fillText(`${step.callsign}:`, 58, h - 58)
-  showcaseCtx.shadowBlur = 0
-  showcaseCtx.fillStyle = '#d8ebff'
-  showcaseCtx.font = '14px Segoe UI, sans-serif'
-  showcaseCtx.fillText('holder cosmetics online', 128, h - 58)
-  showcaseCtx.restore()
-}
-
-;(window as unknown as { renderGameplayShowcase?: (durationMs?: number) => Promise<string> }).renderGameplayShowcase = (durationMs = 14000) => {
-  return new Promise((resolve, reject) => {
-    if (!showcaseCanvas) {
-      reject(new Error('showcase canvas is only available with ?showcase=holder'))
-      return
-    }
-    showcaseStart = performance.now()
-    showcaseStepIdx = -1
-    const chunks: BlobPart[] = []
-    const stream = showcaseCanvas.captureStream(30)
-    const mimeType = MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.42E01E')
-      ? 'video/mp4;codecs=avc1.42E01E'
-      : MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-        ? 'video/webm;codecs=vp9'
-        : 'video/webm'
-    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 6500000 })
-    recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data) }
-    recorder.onerror = () => reject(new Error('MediaRecorder failed'))
-    recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: mimeType })
-      const reader = new FileReader()
-      reader.onload = () => resolve(String(reader.result))
-      reader.onerror = () => reject(reader.error)
-      reader.readAsDataURL(blob)
-    }
-    recorder.start(250)
-    setTimeout(() => recorder.stop(), durationMs)
-  })
-}
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x010206)
@@ -1744,16 +1596,12 @@ function saveHangar(): void {
 // Scatter spawns near the origin so pilots don't all stack on the same point (#1).
 // Well inside the 1600 safe-zone radius, so you never spawn into pirates.
 function randomSpawn(): THREE.Vector3 {
-  if (CAPTURE_OG) return new THREE.Vector3(320, -18, 220)
-  if (SHOWCASE_TIME_TRIAL) return timeTrialShowcaseApproachPoint(260)
-  if (SHOWCASE_HOLDER) return new THREE.Vector3(220, -18, 120)
   const a = Math.random() * Math.PI * 2
   const r = 200 + Math.random() * 400 // 200–600: visibly different, still well inside the 1600 safe zone
   return new THREE.Vector3(Math.cos(a) * r, (Math.random() - 0.5) * 100, Math.sin(a) * r)
 }
 const _spawnUp = new THREE.Vector3(0, 1, 0)
 const _spawnMat = new THREE.Matrix4()
-const _showcaseAway = new THREE.Vector3()
 const _flightPlanSpawnDir = new THREE.Vector3()
 
 const ship = createShipState(randomSpawn())
@@ -1763,11 +1611,7 @@ function faceTarget(target: THREE.Vector3): void {
 }
 /** Aim the ship at the refinery on spawn, so new pilots open on somewhere to go. */
 function faceRefinery(): void {
-  faceTarget(SHOWCASE_HOLDER
-    ? _showcaseAway.copy(ship.position).sub(SUN_POSITION).normalize().add(ship.position)
-    : SHOWCASE_TIME_TRIAL
-      ? hubTimeTrialGates[0].position
-      : REFINERY_POS)
+  faceTarget(REFINERY_POS)
 }
 faceRefinery()
 let shipMesh = buildCraft(selectedShipType, PLAYER_TINT)
@@ -4262,8 +4106,6 @@ const _accel = new THREE.Vector3()
 const _gTarget = new THREE.Vector3()
 const _cameraLookAt = new THREE.Vector3()
 const _cameraLookAtOffset = new THREE.Vector3()
-const _timeTrialShowcaseCamera = new THREE.Vector3()
-const _timeTrialShowcaseLookAt = new THREE.Vector3()
 const G_SWAY_K = 0.03   // accel (m/s²) → offset (m)
 const G_SWAY_MAX = 2.6  // clamp so it never gets nauseating
 const G_SWAY_RESP = 6   // spring stiffness
@@ -4304,17 +4146,6 @@ function updateCamera(dt: number): void {
     camera.lookAt(SPECTATE_ANCHOR)
     return
   }
-  if (SHOWCASE_TIME_TRIAL) {
-    const startGate = hubTimeTrialGates[0].position
-    _timeTrialShowcaseCamera.copy(timeTrialShowcaseApproachPoint(650, 112))
-    _timeTrialShowcaseLookAt.copy(startGate).add(new THREE.Vector3(0, -8, 0))
-    camera.position.copy(_timeTrialShowcaseCamera)
-    camera.lookAt(_timeTrialShowcaseLookAt)
-    camera.fov += (50 - camera.fov) * (1 - Math.exp(-6 * dt))
-    camera.updateProjectionMatrix()
-    return
-  }
-
   // Acceleration this frame → a damped offset opposite to it (push back on boost, dip on brake).
   _accel.copy(ship.velocity).sub(prevCamVel).multiplyScalar(1 / Math.max(dt, 1e-4))
   prevCamVel.copy(ship.velocity)
@@ -4323,28 +4154,24 @@ function updateCamera(dt: number): void {
   gSway.lerp(_gTarget, 1 - Math.exp(-G_SWAY_RESP * dt))
 
   // Ignition kick: pull the camera back along its boom and punch FOV for a beat.
-  if (SHOWCASE_HOLDER) {
-    camOffset.set(4.6, 1.95, 3.2 + boostKick * 1.1).applyQuaternion(ship.quaternion)
-  } else {
-    if (cameraMode === 'orbit') {
-      cameraOrbitElapsed += dt
-      if (cameraOrbitWheelDelta !== 0) {
-        cameraOrbitDistance = zoomOrbitDistance(cameraOrbitDistance, cameraOrbitWheelDelta)
-        cameraOrbitWheelDelta = 0
-      }
-      camOffset.copy(orbitCameraOffset(cameraOrbitElapsed, boostKick, cameraOrbitDistance))
-    } else {
-      if (cameraRearWheelDelta !== 0) {
-        cameraRearDistance = zoomRearDistance(cameraRearDistance, cameraRearWheelDelta)
-        cameraRearWheelDelta = 0
-      }
-      camOffset.copy(rearCameraOffset(boostKick, cameraRearDistance))
+  if (cameraMode === 'orbit') {
+    cameraOrbitElapsed += dt
+    if (cameraOrbitWheelDelta !== 0) {
+      cameraOrbitDistance = zoomOrbitDistance(cameraOrbitDistance, cameraOrbitWheelDelta)
+      cameraOrbitWheelDelta = 0
     }
-    camOffset.applyQuaternion(ship.quaternion)
+    camOffset.copy(orbitCameraOffset(cameraOrbitElapsed, boostKick, cameraOrbitDistance))
+  } else {
+    if (cameraRearWheelDelta !== 0) {
+      cameraRearDistance = zoomRearDistance(cameraRearDistance, cameraRearWheelDelta)
+      cameraRearWheelDelta = 0
+    }
+    camOffset.copy(rearCameraOffset(boostKick, cameraRearDistance))
   }
+  camOffset.applyQuaternion(ship.quaternion)
   camTarget.copy(ship.position).add(camOffset).add(gSway)
   camera.position.lerp(camTarget, 1 - Math.exp(-8 * dt))
-  if (!SHOWCASE_HOLDER && cameraMode === 'orbit') {
+  if (cameraMode === 'orbit') {
     _cameraLookAtOffset.set(0, 0.18, 0).applyQuaternion(ship.quaternion)
     _cameraLookAt.copy(ship.position).add(_cameraLookAtOffset)
     camera.lookAt(_cameraLookAt)
@@ -4353,7 +4180,7 @@ function updateCamera(dt: number): void {
   }
   // FOV gives a gentle sense of speed: a touch wider under boost / quantum travel. No hard punches.
   // Near the black hole it stretches hard (up to +20°) — a cheap "space is warping / lensing" feel.
-  const targetFov = (SHOWCASE_HOLDER ? 48 : (quantum.phase === 'traveling' ? 78 : camBoost ? 82 : 72) + boostKick * 6)
+  const targetFov = (quantum.phase === 'traveling' ? 78 : camBoost ? 82 : 72) + boostKick * 6
     + bhPressure * 20
   camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-6 * dt))
   camera.updateProjectionMatrix()
@@ -4412,12 +4239,12 @@ function launch(): void {
   overlayEl.style.display = 'none'
   // BOT (stream view) shows the flight HUD — hull bar, status, minimap — but hides the wallet panel
   // (it holds credits + rank, which the no-progression bot leaves empty), plus help and crosshair.
-  hudEl.hidden = CAPTURE_OG
-  statusEl.hidden = CAPTURE_OG
-  helpEl.hidden = (CAPTURE_OG || BOT) || MOBILE_COMPANION
-  crosshairEl.hidden = (CAPTURE_OG || BOT)
-  walletEl.hidden = (CAPTURE_OG || BOT)
-  minimapWrapEl.hidden = CAPTURE_OG
+  hudEl.hidden = false
+  statusEl.hidden = false
+  helpEl.hidden = BOT || MOBILE_COMPANION
+  crosshairEl.hidden = BOT
+  walletEl.hidden = BOT
+  minimapWrapEl.hidden = false
   if (MOBILE_COMPANION) {
     document.documentElement.classList.add('mobile-flight')
     mobileControlsEl.hidden = false
@@ -4557,10 +4384,6 @@ if (import.meta.env.DEV && URL_PARAMS.get('earthview')) {
   setTimeout(() => clearInterval(devEarthPoll), 120000)
 }
 export function enterBrowse(): void { enterBrowseMode() }
-if (CAPTURE_OG || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) {
-  nicknameEl.value = SHOWCASE_HOLDER ? HOLDER_SHOWCASE_STEPS[0].callsign : SHOWCASE_TIME_TRIAL ? 'RACER' : 'test'
-  requestAnimationFrame(() => launch())
-}
 if (BOT) {
   nicknameEl.value = 'CLAUDE'
   requestAnimationFrame(() => launch())
@@ -4570,7 +4393,7 @@ function hideFlightPlan(): void {
 }
 
 function showFlightPlan(): void {
-  if (CAPTURE_OG || BOT || SHOWCASE_HOLDER || SHOWCASE_TIME_TRIAL) return
+  if (BOT) return
   const visiblePlans = new Set(flightPlansForDevice(MOBILE_COMPANION).map((plan) => plan.id))
   for (const button of flightPlanButtons) {
     button.hidden = !visiblePlans.has(button.dataset.plan as FlightPlanId)
@@ -5652,7 +5475,6 @@ function frame(now: number): void {
   // Engine bloom lives on the craft's own engine bells. Holder cosmetics stay on
   // name/chat styling and prestige hull parts, so the drive color remains stock.
   boostKick = Math.max(0, boostKick - dt * 3.5)
-  updateHolderShowcase(now)
   const speedFrac = ship.velocity.length() / Math.max(1, hubTimeTrial.active ? baseSpeed : effSpeed())
   applyEngineGlowStyle(playerEngineGlows, engineGlowStyle({
     thrust: camThrust,
@@ -5675,7 +5497,6 @@ function frame(now: number): void {
   composer.render()
   pfMark('render')
   labelRenderer.render(scene, camera)
-  drawHolderShowcaseComposite(now)
   pfMark('labels')
   pfEnd()
 }

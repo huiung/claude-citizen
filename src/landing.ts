@@ -5,7 +5,6 @@ import { NetClient } from './net/client'
 import { activeIdentity, loadWalletSession, saveWalletSession, type WalletSession } from './net/identity'
 import { connectWallet, signMessage, hasWallet, isMobileBrowser, phantomBrowseUrl, WalletError, NO_WALLET } from './net/wallet'
 import { LandingMusic } from './audio/landingMusic'
-import { holderCaptureLaunchConfig } from './ui/landingCapture'
 import {
   canPageLeaderboard,
   defaultLandingLeaderboardMode,
@@ -20,7 +19,6 @@ import {
   type LeaderboardRow,
 } from './ui/leaderboard'
 
-const CAPTURE_LAUNCH = holderCaptureLaunchConfig(new URLSearchParams(location.search))
 const MOBILE_COMPANION = document.documentElement.classList.contains('is-mobile')
 
 const nicknameEl = document.getElementById('nickname') as HTMLInputElement
@@ -412,8 +410,3 @@ browseBtnEl.addEventListener('click', async () => {
     console.error(e)
   }
 })
-
-if (CAPTURE_LAUNCH.autoLaunch) {
-  nicknameEl.value = CAPTURE_LAUNCH.callsign ?? 'PILOT'
-  requestAnimationFrame(() => { void beginLaunch() })
-}
