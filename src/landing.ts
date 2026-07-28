@@ -47,13 +47,16 @@ const restoreBtn = document.getElementById('restore-btn')!
 const pcStatusEl = document.getElementById('pc-status')!
 const connectWalletBtn = document.getElementById('connect-wallet') as HTMLButtonElement
 const disconnectWalletBtn = document.getElementById('disconnect-wallet') as HTMLButtonElement
+const walletHintEl = document.getElementById('wallet-hint')!
 const walletStatusEl = document.getElementById('wallet-status')!
 const landingMusicToggleEl = document.getElementById('landing-music-toggle') as HTMLButtonElement
 const buyCitizenEl = document.getElementById('buy-citizen') as HTMLAnchorElement
 const gateMsgEl = document.getElementById('gate-msg')!
 const browseBtnEl = document.getElementById('browse-btn')!
-connectWalletBtn.hidden = true // Hidden: open access means LAUNCH no longer triggers wallet connect, and no other
-// visible control on the landing page presses this button (its click handler and lockWalletButton's status label remain wired up)
+// Visible, secondary affordance — open access means LAUNCH never triggers this anymore, so it stands on its
+// own as a quiet upsell for holder cosmetics / Ranked PvP eligibility. lockWalletButton() below swaps its
+// label (and hides the wallet-hint copy) once a session exists; disconnectWalletBtn (beside LAUNCH) covers unlinking.
+connectWalletBtn.hidden = false
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:8080`
 const STATS_URL = WS_URL.replace(/^ws/, 'http') + '/stats'
@@ -268,6 +271,7 @@ function lockWalletButton(pubkey: string): void {
   connectWalletBtn.disabled = true
   connectWalletBtn.textContent = `${pubkey.slice(0, 4)}...${pubkey.slice(-4)}`
   disconnectWalletBtn.hidden = false
+  walletHintEl.hidden = true // linked now — the "why connect" upsell no longer applies
 }
 
 if (walletSession) {
