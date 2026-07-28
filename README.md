@@ -21,6 +21,8 @@ https://github.com/huiung/claude-citizen/releases/download/v0.7-cinematic/claude
 
 **▶ Play now: [claudecitizen.com](https://claudecitizen.com)** — no download, no account. Click → fly, in seconds.
 
+Flying is free and needs no wallet. Connect one only if you want holder cosmetics or Ranked PvP.
+
 Other pilots share your sector in real time (and you can chat). Every feature that breaks
 "60 seconds to flight" gets rejected — that's the one rule. Prefer to self-host? See below.
 
