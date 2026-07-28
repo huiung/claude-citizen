@@ -183,10 +183,11 @@ async function refreshHolder(ws, client) {
   let status = holderCache.get(client.pubkey, Date.now())
   if (status === null) {
     status = await fetchHolderStatus(client.pubkey, { apiKey: HELIUS_API_KEY, mint: HOLDER_MINT })
-    // Only cache a VERIFIED lookup. Caching a failed lookup (ok=false → balance 0) would lock a real
-    // holder out of the launch gate for the full TTL on a single transient Helius error.
+    // Only cache a VERIFIED lookup. Caching a failed lookup (ok=false → balance 0) would deny a real
+    // holder their cosmetic flair and ranked-PvP eligibility for the full TTL on a single transient
+    // Helius error.
     if (status.ok) holderCache.set(client.pubkey, status, Date.now())
-    else console.warn(`[holder] lookup failed for ${client.pubkey} — not cached, gate stays fail-closed this attempt`)
+    else console.warn(`[holder] lookup failed for ${client.pubkey} — not cached, no cosmetic/ranked benefit this attempt`)
   }
   if (!clients.has(ws)) return // disconnected during the async lookup
   client.tier = Number(status.tier) || 0
@@ -415,7 +416,7 @@ wss.on('connection', (ws) => {
       // shared secret. Purely visual — ranked PvP still requires a verified wallet balance the bot lacks.
       const isBot = !!(BOT_COSMETIC_SECRET && msg.botSecret === BOT_COSMETIC_SECRET)
       if (!client) {
-        // Build the connection WITHOUT activating — the launch gate decides below.
+        // Build the connection inactive — it's activated unconditionally below, once refreshHolder resolves.
         client = {
           id: Math.random().toString(36).slice(2, 10),
           name: String(msg.name ?? 'PILOT').slice(0, 16),
@@ -610,7 +611,7 @@ wss.on('connection', (ws) => {
     }
 
     if (msg.t === 'save') {
-      if (!client || !client.active) return // only activated (gate-passed) pilots persist progress
+      if (!client || !client.active) return // only activated pilots persist progress
       if (client.isBot) return
       const key = identityKey(client)
       if (!key) return
