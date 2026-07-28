@@ -203,7 +203,6 @@ const browseBtnEl = document.getElementById('browse-btn')!
 const browseBannerEl = document.getElementById('browse-banner')!
 const browseWatchingEl = document.getElementById('browse-watching')!
 const browseBackEl = document.getElementById('browse-back')!
-const gateMsgEl = document.getElementById('gate-msg')!
 const hudEl = document.getElementById('hud')!
 const statusEl = document.getElementById('status')!
 const helpEl = document.getElementById('help')!
@@ -409,49 +408,38 @@ disconnectWalletBtn.addEventListener('click', () => {
 })
 
 // Reusable wallet-connect flow. Used by the (now hidden) Connect button AND by smart LAUNCH:
-// LAUNCH absorbs Connect, so it calls this when no wallet is linked. Early-returns clear
-// pendingLaunch so a failed start never leaves a stuck auto-launch armed.
+// LAUNCH absorbs Connect, so it calls this when no wallet is linked.
 function startWalletConnect(): void {
   if (!hasWallet()) {
-    pendingLaunch = false
     if (isMobileBrowser()) { setWalletStatus('Opening in Phantom — tap Connect there…'); location.href = phantomBrowseUrl(); return }
     setWalletStatus('No Solana wallet found — install the Phantom extension.'); return
   }
-  if (!netConnected) { pendingLaunch = false; setWalletStatus('Not connected to server — try again in a moment.'); return }
+  if (!netConnected) { setWalletStatus('Not connected to server — try again in a moment.'); return }
   setWalletStatus('Connecting…')
   connectWallet().then((pubkey) => {
     pendingPubkey = pubkey
     setWalletStatus('Approve the signature in your wallet…')
     net?.requestChallenge(pubkey)
   }).catch((e) => {
-    pendingLaunch = false // cancelled/failed connect must never auto-launch later
     setWalletStatus(e instanceof WalletError && e.message === NO_WALLET
       ? 'No Solana wallet found — install Phantom.'
       : 'Connection cancelled.')
   })
 }
-connectWalletBtn.hidden = true // LAUNCH absorbs Connect; keep the element for lockWalletButton's ✓ label
+connectWalletBtn.hidden = true // wallet linking lives on the landing page; in-game only displays state
 connectWalletBtn.addEventListener('click', () => startWalletConnect())
 
 // Holder gate (landing): LAUNCH unlocks only for a connected wallet holding ≥1 $CITIZEN.
 // Non-holders can still BROWSE (wired in a later task). Drives launch.disabled + buy link + message.
 // Own var (not selfHolderBalance, which is declared far below) so the initial render is TDZ-safe.
 let holderBalance = 0
-// Set when LAUNCH is pressed without a linked wallet: it kicks off connect and, once the holder
-// balance arrives (onHolder), auto-enters the game if ≥1 $CITIZEN. Reset on any connect failure.
-let pendingLaunch = false
 function walletConnected(): boolean { return Boolean(walletSession) }
 function refreshLaunchGateUI(): void {
   const connected = walletConnected()
-  const canFly = connected && holderBalance >= 1
-  // LAUNCH is always enabled now — it's the single smart entry CTA that routes by wallet state.
+  // Open access: nothing here can block flight. Buy link is an upsell only.
   buyCitizenEl.hidden = !(connected && holderBalance < 1)
-  gateMsgEl.hidden = canFly
-  gateMsgEl.textContent = !connected
-    ? 'Press LAUNCH to connect your wallet and fly — or Browse.'
-    : holderBalance < 1 ? '⚠ This wallet holds no $CITIZEN. You need ≥1 to fly — grab some, or Browse.' : ''
 }
-refreshLaunchGateUI() // LAUNCH always clickable; the gate message guides connect/buy
+refreshLaunchGateUI() // buy-link upsell only; nothing here gates flight
 
 // Landing stats (online / registered pilots) from the relay's /stats endpoint.
 const WS_URL = import.meta.env.VITE_WS_URL ?? `ws://${location.hostname}:8080`
@@ -3719,7 +3707,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   onChallenge: (message) => {
     signMessage(message).then((sig) => {
       if (pendingPubkey) net.submitAuth(pendingPubkey, sig)
-    }).catch(() => { setWalletStatus('Signature cancelled.'); pendingPubkey = null; pendingLaunch = false })
+    }).catch(() => { setWalletStatus('Signature cancelled.'); pendingPubkey = null })
   },
   onAuthOk: (pubkey, sessionId, name) => {
     walletSession = { pubkey, sessionId, connectedAt: Date.now() }
@@ -3736,7 +3724,6 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
   },
   onAuthError: () => {
     pendingPubkey = null
-    pendingLaunch = false // a failed link must never auto-launch later
     setWalletStatus('Wallet not linked — already has a pilot, or signing failed.')
   },
   onProgress(p) {
@@ -3786,37 +3773,9 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     selfHolderBalance = balance
     holderBalance = balance
     refreshLaunchGateUI() // refresh the gate message + buy link for the new balance
-    if (pendingLaunch) { pendingLaunch = false; if (balance >= 1) launch() } // connect→holder≥1 auto-enters; <1 leaves the buy warning showing
+    // No auto-launch on holder resolution: flight never waited on a balance.
     applyLocalDevHolderOverride()
     setPlayerCraft(selectedShipType)
-  },
-  onJoinError(reason) {
-    gateMsgEl.hidden = false
-    gateMsgEl.textContent = reason === 'wallet-required'
-      ? 'Connect a wallet to fly.'
-      : reason === 'insufficient-tokens'
-        ? "Couldn't confirm ≥1 $CITIZEN — make sure you hold the token and retry."
-        : 'Unable to launch right now — retry.'
-    if (running && !spectating) {
-      // launch() optimistically set running=true and revealed the world; the server refused
-      // the join. Roll back to the landing so local state matches the server verdict.
-      running = false
-      overlayEl.classList.remove('hidden')
-      overlayEl.hidden = false
-      overlayEl.style.display = '' // mirror browse-back: restore stylesheet default
-      // Hide everything launch() revealed so the rollback is clean.
-      hudEl.hidden = true
-      statusEl.hidden = true
-      helpEl.hidden = true
-      crosshairEl.hidden = true
-      walletEl.hidden = true
-      minimapWrapEl.hidden = true
-      if (MOBILE_COMPANION) {
-        document.documentElement.classList.remove('mobile-flight')
-        mobileControlsEl.hidden = true
-      }
-      if (document.pointerLockElement) document.exitPointerLock()
-    }
   },
   onPeerLeave(id) {
     const remote = remotes.get(id)

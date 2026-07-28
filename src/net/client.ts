@@ -103,8 +103,6 @@ export interface NetEvents {
   onAuthError?(): void
   /** Our own token-holder status resolved. Tier drives cosmetics; balance drives holder-gated ranked PvP. */
   onHolder?(tier: number, balance: number): void
-  /** Server refused activation (gate): reason is 'wallet-required' | 'insufficient-tokens'. */
-  onJoinError?(reason: string): void
   /** A peer's holder tier arrived/updated after they joined. */
   onPeerHolder?(id: string, tier: number): void
   onPvpHealth?(id: string, hull: number, maxHull: number, self: boolean): void
@@ -250,10 +248,6 @@ export class NetClient {
         break
       case 'holder':
         this.events.onHolder?.(Number(msg.tier) || 0, Number(msg.balance) || 0)
-        break
-      case 'join-error':
-        this.active = false // refused activation — fall back to viewer/Browse; don't auto-rejoin
-        this.events.onJoinError?.(String(msg.reason ?? 'wallet-required'))
         break
       case 'peer-holder': {
         const tier = Number(msg.tier) || 0
