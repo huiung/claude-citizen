@@ -2729,8 +2729,15 @@ if (import.meta.env.DEV) {
       stationMenu.refresh()
       console.log(`[dev] pityCount = ${crafting.pityCount} (set 20 → next craft is guaranteed epic+)`)
     },
+    // Halt the sim without halting the render, so two captures can differ by exactly one render
+    // setting — without this the ship keeps flying between the two shots and nothing is comparable.
+    freeze(on = 1) {
+      devFreezeSim = on !== 0
+      console.log(`[dev] sim ${devFreezeSim ? 'FROZEN (dt=0)' : 'running'}`)
+    },
   }
   console.log('[dev] crafting test helpers: dev.grant(credits?=2e6, cores?=12), dev.setPity(n?=19)')
+  console.log('[dev] dev.freeze(1) halts the sim but keeps rendering; dev.freeze(0) resumes')
 }
 let marketplaceRows: MarketListing[] = []
 let pendingTokenBuy: string | null = null
@@ -4680,9 +4687,15 @@ function pfEnd(): void {
   }
 }
 
+// DEV-only sim freeze (dev.freeze()). Forces dt to 0 so physics, camera smoothing and every
+// dt-driven animation hold still while rendering continues — the only way to capture two frames
+// that differ by exactly one render setting. `last` still advances, so unfreezing does not
+// deliver a huge catch-up dt. `import.meta.env.DEV &&` lets production DCE the check away.
+let devFreezeSim = false
+
 function frame(now: number): void {
   requestAnimationFrame(frame)
-  const dt = Math.min((now - last) / 1000, 0.05)
+  const dt = (import.meta.env.DEV && devFreezeSim) ? 0 : Math.min((now - last) / 1000, 0.05)
   last = now
   pfBegin(now)
 
