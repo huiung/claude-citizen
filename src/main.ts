@@ -3772,7 +3772,7 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
     selfTier = tier
     selfHolderBalance = balance
     holderBalance = balance
-    refreshLaunchGateUI() // refresh the gate message + buy link for the new balance
+    refreshLaunchGateUI() // refresh the buy-link upsell for the new balance
     // No auto-launch on holder resolution: flight never waited on a balance.
     applyLocalDevHolderOverride()
     setPlayerCraft(selectedShipType)
