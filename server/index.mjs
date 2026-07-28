@@ -416,7 +416,8 @@ wss.on('connection', (ws) => {
       // shared secret. Purely visual — ranked PvP still requires a verified wallet balance the bot lacks.
       const isBot = !!(BOT_COSMETIC_SECRET && msg.botSecret === BOT_COSMETIC_SECRET)
       if (!client) {
-        // Build the connection inactive — it's activated unconditionally below, once refreshHolder resolves.
+        // Build the connection inactive — activated below once refreshHolder resolves, unless the
+        // socket dropped during that lookup. No gate decides; everyone who is still connected flies.
         client = {
           id: Math.random().toString(36).slice(2, 10),
           name: String(msg.name ?? 'PILOT').slice(0, 16),
