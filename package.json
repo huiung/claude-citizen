@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "server": "node server/index.mjs",
     "bot": "node bot/index.mjs",
+    "pretest": "node scripts/check-dom-ids.mjs",
     "test": "vitest run"
   },
   "dependencies": {
