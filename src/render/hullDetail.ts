@@ -179,13 +179,39 @@ function texturesForRepeat(repeat: number): { normal: THREE.Texture; roughness: 
   return pair
 }
 
-/** True for materials that are their own light source — glow discs, nav lights, canopy glass.
+/** How bright a material's emissive has to be, as relative luminance, before the material counts as
+ *  its own light source rather than as a hull panel with a hint of glow in it.
+ *
+ *  A threshold rather than "any emissive at all", which is what this used to be, and the difference is
+ *  five of the thirteen GLBs. Every material in all five HOLDER SKINS carries a faint emissive — as
+ *  low as 0.01 on a channel, a styling touch rather than a light — so a non-zero test classified the
+ *  whole prestige fleet as self-illuminated and skipped it entirely. Measured in the studio, that is
+ *  `detail 0/37 mats` on `doge-runner` and `0/55` on `abyssal-driller`: no detail maps, and, because
+ *  this same predicate gates `tuneHullMaterials`, no reflectance floor, no metalness ceiling, no ground
+ *  fill and no environment probe either. Those skins were still showing the original bug in full —
+ *  `doge-runner`'s gunmetal body renders as black gaps between floating gold trim — after two rounds of
+ *  work that were believed to have covered the fleet.
+ *
+ *  0.06 has a wide margin on real data. Across the fleet the brightest emissive on a hull panel is
+ *  0.027 (`abyssal-driller`'s dark faintly-lit plate) and the dimmest on a genuine light is 0.12
+ *  (its amber power rail); the glow discs and canopies run 0.16 to 0.76. Nothing sits near the line. */
+const SELF_LIT_EMISSIVE_LUMINANCE = 0.06
+
+/** Relative luminance of a material's emissive contribution, intensity included. */
+export function emissiveLuminance(mat: THREE.MeshStandardMaterial): number {
+  if (!mat.emissive || !(mat.emissiveIntensity > 0)) return 0
+  return relativeLuminance(mat.emissive) * mat.emissiveIntensity
+}
+
+/** True for a material that is its own light source — glow discs, nav lights, canopy glass.
  *  Perturbing the normal of a panel that emits rather than reflects only adds noise to a flat
  *  colour, and a roughness map does nothing at all for it. */
-function isEmissiveSurface(mat: THREE.MeshStandardMaterial): boolean {
-  if (mat.emissive && mat.emissive.getHex() !== 0x000000 && mat.emissiveIntensity > 0) return true
+export function isSelfLitMaterial(mat: THREE.MeshStandardMaterial): boolean {
+  if (emissiveLuminance(mat) >= SELF_LIT_EMISSIVE_LUMINANCE) return true
   return /glow|emissive|light|glass|window|canop/i.test(mat.name)
 }
+
+
 
 /** Reflectance floor for a hull surface, as relative luminance.
  *
@@ -297,7 +323,7 @@ export function applyHullMetalnessCeiling(root: THREE.Object3D, ceiling: number)
     for (const raw of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
       const mat = raw as THREE.MeshStandardMaterial
       if (!mat || !('roughness' in mat)) continue
-      if (isEmissiveSurface(mat)) continue
+      if (isSelfLitMaterial(mat)) continue
       const authored = (mat.userData as AuthoredMetalness).hullAuthoredMetalness ?? mat.metalness
       mat.metalness = Math.min(authored, ceiling)
     }
@@ -327,7 +353,7 @@ export function tuneHullMaterials(root: THREE.Object3D): void {
       const mat = raw as THREE.MeshStandardMaterial
       if (!mat || !('roughness' in mat) || seen.has(mat)) continue
       seen.add(mat)
-      if (isEmissiveSurface(mat)) continue
+      if (isSelfLitMaterial(mat)) continue
 
       ;(mat.userData as AuthoredMetalness).hullAuthoredMetalness = mat.metalness
       if (mat.metalness > MAX_METALNESS_WITH_PROBE) mat.metalness = MAX_METALNESS_WITH_PROBE
@@ -363,6 +389,11 @@ export function applyHullDetail(root: THREE.Object3D, tuning: HullDetailTuning =
     // No UVs means no way to place the map; the generated hulls all have them, but imported or
     // future assets might not, and a missing TEXCOORD_0 would sample garbage.
     if (!mesh.geometry.getAttribute('uv')) return
+    // Greebles (see hullGreebles) are instanced, and their base geometry is a unit box a fraction of a
+    // model unit across once scaled. The repeat below is derived from that base geometry, so it would
+    // tile a whole 256px plate-seam map onto a 0.17-unit chip: a texture fetch per fragment buying a
+    // pattern too small to resolve. Their detail is their silhouette, which is the point of them.
+    if ((mesh as THREE.InstancedMesh).isInstancedMesh) return
 
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
 
@@ -378,7 +409,7 @@ export function applyHullDetail(root: THREE.Object3D, tuning: HullDetailTuning =
       if (!mat || !(mat as THREE.Material).isMaterial) continue
       if (!('roughness' in mat)) continue // not a Standard/Physical material
       if (mat.normalMap) continue // already detailed
-      if (isEmissiveSurface(mat)) continue
+      if (isSelfLitMaterial(mat)) continue
 
       const pair = texturesForRepeat(repeat)
       if (!pair) return
@@ -420,4 +451,4 @@ export function disposeHullDetail(): void {
   source = null
 }
 
-export const HULL_DETAIL_INTERNALS = { REPEAT_BUCKETS, TILE_WORLD_SIZE, snapRepeat, isEmissiveSurface }
+export const HULL_DETAIL_INTERNALS = { REPEAT_BUCKETS, TILE_WORLD_SIZE, snapRepeat, isSelfLitMaterial, emissiveLuminance, SELF_LIT_EMISSIVE_LUMINANCE }

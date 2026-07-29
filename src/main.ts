@@ -79,6 +79,7 @@ import { earthHighColorLoaded, isEarthDataReady, latLonToDir, loadEarthData, sam
 import { computeAtmoFog, computeCelestialHide, computeCloudFogBoost } from './render/atmoImmersion'
 import { initHullEnvProbe, updateHullEnvProbe } from './render/envProbe'
 import { groundFillStrength, updateGroundFill } from './render/groundFill'
+import { setHullGreeblesEnabled } from './render/hullGreebles'
 import { buildCityChunk, selectChunkSite, type CityChunk } from './render/cityChunk'
 import { buildCityLightSplats, cityNightFactor, updateCityLightSplats } from './render/cityLights'
 import { cancelTravel, catchUpQuantum, createQuantum, cycleQuantumDestinationIndex, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
@@ -723,6 +724,10 @@ const camera = new THREE.PerspectiveCamera(FLIGHT_BASE_FOV, innerWidth / innerHe
 // caught judging a value in only one of. Daylight on a real planet needs the real game, and without a
 // switch here the "before" half of that comparison would have to be a source edit and a reload.
 if (!(import.meta.env.DEV && URL_PARAMS.get('hullenv') === 'off')) initHullEnvProbe(renderer, scene)
+
+// The other half of the same A/B, for the procedural greeble pass. Same reasoning, same DEV gate: the
+// studio has `?greeble=0` but no daylight, and hull density has to be judged in both.
+if (import.meta.env.DEV && URL_PARAMS.get('greebles') === 'off') setHullGreeblesEnabled(false)
 
 function buildPvpArenaMarker(center: THREE.Vector3, radius: number, color: number): THREE.Group {
   const group = new THREE.Group()

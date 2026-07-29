@@ -131,6 +131,27 @@ function fallbackCanopyBox(hullBox: THREE.Box3): THREE.Box3 {
   )
 }
 
+/** True for a mesh whose `geometry.boundingBox` says nothing about where it actually is.
+ *
+ *  An `InstancedMesh`'s geometry is the single unscaled prototype every instance is drawn from; its
+ *  bounding box sits at the object's origin at unit size, and the real extents live in
+ *  `instanceMatrix`. Both traverses below read `geometry.boundingBox` directly — which is correct and
+ *  allocation-free for ordinary meshes and simply wrong for an instanced one.
+ *
+ *  This matters as of the procedural greeble pass (`render/hullGreebles`), which parents four
+ *  `InstancedMesh`es to every loaded hull. Folding their unit prototype boxes in would move
+ *  `hullBox`, and every cockpit offset is a fraction of `hullLength` derived from it, so a decoration
+ *  pass would silently relocate the pilot's eye. `Box3.setFromObject` handles instancing properly
+ *  (via `Object3D.boundingBox`) and needs no such guard; these hand-rolled walks do.
+ *
+ *  Skipping rather than expanding is deliberate: greebles sit ON the hull's skin by construction, so
+ *  they can add nothing to a box the skin already defines, and they must not be allowed to lift an eye
+ *  that is meant to clear structure.
+ */
+function isInstancedGeometryProxy(mesh: THREE.Mesh): boolean {
+  return (mesh as THREE.InstancedMesh).isInstancedMesh === true
+}
+
 /** Bounding box of `root`'s meshes expressed in the space `toLocal` maps world space into.
  *
  *  `Box3.setFromObject` would give a world-space box, which is useless here: the hull is parented to
@@ -145,6 +166,7 @@ function localMeshBox(root: THREE.Object3D, toLocal: THREE.Matrix4, target: THRE
   root.traverse((child) => {
     const mesh = child as THREE.Mesh
     if (!mesh.isMesh || !mesh.geometry) return
+    if (isInstancedGeometryProxy(mesh)) return
     if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox()
     if (!mesh.geometry.boundingBox) return
     box.copy(mesh.geometry.boundingBox).applyMatrix4(matrix.multiplyMatrices(toLocal, mesh.matrixWorld))
@@ -193,6 +215,7 @@ function liftClearOfStructure(
   hull.traverse((child) => {
     const mesh = child as THREE.Mesh
     if (!mesh.isMesh || !mesh.geometry) return
+    if (isInstancedGeometryProxy(mesh)) return
     if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox()
     if (!mesh.geometry.boundingBox) return
     box.copy(mesh.geometry.boundingBox).applyMatrix4(matrix.multiplyMatrices(toLocal, mesh.matrixWorld))

@@ -30,6 +30,8 @@
  *    ?env=on|off                              hull environment probe     (default on)
  *    ?envi=<number>                           probe strength override    (default the module's own)
  *    ?metal=<number>                          metalness ceiling override (default the module's own)
+ *    ?greeble=<number>                        greeble triangle target,
+ *                                             0 for none                 (default the module's own)
  *
  *  A note on ?detail: it is the control half of an A/B, and the only way to answer "are the detail
  *  maps visible at all". They were committed while the hulls were still too dark to show anything,
@@ -40,7 +42,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { addCraftEngineGlowRig, buildCraft, loadCraftModelForType } from '../render/shipyard'
-import { applyHullDetail, applyHullMetalnessCeiling, stripHullDetail } from '../render/hullDetail'
+import { applyHullDetail, applyHullMetalnessCeiling, stripHullDetail, tuneHullMaterials } from '../render/hullDetail'
+import { applyHullGreebles, stripHullGreebles } from '../render/hullGreebles'
 import { hullEnvProbeReport, initHullEnvProbe, setHullEnvIntensity, sweepHullEnvProbeNow } from '../render/envProbe'
 import { buildLights, buildNebula, buildStarfield } from '../render/world'
 import { SUN_COLOR } from '../sim/solarSystem'
@@ -203,6 +206,38 @@ function applyDetailOverrides(group: THREE.Group): void {
   })
 }
 
+/** Re-run the greeble pass with this page's target, so the density can be swept from the URL.
+ *
+ *  A rebuild rather than a parameter, because greebles are added inside the model loader to the CACHED
+ *  source model — by the time this page has a hull, the default pass has already run. The strip is what
+ *  makes `?greeble=0` a real control rather than a no-op.
+ *
+ *  `tuneHullMaterials` is re-run afterwards on purpose: the greeble material is minted from the hull's
+ *  authored colour and needs the same luminance floor, ground fill and probe assignment the loader
+ *  would have given it. Re-running it is safe (the floor only lifts, the patches are idempotent), and
+ *  skipping it would make every `?greeble=` capture judge a material the game never renders.
+ */
+function applyGreebleOverrides(group: THREE.Group): void {
+  if (params.greebleTarget === null) return
+  stripHullGreebles(group)
+  applyHullGreebles(group, { triangleTarget: params.greebleTarget })
+  tuneHullMaterials(group)
+}
+
+/** Greebles the pass actually placed, per shape. The same reasoning as `detailReport`: a frame cannot
+ *  tell "placed and too small to see" from "placed nothing", and the two need opposite fixes. */
+function greebleReport(group: THREE.Group): string {
+  const parts: string[] = []
+  let total = 0
+  group.traverse((obj) => {
+    const mesh = obj as THREE.InstancedMesh
+    if (!mesh.isInstancedMesh) return
+    parts.push(`${mesh.name.replace('hull_greeble_', '')}=${mesh.count}`)
+    total += mesh.count
+  })
+  return total === 0 ? 'greebles none' : `greebles ${total} (${parts.join(' ')})`
+}
+
 /** Triangles and draw calls the hull itself costs, read off `renderer.info` after a render.
  *
  *  On the label rather than in a console line because a capture PNG is the artefact that gets
@@ -253,6 +288,7 @@ async function boot(): Promise<void> {
   if (model) {
     scene.remove(ship)
     addCraftEngineGlowRig(model, params.ship)
+    applyGreebleOverrides(model) // before the detail overrides, mirroring the loader's own order
     applyDetailOverrides(model)
     ship = model
     scene.add(ship)
@@ -263,7 +299,7 @@ async function boot(): Promise<void> {
     // hull is hidden by the sweep itself, so it does not appear in its own reflection here either.
     if (params.env) sweepHullEnvProbeNow(new THREE.Vector3(0, 0, 0), [ship])
     render()
-    updateLabel(`  ·  ${detailReport(ship)}  ·  ${geometryReport()}  ·  ${hullEnvProbeReport()}`)
+    updateLabel(`  ·  ${geometryReport()}  ·  ${greebleReport(ship)}  ·  ${detailReport(ship)}  ·  ${hullEnvProbeReport()}`)
   } else {
     updateLabel('  ·  GLB MISSING (procedural fallback)')
   }

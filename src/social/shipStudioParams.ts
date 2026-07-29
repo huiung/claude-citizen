@@ -51,6 +51,9 @@ export interface StudioParams {
   /** Metalness ceiling override, or null for the module's shipped one. The ceiling is destructive at
    *  load, so this is the only way to judge a HIGHER one against a frame. */
   metalCeiling: number | null
+  /** Total triangle target for the greeble pass, or null for the module's own. 0 disables it, which is
+   *  the control half of the density A/B — "the hull looks busier" needs a before to mean anything. */
+  greebleTarget: number | null
 }
 
 /** Default 3/4 view — shows a lit face, a shadowed face and the silhouette in one frame, which is
@@ -104,6 +107,7 @@ export function parseStudioParams(search: URLSearchParams): StudioParams {
     env: pickEnum(search.get('env'), ['on', 'off'] as const, 'on') === 'on',
     envIntensity: optNum(search.get('envi'), 0),
     metalCeiling: optNum(search.get('metal'), 0),
+    greebleTarget: optNum(search.get('greeble'), 0),
   }
 }
 

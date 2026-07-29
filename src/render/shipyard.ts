@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { applyHullDetail, tuneHullMaterials } from './hullDetail'
+import { applyHullGreebles } from './hullGreebles'
 import type { ShipType } from '../sim/shipTypes'
 import type { HolderShipVisualId } from '../ui/holderShipVisual'
 
@@ -197,7 +198,13 @@ export function createCraftModelLoader(
         // dropping every player back to the procedural placeholder.
         .then((model) => {
           if (!model) return model
-          // Material tuning first: detail maps only read on a surface bright enough to show them.
+          // Greebles FIRST, so the two material passes below reach the geometry they add as well as the
+          // asset's own. Their material is cloned from the hull's dominant one and still carries the
+          // GLB's authored colour at this point, so it goes through the luminance floor, the ground
+          // fill and the environment probe alongside the panel it is bolted to — which is what keeps
+          // greebles from drifting into looking like a different alloy after any future tuning.
+          try { applyHullGreebles(model) } catch { /* keep the bare hull */ }
+          // Material tuning second: detail maps only read on a surface bright enough to show them.
           try { tuneHullMaterials(model) } catch { /* keep the authored materials */ }
           try { applyHullDetail(model) } catch { /* keep the undetailed hull */ }
           return model
