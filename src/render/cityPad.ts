@@ -165,6 +165,59 @@ export function padDeckRadiusAt(padRadius: number, padNormal: THREE.Vector3, dir
   return denom > 1e-6 ? padRadius / denom : padRadius
 }
 
+/** Deck-top ALBEDO — apron concrete plus the painted landing marking.
+ *
+ *  Why this exists separately from `computePadMarkingPixels`. That one is an emissiveMap, and its
+ *  intensity is night-weighted, so in daylight the marking it draws is swamped by the lit concrete
+ *  around it and the deck renders as a single flat tone. Measured from a `?earthview=seoul-foot`
+ *  capture, the whole 90-unit deck sat within ±3 of one value: the top face of a `CylinderGeometry`
+ *  is ONE flat face with ONE normal, so a single distant light gives it exactly one shade, and with
+ *  no albedo variation there is nothing else for the eye to read distance from. That is the real
+ *  cause of the "the pad flattens into haze" report — not the aerial-perspective fog, which at
+ *  pedestrian eye height cannot reach the ground at all (its near plane sits at ~710 units and the
+ *  geometric horizon from a 10-unit eye on a 4300-unit sphere is ~290).
+ *
+ *  So: paint the markings into the albedo, where daylight can see them, and give the concrete slab
+ *  seams and wear so the surface carries its own texture gradient. Deterministic hash noise rather
+ *  than Math.random, so two captures never differ by the noise.
+ *
+ *  `CylinderGeometry` maps the cap into the unit circle inscribed in [0,1]², which is the convention
+ *  `computePadMarkingPixels` already assumes — the two must keep agreeing or the painted ring and the
+ *  glowing one would sit at different radii. */
+export function computePadDeckPixels(size = 128): Uint8Array<ArrayBuffer> {
+  const data = new Uint8Array(size * size * 4)
+  const c = (size - 1) / 2
+  // Concrete grey, matching the flat colour this replaces so the deck's overall exposure — tuned
+  // against the ~45%-albedo Blue Marble terrain it sits on — does not move.
+  const base = [0x9a, 0xa2, 0xab]
+  // Warm off-white paint. Bright enough to read against lit concrete, dull enough to look like paint
+  // on a working apron rather than a decal.
+  const paint = [0xd6, 0xcd, 0xb6]
+  const hash = (x: number, y: number): number => {
+    const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453
+    return s - Math.floor(s)
+  }
+  // Slab grid in TEXELS. At size 128 over a 90-unit deck, 16 texels is ~11 units — apron slab scale.
+  const slab = size / 8
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const r = Math.hypot(x - c, y - c) / c
+      // Two frequencies: slab-sized patches of differing pour colour, plus fine aggregate grain.
+      let mul = 1 + (hash(Math.floor(x / slab), Math.floor(y / slab)) - 0.5) * 0.13
+        + (hash(x, y) - 0.5) * 0.06
+      // Slab seams: a darker line where two pours meet. One texel wide, so it survives mipmapping
+      // as a soft line rather than vanishing.
+      if (x % slab === 0 || y % slab === 0) mul *= 0.9
+      const painted = (r > 0.62 && r < 0.74) || r < 0.1
+      const src = painted ? paint : base
+      const i = (y * size + x) * 4
+      for (let k = 0; k < 3; k++) data[i + k] = Math.max(0, Math.min(255, Math.round(src[k] * mul)))
+      data[i + 3] = 255
+    }
+  }
+  return data
+}
+
 /** Deck-top landing marking (circle ring + centre dot) — emissiveMap, pure, canvas-free. */
 export function computePadMarkingPixels(size = 64): Uint8Array<ArrayBuffer> {
   const data = new Uint8Array(size * size * 4)

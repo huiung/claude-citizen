@@ -5,7 +5,7 @@ import {
   CITY_SHEET_SEGMENTS, cityGroundRadius, cityLocalFromDirection, cityTangentFrame, SHEET_LIFT,
 } from './cityLayout'
 import {
-  cityGroundRadiusAt, computePadLot, computePadMarkingPixels, computePadWorld,
+  cityGroundRadiusAt, computePadDeckPixels, computePadLot, computePadMarkingPixels, computePadWorld,
   padDeckRadiusAt, PAD_DECK_HEIGHT, PAD_RADIUS,
 } from './cityPad'
 import { samplePlanetSurface } from './planetTextures'
@@ -70,6 +70,75 @@ describe('computePadMarkingPixels', () => {
     expect(at(c, c)).toBeGreaterThan(200) // centre dot
     expect(at(c + Math.round(c * 0.68), c)).toBeGreaterThan(200) // ring band
     expect(at(c + Math.round(c * 0.4), c)).toBe(0) // between: dark deck
+  })
+})
+
+describe('computePadDeckPixels', () => {
+  const SIZE = 128
+  const px = computePadDeckPixels(SIZE)
+  const c = (SIZE - 1) / 2
+  const rgb = (x: number, y: number): [number, number, number] => {
+    const i = (y * SIZE + x) * 4
+    return [px[i], px[i + 1], px[i + 2]]
+  }
+  const lum = (x: number, y: number): number => {
+    const [r, g, b] = rgb(x, y)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  }
+  /** Texel at a given fraction of the deck radius, along +x from the centre. */
+  const atRadius = (frac: number): [number, number] => [Math.round(c + c * frac), Math.round(c)]
+
+  it('is deterministic — two captures must never differ by the noise', () => {
+    expect(Array.from(computePadDeckPixels(SIZE))).toEqual(Array.from(px))
+  })
+
+  it('is opaque everywhere', () => {
+    for (let i = 3; i < px.length; i += 4) expect(px[i]).toBe(255)
+  })
+
+  it('paints the marking ring brighter than the concrete, so daylight can see it', () => {
+    // The bug this fixes: the ring existed only as an emissiveMap on a night-weighted intensity, so
+    // in daylight the deck was one flat tone with no marking on it at all.
+    expect(lum(...atRadius(0.68))).toBeGreaterThan(lum(...atRadius(0.4)) * 1.2)
+    expect(lum(...atRadius(0))).toBeGreaterThan(lum(...atRadius(0.4)) * 1.2)
+  })
+
+  it('puts the painted ring at the same radius as the glowing one', () => {
+    // Two textures describe the same marking; if they drift the paint and the glow sit apart.
+    const mark = computePadMarkingPixels(64)
+    const mc = (64 - 1) / 2
+    for (const frac of [0.68, 0, 0.4, 0.9]) {
+      const litInMark = mark[(Math.round(mc) * 64 + Math.round(mc + mc * frac)) * 4] > 200
+      const paintedInDeck = lum(...atRadius(frac)) > lum(...atRadius(0.45)) * 1.15
+      expect(paintedInDeck).toBe(litInMark)
+    }
+  })
+
+  it('varies the concrete without straying far from the flat colour it replaces', () => {
+    // The deck's exposure was tuned against the Blue Marble terrain around it; only the variation is
+    // new. Sampled off the marking radii so the paint does not skew the range.
+    const flat = 0.2126 * 0x9a + 0.7152 * 0xa2 + 0.0722 * 0xab
+    const samples: number[] = []
+    for (let y = 2; y < SIZE; y += 3) {
+      for (let x = 2; x < SIZE; x += 3) {
+        const r = Math.hypot(x - c, y - c) / c
+        if (r < 0.14 || (r > 0.58 && r < 0.78) || r > 1) continue
+        samples.push(lum(x, y))
+      }
+    }
+    const mean = samples.reduce((a, b) => a + b, 0) / samples.length
+    expect(mean).toBeGreaterThan(flat * 0.9)
+    expect(mean).toBeLessThan(flat * 1.02)
+    expect(Math.max(...samples) - Math.min(...samples)).toBeGreaterThan(flat * 0.12) // there IS variation
+    expect(Math.max(...samples)).toBeLessThan(flat * 1.15) // but no blown patches
+  })
+
+  it('keeps the concrete grey rather than tinting it', () => {
+    for (const [x, y] of [atRadius(0.3), atRadius(0.5), atRadius(0.85)]) {
+      const [r, , b] = rgb(x, y)
+      expect(b).toBeGreaterThan(r) // the base is a cool grey; noise must not invert that
+      expect(b - r).toBeLessThan(40)
+    }
   })
 })
 

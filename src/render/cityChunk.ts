@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { samplePlanetSurface } from './planetTextures'
-import { computePadMarkingPixels, computePadWorld, PAD_DECK_HEIGHT, PAD_RADIUS } from './cityPad'
+import { computePadDeckPixels, computePadMarkingPixels, computePadWorld, PAD_DECK_HEIGHT, PAD_RADIUS } from './cityPad'
 import {
   CITY_BLOCK, CITY_ROAD, CITY_SHEET_SEGMENTS, CITY_TERRAIN_SCALE, CITY_TIER_RADIUS, cityGroundRadius,
   cityTangentFrame, computeCityLayout, SHEET_LIFT, SKIRT_MARGIN,
@@ -326,8 +326,18 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
   markTex.magFilter = THREE.LinearFilter
   markTex.minFilter = THREE.LinearFilter
   markTex.needsUpdate = true
+  // Deck albedo. The flat colour this replaces (0x9aa2ab) is the map's own base tone, so the deck's
+  // exposure against the terrain is unchanged and only the variation is new — a flat top face lit by
+  // one distant source has exactly one shade, which is what made the pad read as haze up close.
+  const deckTex = new THREE.DataTexture(computePadDeckPixels(128), 128, 128, THREE.RGBAFormat)
+  deckTex.colorSpace = THREE.SRGBColorSpace
+  deckTex.magFilter = THREE.LinearFilter
+  deckTex.minFilter = THREE.LinearMipmapLinearFilter // the deck spans 90 units; without mips the
+  deckTex.generateMipmaps = true // grain aliases into crawling speckle as the walker moves
+  deckTex.anisotropy = 4 // and it is seen at a grazing angle from standing height
+  deckTex.needsUpdate = true
   const deckMat = new THREE.MeshStandardMaterial({
-    color: 0x9aa2ab, roughness: 0.9, metalness: 0.05, // daylight-readable concrete (sRGB 0x8x+ lesson)
+    color: 0xffffff, map: deckTex, roughness: 0.9, metalness: 0.05,
     emissive: 0xffd9a8, emissiveIntensity: 0.35, emissiveMap: markTex,
   })
   const deckGeo = new THREE.CylinderGeometry(PAD_RADIUS, PAD_RADIUS * 1.08, PAD_DECK_HEIGHT, 8)
@@ -423,6 +433,7 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
       deckGeo.dispose()
       deckMat.dispose()
       markTex.dispose()
+      deckTex.dispose()
       ringGeo.dispose()
       ringMat.dispose()
       padLightGeo.dispose()
