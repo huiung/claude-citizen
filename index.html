@@ -263,6 +263,25 @@
       animation: pulse 1.4s ease-in-out infinite;
     }
     @keyframes pulse { 0%,100% { opacity: .65 } 50% { opacity: 1 } }
+    /* Approach cue: sits just under the dock/land prompt slot and never shares it, because the
+       two say different things — the prompt is an action, the cue is why the action is unavailable. */
+    #land-cue {
+      position: fixed; left: 50%; top: 68%; transform: translate(-50%, 0);
+      pointer-events: none; font-size: 13px; letter-spacing: 1.6px; color: #aee9ff;
+      background: rgba(0, 20, 30, .5); border: 1px solid rgba(120, 200, 230, .45);
+      padding: 6px 14px; border-radius: 4px; text-shadow: 0 0 8px rgba(120, 210, 240, .55);
+      white-space: nowrap;
+    }
+    #land-cue[hidden], #land-marker[hidden] { display: none; }
+    /* Skypad marker: a world-space target projected into the HUD, pinned to the border while the
+       pad is off-screen so "where is the city" always has an on-screen answer. */
+    #land-marker {
+      position: fixed; left: 0; top: 0; transform: translate(-50%, -50%);
+      pointer-events: none; font-size: 11px; letter-spacing: 1.4px; color: #8fd8ff;
+      text-shadow: 0 0 8px rgba(0, 0, 0, .9), 0 0 12px rgba(120, 210, 240, .5);
+      white-space: nowrap;
+    }
+    #land-marker.edge { color: #ffd24d; text-shadow: 0 0 8px rgba(0, 0, 0, .9), 0 0 12px rgba(255, 200, 90, .5); }
     #mine-prompt {
       position: fixed; left: 50%; top: 54%; transform: translate(-50%, 0);
       pointer-events: none; font-size: 14px; letter-spacing: 2px; color: #aee9ff;
@@ -862,6 +881,8 @@
   <div id="promotion" hidden></div>
   <div id="landing-toast" hidden></div>
   <div id="dock-prompt" hidden>▸ PRESS SPACE TO DOCK</div>
+  <div id="land-cue" hidden></div>
+  <div id="land-marker" hidden></div>
   <div id="mine-prompt" hidden>⛏ MINING ORE — hold to extract</div>
   <div id="leaderboard-panel" hidden>
     <div class="lb">
@@ -1012,6 +1033,7 @@
       <button class="flight-plan-card" type="button" data-plan="mine"><b>Mine</b><span>Find ORE asteroids, build credits, then upgrade at outposts.</span></button>
       <button class="flight-plan-card" type="button" data-plan="pvp"><b>PvP</b><span>Start in Practice Arena before ranked holder combat.</span></button>
       <button class="flight-plan-card" type="button" data-plan="blackhole"><b>Black Hole</b><span>Dive the singularity — closest survived approach ranks on the VOID board.</span></button>
+      <button class="flight-plan-card" type="button" data-plan="planetfall"><b>Planetfall</b><span>Drop into Earth orbit over Seoul and land on a city skypad.</span></button>
       <button class="flight-plan-card" type="button" data-plan="explore"><b>Explore</b><span>Free flight through planets, stations, landmarks, and deep space.</span></button>
     </div>
   </div>
@@ -1031,6 +1053,7 @@
       MOUSE aim · W/S thrust · A/D strafe · R/F vertical · Q/E roll<br />
       SHIFT boost · X brake · V flight assist · ESC release mouse<br />
       LEFT-CLICK mine · RIGHT-CLICK fire · 1/2/3 fire mode · SPACE dock · B/N pick destination · J quantum-jump<br />
+      TO LAND: pick a city skypad with B/N · J jump · descend to the lit deck · X brake under 30 m/s · SPACE land<br />
       ON A PAD: E step out · then W/A/S/D walk · SHIFT run · MOUSE look · E board<br />
       M solar atlas · L leaderboard · I inventory · O settings · ENTER chat<br />
       H hide these

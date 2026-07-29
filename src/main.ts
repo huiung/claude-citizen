@@ -55,10 +55,14 @@ import { engineGlowStyle, type EngineGlowStyle } from './render/engineGlow'
 import { createSeasonHubLifeRig, updateSeasonHubLifeRig } from './render/seasonHub'
 import { buildBlackHole } from './render/blackHole'
 import { applyPlanetAssetTextures, loadPlanetAssetTextures } from './render/planetAssetTextures'
-import { computeCitySites, EARTH_CITIES, type CitySite } from './render/citySites'
+import { citySkypadDestinations, computeCitySites, EARTH_CITIES, type CitySite } from './render/citySites'
 import { cityGroundRadiusAt, computePadWorld, padDeckRadiusAt, PAD_RADIUS } from './render/cityPad'
 import { cityLocalFromDirection, cityTangentFrame } from './render/cityLayout'
-import { computeLandingEligibility, hullDeckOffset, landingReward } from './sim/landing'
+import {
+  computeLandingEligibility, hullDeckOffset, landingApproach, LANDING_MAX_ALT, LANDING_MAX_SPEED, landingReward,
+  PAD_FLOOR_CLEARANCE, type LandingApproach,
+} from './sim/landing'
+import { CUE_MAX_RANGE, formatCueDistance, landingCueText, placeSkypadMarker } from './ui/landingCue'
 import { createControlHintState, noteControlUsed, toggleControlHints } from './ui/controlHints'
 import { buildPedestrian, type Pedestrian } from './render/pedestrian'
 import {
@@ -298,6 +302,8 @@ function showLandingToast(text: string): void {
   }, 3800)
 }
 const dockPromptEl = document.getElementById('dock-prompt')!
+const landCueEl = document.getElementById('land-cue')!
+const landMarkerEl = document.getElementById('land-marker')!
 const mineEl = document.getElementById('mine-prompt')!
 const hullBarEl = document.getElementById('hull-bar')!
 const shipClassEl = document.getElementById('ship-class')!
@@ -1093,9 +1099,18 @@ const padBeamMat = new THREE.MeshBasicMaterial({
 const padBeam = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, 2600, 8, 1, true), padBeamMat)
 padBeam.visible = false
 scene.add(padBeam)
+/** Altitude below which the beam stands up and the approach cue starts talking. */
+const PAD_GUIDANCE_ALT = 3500
 // Pad world transform is deterministic (cityPad) — cache per site so the beam can stand
 // on the true spot while the chunk itself hasn't streamed in yet.
 let padWorldCache: { idx: number; center: THREE.Vector3; normal: THREE.Vector3 } | null = null
+/** The pad the beam, the approach cue, the HUD marker and the deck floor all refer to: the nearest
+ *  city's pad while descending, or the pad being landed on. Null away from Earth.
+ *
+ *  Deliberately NOT the streamed chunk's pad. The chunk only exists below 1200u and within a chunk
+ *  radius of the site, which is the state a pilot has to be IN before any of this could guide them
+ *  there — the old beam claimed to appear from 3500u and could not, because it read the chunk too. */
+let nearestPad: { idx: number; center: THREE.Vector3; normal: THREE.Vector3 } | null = null
 const _padUp = new THREE.Vector3()
 
 type LandingPhase = 'none' | 'settling' | 'landed'
@@ -1165,6 +1180,15 @@ function beginLanding(idx: number, padCenter: THREE.Vector3, padNormal: THREE.Ve
   audio.blip('nav')
 }
 
+/** Take the landing the prompt is offering, on the pad the whole guidance chain refers to. Every
+ *  trigger — SPACE, the mobile dock button, the DEV hook — goes through here so none of them can
+ *  land on a different pad than the one the HUD named. */
+function beginLandingHere(): boolean {
+  if (nearestPad === null || landingPhase !== 'none' || quantum.phase !== 'idle' || !landEligible) return false
+  beginLanding(nearestPad.idx, nearestPad.center, nearestPad.normal)
+  return true
+}
+
 function grantLandingReward(): void {
   audio.blip('dock')
   const name = landingCityIdx !== null ? citySites?.[landingCityIdx]?.name : undefined
@@ -1227,6 +1251,7 @@ function updateCities(): void {
   if (dist > EARTH.radius * 3) {
     if (citySplats) citySplats.visible = false
     padBeam.visible = false
+    nearestPad = null
     for (const [idx, chunk] of cityChunks) {
       scene.remove(chunk.group)
       chunk.dispose()
@@ -1266,16 +1291,36 @@ function updateCities(): void {
     cityChunks.set(selected, built)
   }
 
-  // Guidance beam: stands on the pad spot from 3500u down, before the chunk itself
-  // streams in (<1200u) — the "there's somewhere to land" signal during descent.
-  if (selected !== null && alt < 3500 && landingPhase === 'none') {
-    if (padWorldCache?.idx !== selected) {
-      const pw = computePadWorld(citySites[selected], EARTH.position, EARTH.seed, EARTH.radius)
-      padWorldCache = { idx: selected, center: pw.center, normal: pw.normal }
+  // The pad in play: the one being landed on, else the nearest site's. Nearest is computed here
+  // rather than taken from selectChunkSite because that one carries streaming hysteresis and is null
+  // for most of a descent — the guidance has to exist before the city does.
+  let guideIdx = landingPhase !== 'none' ? landingCityIdx : null
+  if (guideIdx === null && alt < PAD_GUIDANCE_ALT) {
+    let bestArc = Infinity
+    for (let i = 0; i < citySites.length; i++) {
+      const arc = _cityShipDir.angleTo(citySites[i].direction) * EARTH.radius
+      if (arc < bestArc) { bestArc = arc; guideIdx = i }
     }
-    padBeam.position.copy(padWorldCache.center).addScaledVector(padWorldCache.normal, 1300)
-    padBeam.quaternion.setFromUnitVectors(_padUp.set(0, 1, 0), padWorldCache.normal)
-    padBeamMat.opacity = 0.3 * Math.min(1, Math.max(0, (3500 - alt) / 1500))
+    if (bestArc > CUE_MAX_RANGE) guideIdx = null // a pad on the far side of the planet is not guidance
+  }
+  if (guideIdx !== null) {
+    // computePadWorld replays the city layout to find the pad's lot, so cache it — it only changes
+    // when the nearest city does.
+    if (padWorldCache?.idx !== guideIdx) {
+      const pw = computePadWorld(citySites[guideIdx], EARTH.position, EARTH.seed, EARTH.radius)
+      padWorldCache = { idx: guideIdx, center: pw.center, normal: pw.normal }
+    }
+    nearestPad = padWorldCache
+  } else {
+    nearestPad = null
+  }
+
+  // Guidance beam: stands on the pad spot from PAD_GUIDANCE_ALT down, long before the chunk itself
+  // streams in (<1200u) — the "there's somewhere to land" signal during descent.
+  if (nearestPad !== null && landingPhase === 'none') {
+    padBeam.position.copy(nearestPad.center).addScaledVector(nearestPad.normal, 1300)
+    padBeam.quaternion.setFromUnitVectors(_padUp.set(0, 1, 0), nearestPad.normal)
+    padBeamMat.opacity = 0.3 * Math.min(1, Math.max(0, (PAD_GUIDANCE_ALT - alt) / 1500))
     padBeam.visible = true
   } else {
     padBeam.visible = false
@@ -1912,6 +1957,44 @@ function planetDestination(idx: number): QuantumDestination {
   }
 }
 
+/** The 16 Earth skypads as jump destinations, in EARTH_CITIES order — the same order
+ *  `computeCitySites` builds the real-Earth site table in, so index i is the same city in both.
+ *
+ *  These are what make landing findable at all: the skypads sit at fixed lat/lons on one planet out
+ *  of six, their chunks only stream in below 1200u, and before this nothing in the game said where
+ *  they were. `kind` is shown by the atlas. No `radius`: destinationArrival's standoff exists to
+ *  stop a jump ending inside a planet, and this point is already a chosen height above one. */
+const SKYPAD_DESTINATIONS: readonly QuantumDestination[] = citySkypadDestinations(EARTH.position, EARTH.radius)
+  .map((d) => ({ id: d.id, name: d.name, kind: 'City skypad', position: d.position }))
+
+/** One entry per stop in the B/N cycle, resolved by `selectedJumpIdx`.
+ *
+ *  An explicit table rather than index arithmetic over three concatenated ranges: the arena block is
+ *  absent on mobile, so every `PLANETS.length + i` in the old form meant something different per
+ *  device — which is exactly how the mobile Season Hub selection used to resolve to an index outside
+ *  its own cycle. Nothing persists `selectedJumpIdx`, so the order is free to change. */
+type JumpSlot = { kind: 'planet' | 'arena' | 'skypad'; idx: number }
+const JUMP_SLOTS: readonly JumpSlot[] = [
+  ...PLANETS.map((_, i): JumpSlot => ({ kind: 'planet', idx: i })),
+  // Mobile companion can't set the arena destinations (see setQuantumDestinationById), so they are
+  // left out of its cycle rather than drawn and rejected.
+  ...(MOBILE_COMPANION ? [] : PVP_ARENA_DESTINATIONS.map((_, i): JumpSlot => ({ kind: 'arena', idx: i }))),
+  ...SKYPAD_DESTINATIONS.map((_, i): JumpSlot => ({ kind: 'skypad', idx: i })),
+]
+
+function jumpSlotIndexFor(kind: JumpSlot['kind'], idx: number): number {
+  return JUMP_SLOTS.findIndex((slot) => slot.kind === kind && slot.idx === idx)
+}
+
+function skypadDestination(idx: number): QuantumDestination {
+  const dest = SKYPAD_DESTINATIONS[idx] ?? SKYPAD_DESTINATIONS[0]
+  return { id: dest.id, name: dest.name, kind: dest.kind, position: dest.position.clone() }
+}
+
+function skypadDestinationIndex(id: string): number {
+  return SKYPAD_DESTINATIONS.findIndex((dest) => dest.id === id)
+}
+
 function pvpArenaDestination(idx: number): QuantumDestination {
   const dest = PVP_ARENA_DESTINATIONS[idx] ?? PVP_ARENA_DESTINATIONS[0]
   return {
@@ -1931,14 +2014,24 @@ function pvpArenaDestinationIndex(id: string): number {
 function setQuantumDestinationById(id: string): boolean {
   const planetIdx = PLANETS.findIndex((p) => id === `planet.${p.name}` || id === p.name)
   if (planetIdx >= 0) {
-    selectedJumpIdx = planetIdx
+    selectedJumpIdx = jumpSlotIndexFor('planet', planetIdx)
     customJumpDestination = null
     return true
   }
   const arenaIdx = pvpArenaDestinationIndex(id)
   if (arenaIdx >= 0) {
     if (MOBILE_COMPANION && id !== CITIZEN_SEASON_HUB_DESTINATION.id) return false
-    selectedJumpIdx = PLANETS.length + arenaIdx
+    // Mobile keeps the hub reachable even though it has no arena slot to select — a custom
+    // destination is how a target outside the cycle is carried.
+    const slot = jumpSlotIndexFor('arena', arenaIdx)
+    if (slot < 0) { customJumpDestination = pvpArenaDestination(arenaIdx); return true }
+    selectedJumpIdx = slot
+    customJumpDestination = null
+    return true
+  }
+  const skypadIdx = skypadDestinationIndex(id)
+  if (skypadIdx >= 0) {
+    selectedJumpIdx = jumpSlotIndexFor('skypad', skypadIdx)
     customJumpDestination = null
     return true
   }
@@ -1946,10 +2039,11 @@ function setQuantumDestinationById(id: string): boolean {
 }
 
 function activeQuantumDestination(): QuantumDestination {
-  if (!customJumpDestination && selectedJumpIdx >= PLANETS.length) {
-    return pvpArenaDestination(selectedJumpIdx - PLANETS.length)
-  }
-  return customJumpDestination ?? planetDestination(selectedJumpIdx)
+  if (customJumpDestination) return customJumpDestination
+  const slot = JUMP_SLOTS[selectedJumpIdx] ?? JUMP_SLOTS[0]
+  if (slot.kind === 'skypad') return skypadDestination(slot.idx)
+  if (slot.kind === 'arena') return pvpArenaDestination(slot.idx)
+  return planetDestination(slot.idx)
 }
 
 function activeDestinationSnapshot(): SolarMapNavigationTarget {
@@ -1981,7 +2075,7 @@ function destinationArrival(dest = activeQuantumDestination()): { position: THRE
 }
 
 function quantumDestinationCount(): number {
-  return PLANETS.length + (MOBILE_COMPANION ? 0 : PVP_ARENA_DESTINATIONS.length)
+  return JUMP_SLOTS.length
 }
 
 function cycleQuantumDestination(direction: 1 | -1 = 1): void {
@@ -2054,20 +2148,17 @@ function setQuantumDestinationFromAtlas(target: SolarMapNavigationTarget): Solar
   if (target.id === 'player' || target.id === 'sun' || target.id.startsWith('peer.')) {
     return { ok: false, reason: 'moving or reference-only target' }
   }
-  const planetIdx = PLANETS.findIndex((p) => target.id === `planet.${p.name}` || target.name === p.name)
-  if (planetIdx >= 0) {
-    selectedJumpIdx = planetIdx
-    customJumpDestination = null
-    return { ok: true }
+  if (setQuantumDestinationById(target.id)) return { ok: true }
+  if (pvpArenaDestinationIndex(target.id) >= 0) {
+    // Only reason setQuantumDestinationById refuses an arena: mobile companion, which can't enter
+    // PvP/black-hole arenas. The Season Hub is exempt there and so goes through above.
+    return { ok: false, reason: 'PvP beacons are desktop-only' }
   }
-  const arenaIdx = pvpArenaDestinationIndex(target.id)
-  if (arenaIdx >= 0) {
-    // Mobile companion can't enter PvP/black-hole arenas, but the Season Hub is allowed (matches
-    // setQuantumDestinationById). Without this exception, clicking the hub marker on mobile rejects.
-    if (MOBILE_COMPANION && target.id !== CITIZEN_SEASON_HUB_DESTINATION.id) {
-      return { ok: false, reason: 'PvP beacons are desktop-only' }
-    }
-    selectedJumpIdx = PLANETS.length + arenaIdx
+  const planetByName = PLANETS.findIndex((p) => target.name === p.name)
+  if (planetByName >= 0) {
+    // The atlas draws its own planet ids; a name match is the fallback for markers whose id
+    // does not carry the `planet.` prefix.
+    selectedJumpIdx = jumpSlotIndexFor('planet', planetByName)
     customJumpDestination = null
     return { ok: true }
   }
@@ -2156,7 +2247,23 @@ function resolvePlanetCollisions(): void {
   hit(SPAWN_PLANET.position.x, SPAWN_PLANET.position.y, SPAWN_PLANET.position.z, SPAWN_PLANET.radius)
   // Procedural galaxy planets/moons: fast spherical clamp (no surface data, so no terrain follow).
   for (const b of solidBodies.values()) resolveSphereCollision(ship.position, ship.velocity, b.position, b.radius)
+
+  // A skypad deck is solid ground, and until now it was not. The terrain clamp above holds the hull
+  // ~23u above the *terrain* (radius×0.004 + 6), while the deck face sits SHEET_LIFT + PAD_DECK_HEIGHT
+  // = 33u above it — so a pilot who simply descended onto the pad bottomed out ~10u UNDER the deck,
+  // which is outside the landing envelope (alt < 0) and showed no prompt and no reason. Landing had
+  // a hole exactly where a pilot aiming for it ends up. With this, "descend until you stop" leaves
+  // the ship inside the envelope and the LAND prompt up.
+  if (nearestPad !== null) {
+    const a = landingApproach(ship.position, ship.velocity, nearestPad.center, nearestPad.normal, PAD_RADIUS, _padFloorApproach)
+    if (a.lateral <= PAD_RADIUS && a.alt < PAD_FLOOR_CLEARANCE) {
+      ship.position.addScaledVector(nearestPad.normal, PAD_FLOOR_CLEARANCE - a.alt)
+      const vn = ship.velocity.dot(nearestPad.normal)
+      if (vn < 0) ship.velocity.addScaledVector(nearestPad.normal, -vn)
+    }
+  }
 }
+const _padFloorApproach: LandingApproach = { blocker: 'ready', lateral: 0, alt: 0, speed: 0 }
 
 // Capital ship hull — fit collision spheres along the longest axis of the *actual* bounding box,
 // so it works for both the procedural hull and any GLB regardless of its scale or modelled axis.
@@ -2897,6 +3004,52 @@ if (import.meta.env.DEV) {
       const mesh = hit ? hit.point.distanceTo(EARTH.position) : NaN
       return `standing ${standing.toFixed(4)}  mesh ${mesh.toFixed(4)}  error ${(standing - mesh).toFixed(4)} (+ floats, - sunk)`
     },
+    // Why the LAND prompt is or is not showing, as numbers. The same reasoning as footGroundError:
+    // "the prompt didn't appear" is equally consistent with being off the pad, too high, too fast,
+    // under the deck, or the pad not being tracked at all, and a screenshot cannot tell them apart.
+    landing() {
+      const pad = nearestPad
+      const a = pad
+        ? landingApproach(ship.position, ship.velocity, pad.center, pad.normal, PAD_RADIUS, _cueApproach)
+        : null
+      // Ground distance to every site, nearest first: "the guidance is on the wrong pad" and "the
+      // ship is not where the jump said" look identical from the HUD, and differ here.
+      const dir = ship.position.clone().sub(EARTH.position).normalize()
+      const near = (citySites ?? []).map((s, i) => ({
+        i, name: s.name ?? `site${i}`, ground: Math.round(dir.angleTo(s.direction) * EARTH.radius),
+      })).sort((a, b) => a.ground - b.ground).slice(0, 3)
+      return JSON.stringify({
+        phase: landingPhase,
+        landingCityIdx,
+        landEligible,
+        landRearmed,
+        dockable,
+        onFoot: onFootActive(),
+        sites: citySites?.length ?? null,
+        nearest: near,
+        destination: activeQuantumDestination().name,
+        padIdx: pad?.idx ?? null,
+        padCity: pad ? citySites?.[pad.idx]?.name ?? null : null,
+        blocker: a?.blocker ?? null,
+        lateral: a ? Math.round(a.lateral) : null,
+        alt: a ? Math.round(a.alt) : null,
+        speed: Math.round(ship.velocity.length()),
+      })
+    },
+    // Point the ship's nose at the nearest planet's centre — the flight analogue of dev.foot, and
+    // there for the same reason: mouse aim bails without a pointer lock, and headless Chrome will
+    // not grant one. It aims and nothing else (no teleport, no velocity, no landing), so a headless
+    // run can still fly a descent with the thrust keys the way a player does.
+    aim() {
+      let best = PLANETS[0]
+      let bestD = Infinity
+      for (const p of PLANETS) {
+        const d = ship.position.distanceTo(p.position)
+        if (d < bestD) { bestD = d; best = p }
+      }
+      faceTarget(best.position)
+      console.log(`[dev] nose on ${best.name} (${Math.round(bestD - best.radius)}m up)`)
+    },
     // Aim the on-foot camera from outside the game. Walking is drivable headlessly — WASD reach the
     // keydown handler with or without a pointer lock — but looking is not: mousemove bails unless
     // the pointer is locked, and headless Chrome will not grant a lock. Degrees, because this gets
@@ -3544,10 +3697,7 @@ if (MOBILE_COMPANION) {
     if (!running || docked) return
     if (dockable) { dock(dockable); return }
     // The shared prompt reads "LAND" over a skypad — the dock button must land too.
-    if (quantum.phase === 'idle' && landEligible && landingPhase === 'none') {
-      const entry = cityChunks.entries().next()
-      if (!entry.done) beginLanding(entry.value[0], entry.value[1].padCenter, entry.value[1].padNormal)
-    }
+    beginLandingHere()
   })
   mobileJumpEl.addEventListener('click', toggleQuantumTravel)
   mobileNextEl.addEventListener('click', () => cycleQuantumDestination())
@@ -3632,10 +3782,7 @@ addEventListener('keydown', (e) => {
     audio.blip('nav')
   }
   if (e.code === 'Space' && shipControlsActive() && dockable) dock(dockable)
-  if (e.code === 'Space' && shipControlsActive() && !dockable && quantum.phase === 'idle' && landEligible && landingPhase === 'none') {
-    const entry = cityChunks.entries().next()
-    if (!entry.done) beginLanding(entry.value[0], entry.value[1].padCenter, entry.value[1].padNormal)
-  }
+  if (e.code === 'Space' && shipControlsActive() && !dockable) beginLandingHere()
   if (e.code === 'KeyN' && shipControlsActive() && quantum.phase === 'idle') {
     cycleQuantumDestination()
   }
@@ -4843,10 +4990,7 @@ if (import.meta.env.DEV && URL_PARAMS.get('earthview')) {
             return
           }
           if (landingPhase === 'landed') { disembark(); return }
-          if (landingPhase === 'none' && landEligible) {
-            const entry = cityChunks.entries().next()
-            if (!entry.done) beginLanding(entry.value[0], entry.value[1].padCenter, entry.value[1].padNormal)
-          }
+          beginLandingHere()
         }, 200)
         setTimeout(() => clearInterval(devFootPoll), 60000)
       }
@@ -4939,6 +5083,18 @@ function spawnAtFlightPlan(spawnMode: FlightPlanSpawnMode): void {
   }
   if (spawnMode === 'black-hole-approach') {
     placePlayerAt(BLACK_HOLE_APPROACH_DESTINATION.position.clone(), BLACK_HOLE_CENTER.clone())
+    return
+  }
+  if (spawnMode === 'planetfall-orbit') {
+    // Nose already pointing at the planet's centre, i.e. straight down the descent, from above the
+    // chunk-build band (1200u) so the city and its beam appear during the dive rather than being
+    // there from the first frame. Seoul by lat/lon, not from the site table: the NASA rasters may
+    // still be in flight at launch, and the table is procedural until they land.
+    const seoul = EARTH_CITIES[0]
+    placePlayerAt(
+      EARTH.position.clone().addScaledVector(latLonToDir(seoul.lat, seoul.lon), EARTH.radius + 1600),
+      EARTH.position,
+    )
     return
   }
   faceRefinery()
@@ -5113,6 +5269,52 @@ function updateAltitudeHUD(): void {
   } else {
     altLineEl.hidden = true
   }
+}
+
+const _cueApproach: LandingApproach = { blocker: 'ready', lateral: 0, alt: 0, speed: 0 }
+const _markerToPad = new THREE.Vector3()
+const _markerNdc = new THREE.Vector3()
+const _markerCamFwd = new THREE.Vector3()
+
+/** Landing guidance: the approach cue (what still stands between the ship and the LAND prompt) and
+ *  the skypad marker (where the deck is, including when it is off-screen or behind).
+ *
+ *  Both exist because the sim said nothing at all until all three landing conditions were met at
+ *  once, which reads exactly like a game with no landing in it. */
+function updateLandingGuidance(): void {
+  const pad = nearestPad
+  // flightSceneActive covers docked; landingPhase covers parked and on foot; a jump owns its own
+  // banner and the ship is not flyable during it.
+  const live = pad !== null && flightSceneActive() && landingPhase === 'none' && quantum.phase === 'idle'
+  if (!live) {
+    landCueEl.hidden = true
+    landMarkerEl.hidden = true
+    return
+  }
+  const city = citySites?.[pad.idx]?.name ?? 'CITY' // procedural sites have no name (no rasters)
+  const approach = landingApproach(ship.position, ship.velocity, pad.center, pad.normal, PAD_RADIUS, _cueApproach)
+  const cue = landingCueText(approach, city, PAD_RADIUS, LANDING_MAX_ALT, LANDING_MAX_SPEED)
+  landCueEl.hidden = cue === null
+  if (cue !== null) landCueEl.textContent = cue
+
+  // Marker: once the ship is over the deck it is pointing at what is already under the nose, so it
+  // gives way to the cue and the prompt.
+  if (approach.lateral <= PAD_RADIUS) {
+    landMarkerEl.hidden = true
+    return
+  }
+  _markerToPad.copy(pad.center).sub(camera.position)
+  _markerCamFwd.set(0, 0, -1).applyQuaternion(camera.quaternion)
+  // Behind-camera test in world space rather than from the projected z: a perspective divide by a
+  // negative w mirrors the point, so raw NDC would pin the marker to the opposite edge.
+  const behind = _markerCamFwd.dot(_markerToPad) < 0
+  _markerNdc.copy(pad.center).project(camera)
+  const place = placeSkypadMarker(_markerNdc.x, _markerNdc.y, behind, window.innerWidth, window.innerHeight, 42)
+  landMarkerEl.textContent = `◎ ${city.toUpperCase()} · ${formatCueDistance(approach.lateral)}`
+  landMarkerEl.style.left = `${Math.round(place.x)}px`
+  landMarkerEl.style.top = `${Math.round(place.y)}px`
+  landMarkerEl.classList.toggle('edge', place.edge)
+  landMarkerEl.hidden = false
 }
 
 function updateDepthHUD(): void {
@@ -5628,19 +5830,18 @@ function frame(now: number): void {
     if (now - lastOreStream > 400) { streamOre(); lastOreStream = now }
 
     dockable = dockableTarget(ship.position, ship.velocity.length(), dockTargets)
-    // Skypad landing shares the dock prompt: stations live in space, pads on the ground,
-    // so the two never compete — but the dock text must be restored when it wins.
-    const activeChunk = cityChunks.values().next()
-    const inEnvelope = landingPhase === 'none' && !activeChunk.done
-      && computeLandingEligibility(ship.position, ship.velocity, activeChunk.value.padCenter, activeChunk.value.padNormal, PAD_RADIUS)
+    // Skypad landing shares the dock prompt: an orbital station sits DOCK_ORBIT_CLEARANCE (600u) up
+    // and a deck is on the ground, so the two envelopes are ~560u apart and never actually compete —
+    // but the dock text must still be restored when it wins.
+    const inEnvelope = landingPhase === 'none' && nearestPad !== null
+      && computeLandingEligibility(ship.position, ship.velocity, nearestPad.center, nearestPad.normal, PAD_RADIUS)
     if (!inEnvelope) landRearmed = true
     landEligible = inEnvelope && landRearmed
     if (dockable !== null) {
       dockPromptEl.textContent = '▸ PRESS SPACE TO DOCK'
       dockPromptEl.hidden = false
     } else if (landEligible) {
-      const idx = cityChunks.keys().next().value as number
-      dockPromptEl.textContent = `▸ PRESS SPACE TO LAND — ${citySites?.[idx]?.name?.toUpperCase() ?? 'CITY'}`
+      dockPromptEl.textContent = `▸ PRESS SPACE TO LAND — ${citySites?.[nearestPad!.idx]?.name?.toUpperCase() ?? 'CITY'}`
       dockPromptEl.hidden = false
     } else if (landingPhase === 'landed' && landingCityIdx !== null && citySites?.[landingCityIdx] && !MOBILE_COMPANION && !BOT) {
       // Same slot as the dock/land prompt and for the same reason: parked on a deck is the one
@@ -5908,6 +6109,7 @@ function frame(now: number): void {
     updateDepthHUD()
     updateAltitudeHUD()
     updateCities()
+    updateLandingGuidance() // after updateCities: it reads this frame's nearest pad
     updateAtmoSky()
     const atmosphere = updateAtmoVeil()
     updateEntryFx(dt)

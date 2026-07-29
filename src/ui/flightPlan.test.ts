@@ -25,7 +25,7 @@ describe('flight plan options', () => {
   })
 
   it('keeps the launch choices focused on the main activities', () => {
-    expect(FLIGHT_PLAN_OPTIONS.map((plan) => plan.id)).toEqual(['race', 'mine', 'pvp', 'blackhole', 'explore'])
+    expect(FLIGHT_PLAN_OPTIONS.map((plan) => plan.id)).toEqual(['race', 'mine', 'pvp', 'blackhole', 'planetfall', 'explore'])
   })
 
   it('defines immediate spawn behavior for each activity', () => {
@@ -33,10 +33,11 @@ describe('flight plan options', () => {
     expect(flightPlanById('mine')?.spawnMode).toBe('mine-field')
     expect(flightPlanById('pvp')?.spawnMode).toBe('pvp-practice')
     expect(flightPlanById('explore')?.spawnMode).toBe('default')
+    expect(flightPlanById('planetfall')?.spawnMode).toBe('planetfall-orbit')
   })
 
   it('hides PvP and the black hole from mobile civilian pilots', () => {
-    expect(flightPlansForDevice(true).map((plan) => plan.id)).toEqual(['race', 'mine', 'explore'])
-    expect(flightPlansForDevice(false).map((plan) => plan.id)).toEqual(['race', 'mine', 'pvp', 'blackhole', 'explore'])
+    expect(flightPlansForDevice(true).map((plan) => plan.id)).toEqual(['race', 'mine', 'planetfall', 'explore'])
+    expect(flightPlansForDevice(false).map((plan) => plan.id)).toEqual(['race', 'mine', 'pvp', 'blackhole', 'planetfall', 'explore'])
   })
 })

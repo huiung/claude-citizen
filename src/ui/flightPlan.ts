@@ -1,5 +1,6 @@
-export type FlightPlanId = 'race' | 'mine' | 'pvp' | 'blackhole' | 'explore'
-export type FlightPlanSpawnMode = 'race-start' | 'mine-field' | 'pvp-practice' | 'black-hole-approach' | 'default'
+export type FlightPlanId = 'race' | 'mine' | 'pvp' | 'blackhole' | 'planetfall' | 'explore'
+export type FlightPlanSpawnMode =
+  'race-start' | 'mine-field' | 'pvp-practice' | 'black-hole-approach' | 'planetfall-orbit' | 'default'
 
 export interface FlightPlanOption {
   id: FlightPlanId
@@ -42,6 +43,16 @@ export const FLIGHT_PLAN_OPTIONS: readonly FlightPlanOption[] = [
     destinationId: 'black-hole-approach',
     spawnMode: 'black-hole-approach',
     objective: 'Singularity ahead — dive as close as you dare and pull out alive. Watch the ESCAPE readout.',
+  },
+  {
+    id: 'planetfall',
+    title: 'Planetfall',
+    kicker: 'Land on Earth',
+    // Spawns in Seoul's low orbit rather than jumping there: the whole point of the plan is the
+    // descent, and a pilot who has to find Earth first never gets to it.
+    destinationId: 'skypad.Seoul',
+    spawnMode: 'planetfall-orbit',
+    objective: 'Seoul is below you — dive toward the blue beam, descend onto the lit deck, brake with X under 30 m/s, then SPACE to land.',
   },
   {
     id: 'explore',
