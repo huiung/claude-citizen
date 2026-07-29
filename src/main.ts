@@ -58,7 +58,7 @@ import { applyPlanetAssetTextures, loadPlanetAssetTextures } from './render/plan
 import { computeCitySites, EARTH_CITIES, type CitySite } from './render/citySites'
 import { cityGroundRadiusAt, computePadWorld, padDeckRadiusAt, PAD_RADIUS } from './render/cityPad'
 import { cityLocalFromDirection, cityTangentFrame } from './render/cityLayout'
-import { computeLandingEligibility, landingReward } from './sim/landing'
+import { computeLandingEligibility, hullDeckOffset, landingReward } from './sim/landing'
 import { buildPedestrian, type Pedestrian } from './render/pedestrian'
 import {
   BOARD_RANGE,
@@ -1095,15 +1095,39 @@ const landingFromQuat = new THREE.Quaternion()
 const landingTargetPos = new THREE.Vector3()
 const landingTargetQuat = new THREE.Quaternion()
 const landingNormal = new THREE.Vector3()
+/** The deck-top centre this landing is pinned to. Stored rather than reconstructed from
+ *  `landingTargetPos`: the hull's height above the deck now depends on the hull, so subtracting a
+ *  constant would give `disembark` a pad centre that is right for exactly one ship class. */
+const landingPadCenter = new THREE.Vector3()
+const _landBox = new THREE.Box3()
+const _landHullNormal = new THREE.Vector3()
+const _landQuat = new THREE.Quaternion()
+const _landPos = new THREE.Vector3()
+
+/** The hull's bounding box in its OWN frame. `shipMesh` is a scene-level object whose transform
+ *  tracks the ship, so `setFromObject` would otherwise return the box under the current flight
+ *  attitude — which is not the attitude it will be parked at. */
+function hullLocalBox(target: THREE.Box3): THREE.Box3 {
+  _landQuat.copy(shipMesh.quaternion)
+  _landPos.copy(shipMesh.position)
+  shipMesh.quaternion.identity()
+  shipMesh.position.set(0, 0, 0)
+  shipMesh.updateMatrixWorld(true)
+  target.setFromObject(shipMesh)
+  shipMesh.quaternion.copy(_landQuat)
+  shipMesh.position.copy(_landPos)
+  shipMesh.updateMatrixWorld(true)
+  return target
+}
 
 function beginLanding(idx: number, padCenter: THREE.Vector3, padNormal: THREE.Vector3): void {
   landingPhase = 'settling'
   landingT = 0
   landingCityIdx = idx
   landingNormal.copy(padNormal)
+  landingPadCenter.copy(padCenter)
   landingFromPos.copy(ship.position)
   landingFromQuat.copy(ship.quaternion)
-  landingTargetPos.copy(padCenter).addScaledVector(padNormal, 2.2)
   // Keep the nose heading: project the current forward onto the deck plane, up = pad normal.
   const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(ship.quaternion)
   fwd.addScaledVector(padNormal, -fwd.dot(padNormal))
@@ -1114,6 +1138,12 @@ function beginLanding(idx: number, padCenter: THREE.Vector3, padNormal: THREE.Ve
   // -Z (ship nose) faces fwd.
   const m = new THREE.Matrix4().lookAt(new THREE.Vector3(), fwd.normalize(), padNormal)
   landingTargetQuat.setFromRotationMatrix(m)
+  // Rest the hull ON the deck. The attitude has to be resolved first: how far the hull hangs below
+  // its origin depends on which way up it is being parked.
+  hullLocalBox(_landBox)
+  _landHullNormal.copy(padNormal).applyQuaternion(_landQuat.copy(landingTargetQuat).invert())
+  landingTargetPos.copy(padCenter)
+    .addScaledVector(padNormal, hullDeckOffset(_landBox.min, _landBox.max, _landHullNormal))
   ship.velocity.set(0, 0, 0)
   audio.blip('nav')
 }
@@ -1610,6 +1640,19 @@ function loadHangar(): { selected: ShipType; owned: ShipType[] } {
 const hangar = loadHangar()
 let selectedShipType: ShipType = hangar.selected
 const ownedShips = new Set<ShipType>(hangar.owned)
+// DEV capture hook: ?ship=<hauler|fighter|miner|interceptor> forces the hull for this session,
+// without writing it back to the hangar. The on-foot slice shipped verified on the hauler alone
+// because there was no way to ASK for another one — the hull comes from a profile's localStorage, and
+// a headless capture starts with an empty one. Every hull has a different footprint and a different
+// height off the deck, which is exactly what the disembark spot and the ship keep-out are derived
+// from, so "it works on the hauler" says little about the other three.
+if (import.meta.env.DEV) {
+  const wanted = URL_PARAMS.get('ship')
+  if (wanted && wanted in SHIP_STATS) {
+    selectedShipType = wanted as ShipType
+    ownedShips.add(selectedShipType) // launch() re-selects from the hangar, which enforces ownership
+  }
+}
 let shipLoadSeq = 0
 function saveHangar(): void {
   try {
@@ -4333,10 +4376,10 @@ function disembark(): void {
   if (walker || landingPhase !== 'landed' || landingCityIdx === null) return
   const site = citySites?.[landingCityIdx]
   if (!site) return
-  // The pad is derived from the landing target rather than re-fetched from the chunk: beginLanding
-  // already resolved both, and the chunk can stream out from under a parked ship.
+  // The pad comes from what beginLanding resolved rather than being re-fetched from the chunk, which
+  // can stream out from under a parked ship.
   const padNormal = landingNormal.clone().normalize()
-  const padCenter = landingTargetPos.clone().addScaledVector(padNormal, -2.2)
+  const padCenter = landingPadCenter.clone()
   const { u, v } = cityTangentFrame(site.direction)
 
   // Keep-out from the hull's world bounding box. A circle round the largest horizontal extent is
@@ -4735,8 +4778,15 @@ if (import.meta.env.DEV && URL_PARAMS.get('entry')) {
 // landmark once the NASA earth data is in — capture-driven judgment of the real-Earth pass.
 if (import.meta.env.DEV && URL_PARAMS.get('earthview')) {
   const which = URL_PARAMS.get('earthview')!
+  // `city-foot` is `seoul-foot` with the wait for the NASA rasters removed, which is the ONLY way to
+  // reach the procedural city. computeCitySites branches on isEarthDataReady(): with the rasters
+  // absent it drops the real-megacity table and scatters unnamed sites by terrain roughness instead.
+  // That is not a hypothetical — it is what a player on a slow or failing connection lands on — and
+  // it exercises a differently-shaped site record (no `name`) through the whole landing and on-foot
+  // path. Drive it by blocking /textures/earth/* in the harness.
+  const needsEarthData = which !== 'city-foot'
   const devEarthPoll = setInterval(() => {
-    if (!running || !flightPlanEl.hidden || !isEarthDataReady()) return
+    if (!running || !flightPlanEl.hidden || (needsEarthData && !isEarthDataReady())) return
     clearInterval(devEarthPoll)
     const place = (lat: number, lon: number, altFrac: number, target?: THREE.Vector3) => {
       const pos = EARTH.position.clone().addScaledVector(latLonToDir(lat, lon), EARTH.radius * (1 + altFrac))
@@ -4744,8 +4794,9 @@ if (import.meta.env.DEV && URL_PARAMS.get('earthview')) {
     }
     if (which === 'seoul') place(37.57, 126.98, 0.5)
     else if (which === 'seoul-low') place(37.57, 126.98, 0.22) // inside the chunk-build band
-    else if (which === 'seoul-pad' || which === 'seoul-foot') {
-      // Directly over the Seoul skypad, inside the landing-eligibility band — SPACE lands.
+    else if (which === 'seoul-pad' || which === 'seoul-foot' || which === 'city-foot') {
+      // Directly over the Seoul skypad, inside the landing-eligibility band — SPACE lands. Without
+      // the rasters there is no Seoul, so the fallback to sites[0] is the whole point for city-foot.
       const sites = computeCitySites(EARTH.seed, EARTH.radius, 8)
       const seoul = sites.find((s) => s.name === 'Seoul') ?? sites[0]
       const pw = computePadWorld(seoul, EARTH.position, EARTH.seed, EARTH.radius)
@@ -4755,7 +4806,7 @@ if (import.meta.env.DEV && URL_PARAMS.get('earthview')) {
       // depend on the exact frame each one lands on; this reaches the same state deterministically.
       // `window.planetfallReady` is the signal the capture script waits on — without it the first
       // frames are of a ship still settling, which looks like a working capture of a broken mode.
-      if (which === 'seoul-foot') {
+      if (which === 'seoul-foot' || which === 'city-foot') {
         const devFootPoll = setInterval(() => {
           if (walker) {
             clearInterval(devFootPoll)

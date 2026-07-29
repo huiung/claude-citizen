@@ -12,10 +12,24 @@
 // the early frames are of a ship still settling onto the deck, which produces a run of plausible
 // PNGs that say nothing about the mode under test.
 //
-// Shots are described as a list of {name, yaw, pitch, walk} — `dev.foot(yawDeg, pitchDeg)` aims
-// the camera (mouse look needs a pointer lock that headless Chrome will not grant) and `walk` is a
-// number of seconds to hold a movement key, dispatched as real key events so the walk goes through
-// the same keydown handler a player's does.
+// Shots are described as a list of {name, yaw, pitch, walk, wheel, press} — `dev.foot(yawDeg,
+// pitchDeg)` aims the camera, `walk` is a number of seconds to hold a movement key, `wheel` is a
+// number of notches (positive = zoom out), and `press` taps a key. All of the input goes through the
+// same handlers a player's does.
+//
+// FOOT_BASE carries the query, so `&ship=fighter` picks the hull (a DEV override — the hull otherwise
+// comes from a profile's localStorage, which is empty in a fresh headless profile) and
+// `?earthview=city-foot` reaches the PROCEDURAL city, which needs the NASA rasters to be absent:
+//     await page.send('Network.setBlockedURLs', { urls: ['*/textures/earth/*'] })
+//
+// Two footguns, both found the hard way:
+//  - `yaw`/`pitch` are sticky. `dev.foot(undefined, 3)` leaves the yaw wherever the previous shot put
+//    it, so a shot that omits `yaw` after one that set it is NOT at yaw 0. Set both, or read the
+//    frame you get rather than the frame you meant.
+//  - Mouse look genuinely cannot be driven here, and this is now measured rather than assumed:
+//    `document.pointerLockElement` stays null even after a synthesized click on the canvas, the
+//    mousemove handler bails without a lock, and 30 dispatched mouseMoved events changed 1.16% of
+//    pixels against a 3.64% no-input baseline — i.e. nothing. Wheel zoom needs no lock and does work.
 //
 // Chrome flags and the CDP plumbing are lifted from capture-ship-studio.mjs; the swiftshader flags
 // in particular are what make headless WebGL render at all rather than emit black frames.
@@ -86,6 +100,13 @@ class CdpPage {
     return this.send('Input.dispatchKeyEvent', {
       type, code, key: letter.toLowerCase(), text: type === 'keyDown' ? letter.toLowerCase() : undefined,
       windowsVirtualKeyCode: letter.charCodeAt(0), nativeVirtualKeyCode: letter.charCodeAt(0),
+    })
+  }
+  /** One wheel notch at the centre of the viewport. The on-foot wheel handler is on the canvas and
+   *  does NOT require a pointer lock, which is what makes zoom the one mouse input testable here. */
+  wheel(deltaY) {
+    return this.send('Input.dispatchMouseEvent', {
+      type: 'mouseWheel', x: WIDTH / 2, y: HEIGHT / 2, deltaX: 0, deltaY, button: 'none',
     })
   }
 }
@@ -185,6 +206,15 @@ try {
       await sleep(seconds * 1000)
       await page.key('keyUp', code)
       await sleep(250)
+    }
+    if (shot.wheel) {
+      // Notches rather than one big delta: the zoom queues per event and clamps, so a single huge
+      // deltaY does not reach the same distance a player's several flicks would.
+      for (let i = 0; i < Math.abs(shot.wheel); i++) {
+        await page.wheel(Math.sign(shot.wheel) * 240)
+        await sleep(60)
+      }
+      await sleep(700) // the boom lerps to the new distance
     }
     // `press` is for the mode transitions themselves — E to board, E again to step back out — so a
     // run can show the round trip and not just the on-foot state in isolation.
