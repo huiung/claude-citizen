@@ -59,6 +59,7 @@ import { computeCitySites, EARTH_CITIES, type CitySite } from './render/citySite
 import { cityGroundRadiusAt, computePadWorld, padDeckRadiusAt, PAD_RADIUS } from './render/cityPad'
 import { cityLocalFromDirection, cityTangentFrame } from './render/cityLayout'
 import { computeLandingEligibility, hullDeckOffset, landingReward } from './sim/landing'
+import { createControlHintState, noteControlUsed, toggleControlHints } from './ui/controlHints'
 import { buildPedestrian, type Pedestrian } from './render/pedestrian'
 import {
   BOARD_RANGE,
@@ -219,6 +220,22 @@ const hudEl = document.getElementById('hud')!
 const statusEl = document.getElementById('status')!
 const helpEl = document.getElementById('help')!
 const crosshairEl = document.getElementById('crosshair')!
+// The control-hints block is both the game's only tutorial and twelve lines across the bottom-right of
+// every screenshot. It collapses to a single `H · CONTROLS` line once the player has driven ten
+// different hinted controls, which is as close to "they have found the controls" as an input stream
+// gets — see src/ui/controlHints.ts for why not a timer and why not "after first use". Sticky, so a
+// returning player is not taught twice; H toggles it either way.
+const HELP_COLLAPSED_KEY = 'scc.help.collapsed'
+const controlHints = createControlHintState(localStorage.getItem(HELP_COLLAPSED_KEY) === '1')
+
+function renderControlHints(): void {
+  helpEl.classList.toggle('collapsed', controlHints.collapsed)
+}
+
+function persistControlHints(): void {
+  try { localStorage.setItem(HELP_COLLAPSED_KEY, controlHints.collapsed ? '1' : '0') } catch { /* private mode */ }
+}
+renderControlHints()
 const mobileControlsEl = document.getElementById('mobile-controls')!
 const mobileStickEl = document.getElementById('mobile-stick')!
 const mobileStickKnobEl = document.getElementById('mobile-stick-knob')!
@@ -3557,6 +3574,18 @@ addEventListener('keydown', (e) => {
       closeSettingsPanel()
     }
     return
+  }
+  // Placed after the panel guards so typing/navigating a panel cannot count as learning a control,
+  // and before the control handlers so H reaches the toggle whatever else the key does elsewhere.
+  if (e.code === 'KeyH' && running) {
+    toggleControlHints(controlHints)
+    renderControlHints()
+    persistControlHints()
+    return
+  }
+  if (running && noteControlUsed(controlHints, e.code)) {
+    renderControlHints()
+    persistControlHints()
   }
   if (e.code === 'KeyM' && running) {
     e.preventDefault()
