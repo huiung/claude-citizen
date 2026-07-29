@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { attachGroundFillToMaterial } from './groundFill'
 
 /** Procedural surface detail for generated hulls.
  *
@@ -257,6 +258,10 @@ const _size = new THREE.Vector3()
  *
  *  Leaves emissive surfaces alone: they are their own light source, and dimming or de-metalling a
  *  glow disc or a nav light would only break the one part of the ship that already reads.
+ *
+ *  Also the point where the ground-bounce fill is attached (see `groundFill`): the floor below fixes
+ *  what the hull reflects, and the fill fixes the fact that nothing in the scene lights it from
+ *  underneath. The two are separate problems with the same symptom, and both need this one traverse.
  */
 export function tuneHullMaterialsForNoEnvironment(root: THREE.Object3D): void {
   const seen = new Set<THREE.Material>()
@@ -272,6 +277,7 @@ export function tuneHullMaterialsForNoEnvironment(root: THREE.Object3D): void {
       if (mat.metalness > MAX_METALNESS_WITHOUT_ENV) mat.metalness = MAX_METALNESS_WITHOUT_ENV
       _lumColor.copy(mat.color)
       if (liftToLuminanceFloor(_lumColor)) mat.color.copy(_lumColor)
+      attachGroundFillToMaterial(mat)
       mat.needsUpdate = true
     }
   })

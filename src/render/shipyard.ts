@@ -140,14 +140,28 @@ function craftModelCacheKey(url: string, targetSize: number): string {
   return `${url}#${targetSize}`
 }
 
+/** Clone a material for one spawned instance, keeping the shader patches the load pass installed.
+ *
+ *  `Material.copy()` walks a fixed list of value properties; `onBeforeCompile` is a prototype METHOD
+ *  and is not on that list, so a plain `clone()` silently reverts to three.js's no-op and the clone
+ *  compiles an unpatched shader. Everything hullDetail sets — colour, metalness, the detail maps — is
+ *  a value and does survive, which is what makes the loss so easy to miss: the hull looks patched.
+ *  Copying the reference (rather than a per-clone wrapper) also keeps every instance sharing one
+ *  program, since three.js keys the program cache on `onBeforeCompile.toString()`. */
+function cloneCraftMaterial(material: THREE.Material): THREE.Material {
+  const clone = material.clone()
+  clone.onBeforeCompile = material.onBeforeCompile
+  return clone
+}
+
 function cloneCraftModelInstance(source: THREE.Group): THREE.Group {
   const instance = source.clone(true)
   instance.traverse((child) => {
     if (!(child instanceof THREE.Mesh)) return
     child.geometry = child.geometry.clone()
     child.material = Array.isArray(child.material)
-      ? child.material.map((material) => material.clone())
-      : child.material.clone()
+      ? child.material.map(cloneCraftMaterial)
+      : cloneCraftMaterial(child.material)
   })
   return instance
 }
@@ -175,7 +189,9 @@ export function createCraftModelLoader(
       source = loadScene(url)
         .then((model) => normalizeCraftModel(model, targetSize))
         // Detail maps go on the cached source, so this runs once per (url, size) rather than per
-        // spawned instance — clones then share the same materials and the same textures.
+        // spawned instance — clones copy the materials but share the same textures, so the upload
+        // happens once for the whole fleet. What a clone does NOT inherit is `onBeforeCompile`; see
+        // cloneCraftMaterial.
         // Isolated from the .catch below on purpose: detail is cosmetic, and letting it share that
         // handler would turn "no canvas 2d context" into "this hull failed to load", silently
         // dropping every player back to the procedural placeholder.

@@ -72,6 +72,7 @@ import {
 } from './sim/onFoot'
 import { earthHighColorLoaded, isEarthDataReady, latLonToDir, loadEarthData, sampleCloudCover } from './render/earthData'
 import { computeAtmoFog, computeCelestialHide, computeCloudFogBoost } from './render/atmoImmersion'
+import { groundFillStrength, updateGroundFill } from './render/groundFill'
 import { buildCityChunk, selectChunkSite, type CityChunk } from './render/cityChunk'
 import { buildCityLightSplats, cityNightFactor, updateCityLightSplats } from './render/cityLights'
 import { cancelTravel, catchUpQuantum, createQuantum, cycleQuantumDestinationIndex, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
@@ -1278,6 +1279,13 @@ function updateAtmoSky(): void {
   } else {
     scene.fog = null
   }
+
+  // Ground-bounce fill on the hull. Driven from here rather than from the landed / on-foot state
+  // because the two gates it needs — how low we are, and whether the sun is up where we are — are
+  // both already computed above, and because the physical effect is not specific to being parked:
+  // sunlight bounces off the ground under a hull that is hovering over the pad too. Zero outside the
+  // sky dome, so a hull in space is bit-for-bit unaffected.
+  updateGroundFill(_skyUp, dist < EARTH_SKY_TOP ? groundFillStrength(dist - EARTH.radius, _skySunDir.dot(_skyUp)) : 0)
 
   // The atmosphere hides the distant bodies: day washout, and depth even at night —
   // planets hanging over the ground as giant discs break the "I'm down on Earth" read.
