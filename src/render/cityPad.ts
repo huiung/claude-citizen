@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { samplePlanetSurface } from './planetTextures'
 import {
-  CITY_BLOCK, CITY_ROAD, CITY_TIER_RADIUS, cityGroundRadius, cityTangentFrame,
+  CITY_BLOCK, CITY_ROAD, CITY_SHEET_SEGMENTS, CITY_TIER_RADIUS, cityGroundRadius, cityTangentFrame,
   computeCityLayout, SHEET_LIFT, SKIRT_MARGIN,
 } from './cityLayout'
 import type { CitySite } from './citySites'
@@ -61,6 +61,108 @@ export function computePadWorld(
   // Same terrain frame as the ground sheet, lifted with it, deck top on top.
   const ground = cityGroundRadius(radius, t.height) + SHEET_LIFT + PAD_DECK_HEIGHT
   return { center: planetPos.clone().addScaledVector(normal, ground), normal }
+}
+
+const _sheetDir = new THREE.Vector3()
+const _triA = new THREE.Vector3()
+const _triB = new THREE.Vector3()
+const _triC = new THREE.Vector3()
+const _triNormal = new THREE.Vector3()
+const _triEdge = new THREE.Vector3()
+
+/** Radius of one ground-sheet VERTEX, including the skirt dive past the city edge. Mirrors the
+ *  per-vertex maths in buildCityChunk exactly; the two are kept in step by both going through
+ *  cityGroundRadius / SHEET_LIFT / CITY_SHEET_SEGMENTS rather than by repeating numbers. */
+function sheetVertexRadius(
+  n: THREE.Vector3, u: THREE.Vector3, v: THREE.Vector3,
+  planetSeed: number, radius: number, extent: number, x: number, z: number,
+): number {
+  _sheetDir.copy(n).multiplyScalar(radius).addScaledVector(u, x).addScaledVector(v, z).normalize()
+  const t = samplePlanetSurface('earth', planetSeed, _sheetDir.x, _sheetDir.y, _sheetDir.z, undefined, radius)
+  const g = cityGroundRadius(radius, t.height) + SHEET_LIFT
+  const lr = Math.hypot(x, z)
+  return lr > extent ? g - (lr - extent) * 0.9 : g
+}
+
+/** Position of one ground-sheet vertex, relative to the planet centre. */
+function sheetVertexPoint(
+  target: THREE.Vector3, n: THREE.Vector3, u: THREE.Vector3, v: THREE.Vector3,
+  planetSeed: number, radius: number, extent: number, x: number, z: number,
+): THREE.Vector3 {
+  const r = sheetVertexRadius(n, u, v, planetSeed, radius, extent, x, z)
+  return target.copy(n).multiplyScalar(radius).addScaledVector(u, x).addScaledVector(v, z).normalize().multiplyScalar(r)
+}
+
+/** Radius of the city ground sheet's SURFACE at a tangent-plane point — what a pedestrian stands on.
+ *
+ *  Three things this is deliberately NOT, each of which was tried and each of which a capture threw
+ *  out. The residuals are all in the 0.1-0.3 unit range, which reads as nothing written down and as
+ *  a person buried to the ankles or hovering a hand's width off the ground when you look at it.
+ *
+ *  1. `cityGroundRadius(radius, samplePlanetSurface(...))`. That is the sheet's *input*, a continuous
+ *     field. The sheet is a 40x40 quad grid over a footprint up to 2800 units across, so it is flat
+ *     across 70-unit cells and departs from its own input by whatever the terrain does in between.
+ *     A ship at altitude never notices — `resolvePlanetCollisions` lives with exactly this — but one
+ *     cell here spans ~100 km of Earth's real elevation raster.
+ *  2. Bilinear over the four surrounding vertices. The GPU draws two flat triangles, not a bilinear
+ *     patch, and with neighbouring vertices routinely several units apart the two disagree.
+ *  3. Interpolating the corner RADII over the correct triangle. Better, but a triangle is flat in 3D
+ *     while interpolated radii trace an arc through the same corners; the chord sag over a 70-unit
+ *     cell at radius 4300 is ~0.12 units, and it is always in the same direction, so the walker
+ *     floats consistently.
+ *
+ *  So: intersect the ray from the planet centre with the PLANE of the triangle the point falls in.
+ *  `PlaneGeometry` emits each quad as (a,b,d) and (b,c,d) with a=(ix,iy), b=(ix,iy+1),
+ *  c=(ix+1,iy+1), d=(ix+1,iy), which splits it along the diagonal from the (-x,+z) corner to the
+ *  (+x,-z) corner — remembering that the plane's local Y, which becomes the site frame's v/z axis
+ *  here, runs the opposite way to its vertex index.
+ */
+export function cityGroundRadiusAt(
+  site: CitySite, planetSeed: number, radius: number, x: number, z: number,
+): number {
+  const n = site.direction
+  const { u, v } = cityTangentFrame(n)
+  const extent = CITY_TIER_RADIUS[site.tier]
+  const span = extent * 2
+  const cell = span / CITY_SHEET_SEGMENTS
+  // Vertices sit at -span/2 + k*cell on both axes. Clamp rather than extrapolate: past the sheet's
+  // own rim the skirt is already diving underground and there is nothing to stand on either way.
+  const gx = Math.min(CITY_SHEET_SEGMENTS - 1, Math.max(0, Math.floor((x + span / 2) / cell)))
+  const gz = Math.min(CITY_SHEET_SEGMENTS - 1, Math.max(0, Math.floor((z + span / 2) / cell)))
+  const x0 = -span / 2 + gx * cell
+  const z0 = -span / 2 + gz * cell
+  const fx = Math.min(1, Math.max(0, (x - x0) / cell))
+  const fz = Math.min(1, Math.max(0, (z - z0) / cell))
+  // Row index runs against z, so the diagonal in (fx, fz) space is fx = fz.
+  if (fx <= fz) {
+    sheetVertexPoint(_triA, n, u, v, planetSeed, radius, extent, x0, z0 + cell)
+    sheetVertexPoint(_triB, n, u, v, planetSeed, radius, extent, x0, z0)
+    sheetVertexPoint(_triC, n, u, v, planetSeed, radius, extent, x0 + cell, z0 + cell)
+  } else {
+    sheetVertexPoint(_triA, n, u, v, planetSeed, radius, extent, x0 + cell, z0)
+    sheetVertexPoint(_triB, n, u, v, planetSeed, radius, extent, x0, z0)
+    sheetVertexPoint(_triC, n, u, v, planetSeed, radius, extent, x0 + cell, z0 + cell)
+  }
+  _triNormal.copy(_triC).sub(_triA).cross(_triEdge.copy(_triB).sub(_triA))
+  _sheetDir.copy(n).multiplyScalar(radius).addScaledVector(u, x).addScaledVector(v, z).normalize()
+  const denom = _sheetDir.dot(_triNormal)
+  // Degenerate only if the triangle is edge-on to the ray, which a terrain sheet never is; fall
+  // back to the corner radius rather than returning a NaN that would drop the walker to the core.
+  if (Math.abs(denom) < 1e-9) return _triA.length()
+  return _triA.dot(_triNormal) / denom
+}
+
+/** Radius of the skypad's deck top along a direction from the planet centre.
+ *
+ *  The deck is a cylinder whose top face is FLAT and perpendicular to the pad normal, so its
+ *  distance from the planet centre grows with distance from the pad's own centre — by 0.23 units at
+ *  the 45-unit rim, on a 4300-unit planet. Treating the deck as a sphere at padCenter's radius, which
+ *  is what "the pad is flat, just use its radius" gives you, therefore buries a pedestrian's boots
+ *  anywhere but the middle of the pad. The ship never noticed because it lands dead centre.
+ */
+export function padDeckRadiusAt(padRadius: number, padNormal: THREE.Vector3, dir: THREE.Vector3): number {
+  const denom = dir.dot(padNormal)
+  return denom > 1e-6 ? padRadius / denom : padRadius
 }
 
 /** Deck-top landing marking (circle ring + centre dot) — emissiveMap, pure, canvas-free. */

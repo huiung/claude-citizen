@@ -56,8 +56,20 @@ import { createSeasonHubLifeRig, updateSeasonHubLifeRig } from './render/seasonH
 import { buildBlackHole } from './render/blackHole'
 import { applyPlanetAssetTextures, loadPlanetAssetTextures } from './render/planetAssetTextures'
 import { computeCitySites, EARTH_CITIES, type CitySite } from './render/citySites'
-import { computePadWorld, PAD_RADIUS } from './render/cityPad'
+import { cityGroundRadiusAt, computePadWorld, padDeckRadiusAt, PAD_RADIUS } from './render/cityPad'
+import { cityLocalFromDirection, cityTangentFrame } from './render/cityLayout'
 import { computeLandingEligibility, landingReward } from './sim/landing'
+import { buildPedestrian, type Pedestrian } from './render/pedestrian'
+import {
+  BOARD_RANGE,
+  clampFootPitch,
+  pushOutOfKeepOut,
+  strideParams,
+  stepVertical,
+  walkVelocity,
+  WALK_SPEED,
+  type OnFootInput,
+} from './sim/onFoot'
 import { earthHighColorLoaded, isEarthDataReady, latLonToDir, loadEarthData, sampleCloudCover } from './render/earthData'
 import { computeAtmoFog, computeCelestialHide, computeCloudFogBoost } from './render/atmoImmersion'
 import { buildCityChunk, selectChunkSite, type CityChunk } from './render/cityChunk'
@@ -148,6 +160,8 @@ import { readLocalDevHolderOverride } from './ui/devHolder'
 import {
   COCKPIT_NEAR_PLANE,
   FLIGHT_BASE_FOV,
+  FOOT_PIVOT_HEIGHT,
+  defaultFootDistance,
   defaultOrbitDistance,
   defaultRearDistance,
   nextCameraMode,
@@ -156,6 +170,8 @@ import {
   rearCameraOffset,
   resolveCockpitEyeAnchor,
   showHullInteriorFaces,
+  thirdPersonCameraOffset,
+  zoomFootDistance,
   zoomOrbitDistance,
   zoomRearDistance,
   type CameraMode,
@@ -1911,6 +1927,7 @@ function toggleQuantumTravel(): void {
   // Jumping off the skypad IS the liftoff — clear the pin first (no reward), or the
   // landed branch would warp the ship back onto the pad when the drive drops out.
   if (landingPhase !== 'none') {
+    boardShip() // J is inert on foot, but toggleQuantumTravel is also the mobile Jump button's handler
     landingPhase = 'none'
     landingCityIdx = null
   }
@@ -2349,6 +2366,7 @@ function respawnPlayer(now: number): void {
   spawnExplosion(ship.position, now)
   audio.blip('explosion')
   damageFlash()
+  boardShip() // unreachable on foot today (nothing damages a pedestrian) — but a walker whose ship has just respawned across the system has no ground under it and no way home
   landingPhase = 'none' // never respawn pinned to a pad
   landingCityIdx = null
   ship.position.copy(randomSpawn())
@@ -2787,6 +2805,39 @@ if (import.meta.env.DEV) {
     freeze(on = 1) {
       devFreezeSim = on !== 0
       console.log(`[dev] sim ${devFreezeSim ? 'FROZEN (dt=0)' : 'running'}`)
+    },
+    // Check the on-foot ground query against the geometry the player can actually see, by
+    // raycasting the city chunk from above the walker and reporting the gap.
+    //
+    // This is here because the gap is close to invisible in a screenshot and decisive in the game.
+    // Two separate versions of walkerGroundRadius() shipped a 0.1-0.2 unit error — a sphere through
+    // the pad's centre instead of the deck's flat top, then an arc through a triangle's corners
+    // instead of the triangle — and both times the only symptom was "the pilot's boots have gone",
+    // which is equally consistent with a dozen other causes. A number is not.
+    footGroundError() {
+      if (!walker) return 'not on foot'
+      const w = walker
+      const up = w.position.clone().sub(EARTH.position).normalize()
+      const chunk = cityChunks.values().next()
+      if (chunk.done) return 'no city chunk streamed in'
+      const rc = new THREE.Raycaster(w.position.clone().addScaledVector(up, 60), up.clone().negate(), 0, 400)
+      const standing = w.position.distanceTo(EARTH.position)
+      // Hits come back nearest-first, i.e. highest-first. Skip anything the walker is standing
+      // UNDER — a lamp head or a pad-light pylon — and take the first surface at or below the feet.
+      const hit = rc.intersectObject(chunk.value.group, true)
+        .find((h) => h.point.distanceTo(EARTH.position) <= standing + 0.9)
+      const mesh = hit ? hit.point.distanceTo(EARTH.position) : NaN
+      return `standing ${standing.toFixed(4)}  mesh ${mesh.toFixed(4)}  error ${(standing - mesh).toFixed(4)} (+ floats, - sunk)`
+    },
+    // Aim the on-foot camera from outside the game. Walking is drivable headlessly — WASD reach the
+    // keydown handler with or without a pointer lock — but looking is not: mousemove bails unless
+    // the pointer is locked, and headless Chrome will not grant a lock. Degrees, because this gets
+    // typed by hand into a console or a capture script.
+    foot(yawDeg?: number, pitchDeg?: number) {
+      if (!walker) { console.log('[dev] not on foot'); return }
+      if (yawDeg !== undefined) walker.yaw = (yawDeg * Math.PI) / 180
+      if (pitchDeg !== undefined) footPitch = clampFootPitch((pitchDeg * Math.PI) / 180)
+      console.log(`[dev] foot yaw=${((walker.yaw * 180) / Math.PI).toFixed(1)}° pitch=${((footPitch * 180) / Math.PI).toFixed(1)}°`)
     },
   }
   console.log('[dev] crafting test helpers: dev.grant(credits?=2e6, cores?=12), dev.setPity(n?=19)')
@@ -3472,7 +3523,9 @@ addEventListener('keydown', (e) => {
     solarMap.open()
     return
   }
-  if (e.code === 'Enter' && shipControlsActive()) { openChat(); return }
+  // flightSceneActive, not shipControlsActive: chat is a property of being in the world, not of
+  // having a hand on the stick, and going mute the moment you step out of the ship is a bug.
+  if (e.code === 'Enter' && flightSceneActive()) { openChat(); return }
   if (e.code === 'Space') e.preventDefault()
   if (e.repeat) return
   if (e.code === 'KeyO' && flightSceneActive()) {
@@ -3540,10 +3593,24 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyJ' && shipControlsActive()) {
     toggleQuantumTravel()
   }
+  // E is roll-left in flight, which does nothing at all on a pad (the ship is pinned and stepShip
+  // is not called), so it is free here and it is the genre's universal enter/exit-vehicle key.
+  // Space, the obvious alternative, is already carrying dock AND land.
+  if (e.code === 'KeyE' && !MOBILE_COMPANION && !BOT) {
+    if (shipControlsActive() && landingPhase === 'landed') disembark()
+    else if (walker && boardable(walker)) boardShip()
+  }
 })
 addEventListener('keyup', (e) => keys.delete(e.code))
 addEventListener('mousemove', (e) => {
   if (document.pointerLockElement !== renderer.domElement) return
+  if (walker) {
+    // Mouse turns the walker outright rather than feeding a torque, so there is no self-centering
+    // and the sign is the opposite of flight's: on foot, mouse-right means face right.
+    walker.yaw += applyMouseSensitivity(e.movementX, gameSettings.mouseSensitivity) * 0.0024
+    footPitch = clampFootPitch(footPitch + applyMouseSensitivity(e.movementY, gameSettings.mouseSensitivity) * 0.0024)
+    return
+  }
   mouseYaw -= applyMouseSensitivity(e.movementX, gameSettings.mouseSensitivity) * 0.0024
   mousePitch -= applyMouseSensitivity(e.movementY, gameSettings.mouseSensitivity) * 0.0024
   mouseYaw = THREE.MathUtils.clamp(mouseYaw, -1, 1)
@@ -3552,6 +3619,10 @@ addEventListener('mousemove', (e) => {
 renderer.domElement.addEventListener('wheel', (e) => {
   if (!flightSceneActive()) return
   e.preventDefault()
+  if (walker) {
+    footWheelDelta = queueOrbitZoomDelta(footWheelDelta, e.deltaY)
+    return
+  }
   // The cockpit eye is fixed to the hull, so there is no boom to zoom. Swallowing the wheel rather
   // than letting it fall through to the rear branch keeps it from banking up a queued delta that
   // would snap the rear camera to a new distance the moment the pilot cycles back to it.
@@ -4143,6 +4214,262 @@ function drawCombatHud(now: number): void {
 
 }
 
+// --- On foot (planetfall)
+//
+// The third player state, after "flying" and "docked". It exists only while the ship is parked on
+// a skypad: `landingPhase === 'landed'` pins the hull and zeroes its velocity, so nothing in the
+// flight sim needs to keep running while the pilot is outside, and `updateOnFoot` replaces the
+// whole `shipControlsActive()` branch of the frame loop rather than running beside it.
+//
+// Deliberately single-player: `net.sendState` is not called on foot, so peers see the parked ship
+// at the position it landed on. Making a walking pilot visible to peers is new protocol and new
+// remote rendering, which is out of scope here.
+
+interface Walker {
+  /** World position of the FEET. */
+  position: THREE.Vector3
+  /** Local up (unit): the planet's outward normal under the feet, recomputed every step. */
+  up: THREE.Vector3
+  /** Heading about `up`, radians, measured from the site frame's +v axis toward +u. */
+  yaw: number
+  /** Radial velocity, positive outward — gravity and the step off the pad's edge. */
+  radialVelocity: number
+  grounded: boolean
+  /** Total ground distance travelled, drives the walk cycle. */
+  distanceWalked: number
+  site: CitySite
+  /** Site tangent frame, cached: the ground query converts world directions back through it. */
+  u: THREE.Vector3
+  v: THREE.Vector3
+  /** Pad deck-top centre in the site's tangent plane, its radius from the planet centre, and the
+   *  deck's normal — the deck top is a plane, so all three are needed to stand on it. */
+  padLocal: { x: number; z: number }
+  padRadius: number
+  padNormal: THREE.Vector3
+  /** Tangent-plane radius the walker may not enter around the parked hull. */
+  shipKeepOut: number
+}
+
+let walker: Walker | null = null
+let walkerRig: Pedestrian | null = null
+let footPitch = 0
+let footDistance = defaultFootDistance()
+let footWheelDelta = 0
+
+/** True while the pilot is outside the ship. The one state where `flightSceneActive()` and
+ *  `shipControlsActive()` differ. */
+function onFootActive(): boolean { return walker !== null }
+
+const _footFwd = new THREE.Vector3()
+const _footRight = new THREE.Vector3()
+const _footRef = new THREE.Vector3()
+const _footRel = new THREE.Vector3()
+const _footDir = new THREE.Vector3()
+const _footLookMat = new THREE.Matrix4()
+const _footLookAt = new THREE.Vector3()
+const _footZero = new THREE.Vector3()
+const _footBox = new THREE.Box3()
+const _footBoxSize = new THREE.Vector3()
+
+/** Refresh `_footFwd` / `_footRight` from the walker's heading.
+ *
+ *  The reference direction is the site's +v axis projected onto the tangent plane at the walker's
+ *  feet, not a world axis: on a sphere there is no global "north" that stays tangent, and using
+ *  one would make the heading drift as the player walks. The site frame is fixed for the whole
+ *  city, so a yaw of 0 means the same thing anywhere on the pad. */
+function footBasis(w: Walker): void {
+  _footRef.copy(w.v).addScaledVector(w.up, -w.v.dot(w.up)).normalize()
+  _footRight.crossVectors(_footRef, w.up).normalize()
+  _footFwd.copy(_footRef).multiplyScalar(Math.cos(w.yaw)).addScaledVector(_footRight, Math.sin(w.yaw)).normalize()
+  _footRight.crossVectors(_footFwd, w.up).normalize()
+}
+
+/** Distance from the planet centre to the walkable surface below a direction.
+ *
+ *  Two surfaces, not one. Inside the pad's footprint the answer is the deck's flat top face;
+ *  resampling terrain noise under a pedestrian's boots on a concrete slab would produce jitter that
+ *  does not exist in the thing they can see. Outside it, the city's ground sheet, queried through
+ *  `cityGroundRadiusAt` so the walker stands on the sheet's rendered surface rather than on the
+ *  continuous field the sheet was built from. The deck is PAD_DECK_HEIGHT above the sheet, so the
+ *  boundary between them is a 3-unit kerb, which is exactly what it looks like.
+ *
+ *  Both branches go through a function that models the surface as the flat geometry it is rather
+ *  than as a radius. That distinction is invisible from a cockpit and decisive at 1.8 units — see
+ *  `padDeckRadiusAt`, which exists because a sphere through the pad's centre is a fifth of a metre
+ *  under its own rim. */
+function walkerGroundRadius(w: Walker, dir: THREE.Vector3): number {
+  const local = cityLocalFromDirection(w.site.direction, w.u, w.v, EARTH.radius, dir)
+  const dx = local.x - w.padLocal.x
+  const dz = local.z - w.padLocal.z
+  if (dx * dx + dz * dz <= PAD_RADIUS * PAD_RADIUS) return padDeckRadiusAt(w.padRadius, w.padNormal, dir)
+  return cityGroundRadiusAt(w.site, EARTH.seed, EARTH.radius, local.x, local.z)
+}
+
+function readOnFootInput(): OnFootInput {
+  return {
+    forward: (keys.has('KeyW') ? 1 : 0) - (keys.has('KeyS') ? 1 : 0),
+    strafe: (keys.has('KeyD') ? 1 : 0) - (keys.has('KeyA') ? 1 : 0),
+    run: keys.has('ShiftLeft') || keys.has('ShiftRight'),
+  }
+}
+
+/** Can the pilot get back in from here? Measured to the hull's centre and offset by the keep-out,
+ *  so it is a band around the ship's surface rather than around a point inside it. */
+function boardable(w: Walker): boolean {
+  return w.position.distanceTo(ship.position) <= w.shipKeepOut + BOARD_RANGE
+}
+
+/** Step out onto the deck. Only reachable from `landingPhase === 'landed'`, which is what
+ *  guarantees there is a pad under the ship and that the hull will still be there on return. */
+function disembark(): void {
+  if (walker || landingPhase !== 'landed' || landingCityIdx === null) return
+  const site = citySites?.[landingCityIdx]
+  if (!site) return
+  // The pad is derived from the landing target rather than re-fetched from the chunk: beginLanding
+  // already resolved both, and the chunk can stream out from under a parked ship.
+  const padNormal = landingNormal.clone().normalize()
+  const padCenter = landingTargetPos.clone().addScaledVector(padNormal, -2.2)
+  const { u, v } = cityTangentFrame(site.direction)
+
+  // Keep-out from the hull's world bounding box. A circle round the largest horizontal extent is
+  // conservative for a rotated hull, which is the right way to be wrong: too large only means the
+  // pilot stands a little further off, too small means walking through the ship.
+  _footBox.setFromObject(shipMesh)
+  _footBox.getSize(_footBoxSize)
+  const keepOut = Math.max(2.5, Math.max(_footBoxSize.x, _footBoxSize.z) * 0.45)
+
+  // Step out to port, facing the hull. This is the shot the slice exists for — the pilot in the
+  // near foreground with the ship they just flew down filling the frame behind them — and it is
+  // also simply what stepping out of a vehicle looks like.
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(ship.quaternion)
+  right.addScaledVector(padNormal, -right.dot(padNormal))
+  if (right.lengthSq() < 1e-6) right.copy(u) // nose straight up the normal: any deck direction will do
+  right.normalize()
+  const spot = ship.position.clone().addScaledVector(right, -(keepOut + 1.3))
+
+  const w: Walker = {
+    position: spot,
+    up: padNormal.clone(),
+    yaw: 0,
+    radialVelocity: 0,
+    grounded: true,
+    distanceWalked: 0,
+    site,
+    u,
+    v,
+    padLocal: cityLocalFromDirection(site.direction, u, v, EARTH.radius, padNormal),
+    padRadius: padCenter.distanceTo(EARTH.position),
+    padNormal,
+    shipKeepOut: keepOut,
+  }
+  // Drop the feet onto whatever is under the spot, then face the ship.
+  _footDir.copy(w.position).sub(EARTH.position).normalize()
+  w.up.copy(_footDir)
+  w.position.copy(EARTH.position).addScaledVector(_footDir, walkerGroundRadius(w, _footDir))
+  _footRef.copy(w.v).addScaledVector(w.up, -w.v.dot(w.up)).normalize()
+  _footRight.crossVectors(_footRef, w.up).normalize()
+  _footRel.copy(ship.position).sub(w.position)
+  _footRel.addScaledVector(w.up, -_footRel.dot(w.up))
+  if (_footRel.lengthSq() > 1e-6) w.yaw = Math.atan2(_footRel.dot(_footRight), _footRel.dot(_footRef))
+
+  walker = w
+  walkerRig = buildPedestrian(PLAYER_TINT)
+  scene.add(walkerRig.group)
+  footPitch = 0.06 // a shade above level: the ship's mass is above the eye line from down here
+  footDistance = defaultFootDistance()
+  footWheelDelta = 0
+  // Ship-only HUD and audio go quiet: nothing updates them while the flight branch is skipped, so
+  // whatever they were showing at touchdown would sit frozen on screen.
+  mineEl.hidden = true
+  beam.visible = false
+  impact.visible = false
+  miningActive = false
+  weaponActive = false
+  audio.setMining(false, false)
+  audio.setThrust(0, false, 0)
+  audio.blip('dock')
+  crosshairEl.hidden = true // an aiming reticle for weapons the pilot is not carrying
+  if (MOBILE_COMPANION) mobileControlsEl.hidden = true
+  requestFlightPointerLock()
+}
+
+/** Get back in. Also the recovery path for anything that unpins the ship from its pad — a walker
+ *  whose ship has been teleported away has nothing to stand on and no way home. */
+function boardShip(): void {
+  if (!walker) return
+  if (walkerRig) {
+    scene.remove(walkerRig.group)
+    walkerRig.dispose()
+    walkerRig = null
+  }
+  walker = null
+  // The chase camera integrates acceleration from frame to frame; leaving it a stale sample from
+  // before the walk would spend one frame of g-sway on a difference that never happened.
+  prevCamVel.copy(ship.velocity)
+  gSway.set(0, 0, 0)
+  dockPromptEl.hidden = true
+  audio.blip('dock')
+  crosshairEl.hidden = BOT // same rule launch() applies
+  if (MOBILE_COMPANION && flightSceneActive() && !chatOpen) mobileControlsEl.hidden = false
+  requestFlightPointerLock()
+}
+
+function updateOnFoot(dt: number): void {
+  const w = walker
+  if (!w) return
+  const input = readOnFootInput()
+  footBasis(w)
+
+  const vel = walkVelocity(input)
+  const speed = Math.hypot(vel.forward, vel.right)
+  w.position.addScaledVector(_footFwd, vel.forward * dt).addScaledVector(_footRight, vel.right * dt)
+
+  // Ship keep-out, in the tangent plane so the hull is a bollard rather than a dome: the radial
+  // component is carried through untouched and only the two ground axes are corrected.
+  _footRel.copy(w.position).sub(ship.position)
+  const alongUp = _footRel.dot(w.up)
+  _footRel.addScaledVector(w.up, -alongUp)
+  const cleared = pushOutOfKeepOut(_footRel.dot(_footRight), _footRel.dot(_footFwd), w.shipKeepOut)
+  w.position.copy(ship.position)
+    .addScaledVector(w.up, alongUp)
+    .addScaledVector(_footRight, cleared.x)
+    .addScaledVector(_footFwd, cleared.z)
+
+  // Gravity and ground snap, radially. Walking along the tangent plane also raises the radius by a
+  // few microns per frame; the snap absorbs that at the same time.
+  _footDir.copy(w.position).sub(EARTH.position)
+  const radius = _footDir.length()
+  _footDir.multiplyScalar(1 / radius)
+  w.up.copy(_footDir)
+  const vertical = stepVertical(
+    { radius, velocity: w.radialVelocity, grounded: w.grounded },
+    walkerGroundRadius(w, _footDir),
+    dt,
+  )
+  w.radialVelocity = vertical.velocity
+  w.grounded = vertical.grounded
+  w.position.copy(EARTH.position).addScaledVector(_footDir, vertical.radius)
+
+  w.distanceWalked += speed * dt
+  footBasis(w) // `up` moved under the walker; re-derive the heading before anything reads it
+
+  if (walkerRig) {
+    walkerRig.group.position.copy(w.position)
+    // Matrix4.lookAt with the eye at the origin: the result's -Z faces _footFwd, which is the
+    // figure's own forward axis. Same construction beginLanding uses to seat the ship on a deck.
+    _footLookMat.lookAt(_footZero, _footFwd, w.up)
+    walkerRig.group.quaternion.setFromRotationMatrix(_footLookMat)
+    walkerRig.update(strideParams(w.distanceWalked), Math.min(1, speed / WALK_SPEED))
+  }
+
+  if (boardable(w)) {
+    dockPromptEl.textContent = '▸ PRESS E TO BOARD'
+    dockPromptEl.hidden = false
+  } else {
+    dockPromptEl.hidden = true
+  }
+}
+
 // --- Chase camera
 const camOffset = new THREE.Vector3()
 const camTarget = new THREE.Vector3()
@@ -4161,6 +4488,13 @@ const G_SWAY_K = 0.03   // accel (m/s²) → offset (m)
 const G_SWAY_MAX = 2.6  // clamp so it never gets nauseating
 const G_SWAY_RESP = 6   // spring stiffness
 function updateCamera(dt: number): void {
+  // On foot, before anything else: every line below this reads `ship.velocity`, `ship.quaternion`
+  // or `cockpitEye`, all of which describe a vehicle the player is currently standing beside.
+  if (walker) {
+    updateFootCamera(walker, dt)
+    return
+  }
+
   // Acceleration this frame → a damped offset opposite to it (push back on boost, dip on brake).
   _accel.copy(ship.velocity).sub(prevCamVel).multiplyScalar(1 / Math.max(dt, 1e-4))
   prevCamVel.copy(ship.velocity)
@@ -4213,6 +4547,46 @@ function updateCamera(dt: number): void {
   } else {
     camera.quaternion.slerp(ship.quaternion, 1 - Math.exp(-10 * dt))
   }
+  applyCameraFov(dt)
+}
+
+/** Minimum clearance between the third-person boom and the ground it is swung over. */
+const FOOT_CAMERA_GROUND_CLEARANCE = 0.5
+
+/** Third-person boom.
+ *
+ *  The same shape as the chase camera — offset in the subject's frame, exponential lerp toward it —
+ *  which is the part of the cockpit/rear/orbit work that transfers. What does not transfer is the
+ *  orientation: the ship's own quaternion supplies "up" for every flight view, and a walker does
+ *  not have one, so the frame is built from the planet's outward normal and the heading instead.
+ *
+ *  `camera.up` is left alone and the rotation comes from an explicit `Matrix4.lookAt`. Using
+ *  `camera.lookAt` would work, but only by mutating the shared `camera.up` to the local normal —
+ *  which the orbit view also reads, and which would then be pointing at a planet the player had
+ *  long since flown away from.
+ */
+function updateFootCamera(w: Walker, dt: number): void {
+  camera.near = FLIGHT_NEAR_PLANE
+  footBasis(w)
+  if (footWheelDelta !== 0) {
+    footDistance = zoomFootDistance(footDistance, footWheelDelta)
+    footWheelDelta = 0
+  }
+  camOffset.copy(thirdPersonCameraOffset(footPitch, footDistance))
+  camTarget.copy(w.position).addScaledVector(w.up, camOffset.y).addScaledVector(_footFwd, -camOffset.z)
+
+  // Looking up swings the boom down, and at full zoom it swings below the deck. Clamped against the
+  // ground under the WALKER, not under the camera: on a pad it is the same plane, and off it the
+  // few units of slope between the two are not worth a second four-sample terrain query per frame.
+  const groundRadius = walkerGroundRadius(w, w.up) + FOOT_CAMERA_GROUND_CLEARANCE
+  _footDir.copy(camTarget).sub(EARTH.position)
+  const camRadius = _footDir.length()
+  if (camRadius < groundRadius) camTarget.copy(EARTH.position).addScaledVector(_footDir, groundRadius / camRadius)
+
+  camera.position.lerp(camTarget, 1 - Math.exp(-14 * dt))
+  _footLookAt.copy(w.position).addScaledVector(w.up, FOOT_PIVOT_HEIGHT)
+  _footLookMat.lookAt(camera.position, _footLookAt, w.up)
+  camera.quaternion.setFromRotationMatrix(_footLookMat)
   applyCameraFov(dt)
 }
 
@@ -4362,12 +4736,32 @@ if (import.meta.env.DEV && URL_PARAMS.get('earthview')) {
     }
     if (which === 'seoul') place(37.57, 126.98, 0.5)
     else if (which === 'seoul-low') place(37.57, 126.98, 0.22) // inside the chunk-build band
-    else if (which === 'seoul-pad') {
+    else if (which === 'seoul-pad' || which === 'seoul-foot') {
       // Directly over the Seoul skypad, inside the landing-eligibility band — SPACE lands.
       const sites = computeCitySites(EARTH.seed, EARTH.radius, 8)
       const seoul = sites.find((s) => s.name === 'Seoul') ?? sites[0]
       const pw = computePadWorld(seoul, EARTH.position, EARTH.seed, EARTH.radius)
       placePlayerAt(pw.center.clone().addScaledVector(pw.normal, 18), pw.center)
+      // seoul-foot carries straight on through the landing into the on-foot state. The alternative
+      // for a capture harness is to drive Space and E as synthetic key events, which makes the shot
+      // depend on the exact frame each one lands on; this reaches the same state deterministically.
+      // `window.planetfallReady` is the signal the capture script waits on — without it the first
+      // frames are of a ship still settling, which looks like a working capture of a broken mode.
+      if (which === 'seoul-foot') {
+        const devFootPoll = setInterval(() => {
+          if (walker) {
+            clearInterval(devFootPoll)
+            ;(window as unknown as { planetfallReady: boolean }).planetfallReady = true // same handshake shipStudio uses
+            return
+          }
+          if (landingPhase === 'landed') { disembark(); return }
+          if (landingPhase === 'none' && landEligible) {
+            const entry = cityChunks.entries().next()
+            if (!entry.done) beginLanding(entry.value[0], entry.value[1].padCenter, entry.value[1].padNormal)
+          }
+        }, 200)
+        setTimeout(() => clearInterval(devFootPoll), 60000)
+      }
     }
     else if (which === 'nyc') place(40.71, -74.01, 0.5) // ~164° from the sub-solar point → night side
     else if (which === 'nyc-low') place(40.71, -74.01, 0.22)
@@ -4411,6 +4805,7 @@ function applyFlightPlan(id: FlightPlanId): void {
 
 function placePlayerAt(position: THREE.Vector3, target: THREE.Vector3): void {
   cancelTravel(quantum)
+  boardShip() // same defense one state further out: a teleport must not leave the pilot standing on a pad the ship has left
   landingPhase = 'none' // same defense as cancelTravel — teleports must unpin the pad
   landingCityIdx = null
   ship.position.copy(position)
@@ -4495,22 +4890,19 @@ let running = false
  * camera zoom wheel, or frame-loop world-state work (quantum stepping, loot crates, HUD).
  * Prefer `shipControlsActive()` instead when the action requires an actual player ship.
  *
- * Currently identical to `shipControlsActive()` — Browse (spectator) mode, the other
- * state that used to separate them, was removed. They will diverge again once on-foot
- * (outside the ship after landing) ships: on foot this stays true, `shipControlsActive()`
- * goes false. Do not merge these.
+ * On foot — outside the ship, parked on a skypad — this stays true: the world is still on
+ * screen and the settings panel, the leaderboard, the atlas and the camera zoom all still
+ * make sense. `shipControlsActive()` is what goes false there. Do not merge these.
  */
 function flightSceneActive(): boolean { return running && !docked }
 /**
- * The player is actively piloting their own ship: running and not docked. Use this for
- * anything ship-specific — weapons, mining, docking, landing, quantum destination changes,
- * camera cycling — that should go inert whenever the player isn't at the controls.
- * Prefer `flightSceneActive()` when the world should still be "live" either way.
- *
- * Currently identical to `flightSceneActive()` — see that comment for why they're kept
- * separate anyway: the upcoming on-foot state re-splits them.
+ * The player is actively piloting their own ship: running, not docked, and not out walking
+ * around on a planet. Use this for anything ship-specific — weapons, mining, docking,
+ * landing, quantum destination changes, camera cycling — that should go inert whenever the
+ * player isn't at the controls. Prefer `flightSceneActive()` when the world should still be
+ * "live" either way.
  */
-function shipControlsActive(): boolean { return running && !docked }
+function shipControlsActive(): boolean { return running && !docked && !onFootActive() }
 
 let last = performance.now()
 let hiddenQuantumAt: number | null = null
@@ -5162,6 +5554,11 @@ function frame(now: number): void {
       const idx = cityChunks.keys().next().value as number
       dockPromptEl.textContent = `▸ PRESS SPACE TO LAND — ${citySites?.[idx]?.name?.toUpperCase() ?? 'CITY'}`
       dockPromptEl.hidden = false
+    } else if (landingPhase === 'landed' && landingCityIdx !== null && citySites?.[landingCityIdx] && !MOBILE_COMPANION && !BOT) {
+      // Same slot as the dock/land prompt and for the same reason: parked on a deck is the one
+      // moment stepping out is possible, and nothing else competes for the prompt there.
+      dockPromptEl.textContent = '▸ PRESS E TO STEP OUT'
+      dockPromptEl.hidden = false
     } else {
       dockPromptEl.hidden = true
     }
@@ -5394,6 +5791,14 @@ function frame(now: number): void {
     syncProjectileMeshes()
     hullBarEl.style.width = `${Math.round(hullFraction(playerHealth) * 100)}%`
     enemiesEl.textContent = String(pirates.length + trainingDrones.length)
+  } else if (onFootActive()) {
+    // A sibling of the flight branch, not an addition to it. Everything above — thrust, gravity,
+    // terrain collision, mining, combat, the net state feed — is about a vehicle, and the vehicle
+    // is parked and pinned by `landingPhase === 'landed'`. Skipping the lot is both correct and
+    // what keeps the on-foot state from having to be threaded through thirty flight conditionals.
+    // The one thing that must still be true is that this runs BEFORE updateCamera below.
+    updateOnFoot(dt)
+    pfMark('sim')
   }
 
   if (running) {

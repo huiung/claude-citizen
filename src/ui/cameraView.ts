@@ -316,6 +316,47 @@ export function queueOrbitZoomDelta(pendingDeltaY: number, wheelDeltaY: number):
   )
 }
 
+// --- Third person (on foot)
+//
+// Structurally the same problem as the chase boom — an offset in the subject's frame, lerped
+// toward — but the numbers share nothing with it. The subject is 1.8 units tall instead of 4 to 17,
+// so a 14-unit boom would put the player at the size of a HUD icon; and unlike the ship, whose
+// pitch the boom inherits from the hull, a walker's pitch is the player's own look input, so this
+// takes an angle where `rearCameraOffset` takes a boost kick.
+const FOOT_RADIUS = 4.6
+const FOOT_MIN_RADIUS = 2.4
+const FOOT_MAX_RADIUS = 9
+const FOOT_ZOOM_PER_WHEEL_UNIT = 0.003
+/** Height of the boom's pivot above the walker's feet — roughly the shoulder. The camera orbits
+ *  this point and aims back at it, so it is also where the caller must point the look target;
+ *  orbiting the pivot but aiming at the feet would make looking up impossible, since the camera
+ *  would drop and re-aim at the same place. */
+export const FOOT_PIVOT_HEIGHT = 1.45
+
+/** Camera offset from the walker's feet, in a frame where +Y is the local up and +Z is behind the
+ *  walker. `pitch` is the player's look angle: positive raises the camera and tips the view down,
+ *  negative drops it and tips the view up. */
+export function thirdPersonCameraOffset(pitch: number, distance = FOOT_RADIUS): THREE.Vector3 {
+  return new THREE.Vector3(
+    0,
+    FOOT_PIVOT_HEIGHT + Math.sin(pitch) * distance,
+    Math.cos(pitch) * distance,
+  )
+}
+
+export function defaultFootDistance(): number {
+  return FOOT_RADIUS
+}
+
+export function zoomFootDistance(distance: number, wheelDeltaY: number): number {
+  const next = THREE.MathUtils.clamp(
+    distance + wheelDeltaY * FOOT_ZOOM_PER_WHEEL_UNIT,
+    FOOT_MIN_RADIUS,
+    FOOT_MAX_RADIUS,
+  )
+  return Math.round(next * 100) / 100
+}
+
 export function orbitCameraOffset(elapsedSeconds: number, boostKick: number, distance = ORBIT_RADIUS): THREE.Vector3 {
   const radius = distance + boostKick * 1.4
   const angle = elapsedSeconds * ORBIT_SPEED

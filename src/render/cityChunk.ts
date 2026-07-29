@@ -2,8 +2,8 @@ import * as THREE from 'three'
 import { samplePlanetSurface } from './planetTextures'
 import { computePadMarkingPixels, computePadWorld, PAD_DECK_HEIGHT, PAD_RADIUS } from './cityPad'
 import {
-  CITY_BLOCK, CITY_ROAD, CITY_TERRAIN_SCALE, CITY_TIER_RADIUS, cityGroundRadius, cityTangentFrame,
-  computeCityLayout, SHEET_LIFT, SKIRT_MARGIN,
+  CITY_BLOCK, CITY_ROAD, CITY_SHEET_SEGMENTS, CITY_TERRAIN_SCALE, CITY_TIER_RADIUS, cityGroundRadius,
+  cityTangentFrame, computeCityLayout, SHEET_LIFT, SKIRT_MARGIN,
 } from './cityLayout'
 import { computePropLayout } from './cityProps'
 import type { CitySite } from './citySites'
@@ -147,7 +147,9 @@ export function buildCityChunk(site: CitySite, planetPos: THREE.Vector3, planetS
 
   // --- Ground sheet: plane grid bent onto the sphere, hugging the analytic terrain ---
   const groundSpan = extent * 2
-  const seg = 40
+  // Shared with cityGroundRadiusAt, which reproduces this grid to stand a pedestrian on the sheet's
+  // actual surface. A local literal here would let the two drift apart silently.
+  const seg = CITY_SHEET_SEGMENTS
   const groundGeo = new THREE.PlaneGeometry(groundSpan, groundSpan, seg, seg)
   const gp = groundGeo.getAttribute('position') as THREE.BufferAttribute
   const vDir = new THREE.Vector3()

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import {
   COCKPIT_NEAR_PLANE,
+  FOOT_PIVOT_HEIGHT,
   cockpitEyeOffset,
+  defaultFootDistance,
   defaultRearDistance,
   isCanopyNodeName,
   nextCameraMode,
@@ -11,6 +13,8 @@ import {
   rearCameraOffset,
   resolveCockpitEyeAnchor,
   showHullInteriorFaces,
+  thirdPersonCameraOffset,
+  zoomFootDistance,
   zoomOrbitDistance,
   zoomRearDistance,
 } from './cameraView'
@@ -213,5 +217,49 @@ describe('cockpit camera', () => {
     // The tightest clearance the module will place the eye at is 0.06 (cockpitEyeOffset's floor);
     // a near plane at or beyond that clips the canopy out of the one view it exists to show.
     expect(COCKPIT_NEAR_PLANE).toBeLessThan(0.06)
+  })
+})
+
+describe('third-person (on foot) boom', () => {
+  it('sits behind and above a standing walker at rest', () => {
+    const off = thirdPersonCameraOffset(0, defaultFootDistance())
+    expect(off.x).toBe(0)
+    expect(off.z).toBeGreaterThan(0) // +Z is behind
+    expect(off.y).toBe(FOOT_PIVOT_HEIGHT) // level with the pivot it aims at
+  })
+
+  it('frames a 1.8-unit figure rather than a 14-unit ship', () => {
+    // The rear chase boom is 14 units out. At that distance a pilot is a few dozen pixels and the
+    // arrival reads as a map view, which is the failure this constant exists to avoid.
+    expect(defaultFootDistance()).toBeLessThan(defaultRearDistance() / 2)
+    expect(defaultFootDistance()).toBeGreaterThan(2)
+  })
+
+  it('drops the boom to look up and raises it to look down', () => {
+    const up = thirdPersonCameraOffset(-0.5, 5)
+    const level = thirdPersonCameraOffset(0, 5)
+    const down = thirdPersonCameraOffset(0.9, 5)
+    expect(up.y).toBeLessThan(level.y)
+    expect(down.y).toBeGreaterThan(level.y)
+    // Pitching also shortens the ground-plane reach, so the walker stays the same size in frame.
+    expect(down.z).toBeLessThan(level.z)
+  })
+
+  it('keeps the boom the same length at every pitch', () => {
+    for (const pitch of [-0.5, -0.1, 0, 0.4, 1.05]) {
+      const off = thirdPersonCameraOffset(pitch, 5)
+      expect(Math.hypot(off.y - FOOT_PIVOT_HEIGHT, off.z)).toBeCloseTo(5, 6)
+    }
+  })
+
+  it('clamps the on-foot zoom to a range that stays third person', () => {
+    expect(zoomFootDistance(defaultFootDistance(), -100000)).toBeGreaterThan(1.5) // never inside the head
+    expect(zoomFootDistance(defaultFootDistance(), 100000)).toBeLessThan(defaultRearDistance())
+  })
+
+  it('zooms in on a negative wheel delta and out on a positive one', () => {
+    const base = defaultFootDistance()
+    expect(zoomFootDistance(base, -100)).toBeLessThan(base)
+    expect(zoomFootDistance(base, 100)).toBeGreaterThan(base)
   })
 })
