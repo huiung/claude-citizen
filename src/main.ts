@@ -1677,9 +1677,19 @@ function processCelestialBuilds(): void {
     spawnedBodies.set(c.id, mesh)
     built++
   }
-  // Once the burst is fully built, warm up the new shaders off the main thread so they don't hitch when
-  // first rotated into view. compileAsync skips already-compiled programs, so this stays cheap.
-  if (built > 0 && pendingBuild.size === 0) void renderer.compileAsync(scene, camera).catch(() => { /* best-effort */ })
+  // Once the burst is fully built, warm up the new shaders so they don't hitch when first rotated into
+  // view. compile() skips already-compiled programs, so this stays cheap.
+  //
+  // Deliberately compile() and NOT compileAsync(): the async variant is unsafe for a scene that
+  // streams. It hands back the set of EVERY material in the scene (~1600 objects here — it does not
+  // filter to the ones it just built) and then polls `properties.get(material).currentProgram.isReady()`
+  // on a 10ms timer. A material disposed in the meantime has had its renderer properties removed, so
+  // `properties.get` hands back a fresh {} and the poll dereferences undefined — an uncaught TypeError
+  // inside three.js's own setTimeout, which the promise's .catch() cannot see. This frame is exactly
+  // where that bites: streamCelestials() and updateCities() both dispose materials, and updateCities()
+  // runs LATER in the same frame, so leaving Earth (which drops the streamed city chunk) landed inside
+  // the poll's window. Nothing here ever awaited the promise, so the synchronous call loses nothing.
+  if (built > 0 && pendingBuild.size === 0) renderer.compile(scene, camera)
 }
 
 // --- Player & hangar
