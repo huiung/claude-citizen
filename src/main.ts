@@ -77,7 +77,9 @@ import {
 } from './sim/onFoot'
 import { earthHighColorLoaded, isEarthDataReady, latLonToDir, loadEarthData, sampleCloudCover } from './render/earthData'
 import { computeAtmoFog, computeCelestialHide, computeCloudFogBoost } from './render/atmoImmersion'
+import { initHullEnvProbe, updateHullEnvProbe } from './render/envProbe'
 import { groundFillStrength, updateGroundFill } from './render/groundFill'
+import { setHullGreeblesEnabled } from './render/hullGreebles'
 import { buildCityChunk, selectChunkSite, type CityChunk } from './render/cityChunk'
 import { buildCityLightSplats, cityNightFactor, updateCityLightSplats } from './render/cityLights'
 import { cancelTravel, catchUpQuantum, createQuantum, cycleQuantumDestinationIndex, QUANTUM_TUNING, startTravel, stepQuantum } from './sim/quantum'
@@ -710,6 +712,22 @@ scene.background = new THREE.Color(0x010206)
 // sits inside the near plane and gets clipped away. See updateCamera().
 const FLIGHT_NEAR_PLANE = 0.5
 const camera = new THREE.PerspectiveCamera(FLIGHT_BASE_FOV, innerWidth / innerHeight, FLIGHT_NEAR_PLANE, 500000)
+
+// The hull environment probe. Created HERE, as early as the renderer and scene both exist, because
+// hull materials must compile with an `envMap` already present: gaining one later recompiles every
+// hull shader, and going from null to a texture is also invisible to the per-instance material clones
+// the ship loader hands out. See render/envProbe.ts — both of those are load-bearing.
+//
+// `?hullenv=off` is the control half of the A/B, and DEV-only so it cannot be reached in production.
+// The ship studio can answer the same question with `?env=off`, but the studio's sky is a nebula and a
+// starfield with no star and no planet in it — the two conditions this project has repeatedly been
+// caught judging a value in only one of. Daylight on a real planet needs the real game, and without a
+// switch here the "before" half of that comparison would have to be a source edit and a reload.
+if (!(import.meta.env.DEV && URL_PARAMS.get('hullenv') === 'off')) initHullEnvProbe(renderer, scene)
+
+// The other half of the same A/B, for the procedural greeble pass. Same reasoning, same DEV gate: the
+// studio has `?greeble=0` but no daylight, and hull density has to be judged in both.
+if (import.meta.env.DEV && URL_PARAMS.get('greebles') === 'off') setHullGreeblesEnabled(false)
 
 function buildPvpArenaMarker(center: THREE.Vector3, radius: number, color: number): THREE.Group {
   const group = new THREE.Group()
@@ -6189,6 +6207,17 @@ function frame(now: number): void {
     objectiveEl.hidden = !obj
     if (obj) objectiveEl.textContent = `${obj.kind === 'campaign' ? 'CAMPAIGN' : 'PILOT JOURNEY'} - ${obj.text}`
   }
+
+  // Hull environment probe: at most ONE cube face, and only when the ship has actually travelled far
+  // enough for its surroundings to have changed. Placed here, after the sky, fog and celestial
+  // visibility have been settled for this frame, so the hull reflects the world the player is looking
+  // at rather than the previous frame's.
+  //
+  // Skipped during a quantum jump: the drive owns the ship's position, the warp streaks are in front
+  // of the camera, and a cube captured mid-tunnel is a picture of the effect rather than of anywhere.
+  // Arrival needs no hook — a jump moves the ship far past the probe's refresh distance, so the sweep
+  // fires on the frame after the drive drops out.
+  if (flightSceneActive() && quantum.phase === 'idle') updateHullEnvProbe(ship.position, [shipMesh])
 
   pfMark('logic')
   composer.render()

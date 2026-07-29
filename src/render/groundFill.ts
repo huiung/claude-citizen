@@ -136,7 +136,7 @@ void main() {`,
     .replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>\n${GROUND_FILL_GLSL}`)
 }
 
-/** Attach the fill to one material. Called from `tuneHullMaterialsForNoEnvironment`'s traverse rather
+/** Attach the fill to one material. Called from `tuneHullMaterials`'s traverse rather
  *  than doing its own: that loop already walks every hull material exactly once, already dedupes
  *  shared materials, and already owns the rule for which surfaces are their own light source and must
  *  be left alone. A second traverse here would be a second copy of all three.

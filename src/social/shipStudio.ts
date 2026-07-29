@@ -27,6 +27,11 @@
  *    ?nscale=<number>                         normalScale override       (default the module's own)
  *    ?tile=<number>                           detail tile size, in model
  *                                             units                      (default the module's own)
+ *    ?env=on|off                              hull environment probe     (default on)
+ *    ?envi=<number>                           probe strength override    (default the module's own)
+ *    ?metal=<number>                          metalness ceiling override (default the module's own)
+ *    ?greeble=<number>                        greeble triangle target,
+ *                                             0 for none                 (default the module's own)
  *
  *  A note on ?detail: it is the control half of an A/B, and the only way to answer "are the detail
  *  maps visible at all". They were committed while the hulls were still too dark to show anything,
@@ -37,7 +42,9 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { addCraftEngineGlowRig, buildCraft, loadCraftModelForType } from '../render/shipyard'
-import { applyHullDetail, stripHullDetail } from '../render/hullDetail'
+import { applyHullDetail, applyHullMetalnessCeiling, stripHullDetail, tuneHullMaterials } from '../render/hullDetail'
+import { applyHullGreebles, stripHullGreebles } from '../render/hullGreebles'
+import { hullEnvProbeReport, initHullEnvProbe, setHullEnvIntensity, sweepHullEnvProbeNow } from '../render/envProbe'
 import { buildLights, buildNebula, buildStarfield } from '../render/world'
 import { SUN_COLOR } from '../sim/solarSystem'
 import type { ShipType } from '../sim/shipTypes'
@@ -66,6 +73,11 @@ composer.addPass(new RenderPass(scene, camera))
 composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.78, 0.62, 0.74))
 
 scene.add(buildNebula(), buildStarfield())
+
+// Before the first hull loads, so hull materials compile with `envMap` already present rather than
+// gaining it later — the same ordering the game needs, reproduced here so the two cannot diverge.
+if (params.env) initHullEnvProbe(renderer, scene)
+if (params.envIntensity !== null) setHullEnvIntensity(params.envIntensity)
 
 // --- Lighting. `game` reproduces src/main.ts; `showcase` reproduces the social showcase pages.
 buildLights(scene) // AmbientLight(0x223344, 0.85) — shared by both rigs
@@ -155,7 +167,17 @@ updateLabel()
 
 // Nothing animates — one render is the whole output, so a capture never races an animation.
 // Re-render only on resize and after the GLB swaps in.
+//
+// `autoReset = false` is what makes the geometry report readable. `renderer.info` clears itself at the
+// top of every `renderer.render()` call, and `composer.render()` is several of those — the bloom
+// passes come last, so an auto-resetting counter reports the bloom quad and nothing else (it read
+// "0 tris 0 draws" for a hull plainly on screen). Resetting once per frame instead accumulates the
+// whole composer chain, which is fine because the background baseline is measured through the same
+// chain and subtracts it out.
+renderer.info.autoReset = false
+
 function render(): void {
+  renderer.info.reset()
   composer.render()
 }
 
@@ -184,6 +206,53 @@ function applyDetailOverrides(group: THREE.Group): void {
   })
 }
 
+/** Re-run the greeble pass with this page's target, so the density can be swept from the URL.
+ *
+ *  A rebuild rather than a parameter, because greebles are added inside the model loader to the CACHED
+ *  source model — by the time this page has a hull, the default pass has already run. The strip is what
+ *  makes `?greeble=0` a real control rather than a no-op.
+ *
+ *  `tuneHullMaterials` is re-run afterwards on purpose: the greeble material is minted from the hull's
+ *  authored colour and needs the same luminance floor, ground fill and probe assignment the loader
+ *  would have given it. Re-running it is safe (the floor only lifts, the patches are idempotent), and
+ *  skipping it would make every `?greeble=` capture judge a material the game never renders.
+ */
+function applyGreebleOverrides(group: THREE.Group): void {
+  if (params.greebleTarget === null) return
+  stripHullGreebles(group)
+  applyHullGreebles(group, { triangleTarget: params.greebleTarget })
+  tuneHullMaterials(group)
+}
+
+/** Greebles the pass actually placed, per shape. The same reasoning as `detailReport`: a frame cannot
+ *  tell "placed and too small to see" from "placed nothing", and the two need opposite fixes. */
+function greebleReport(group: THREE.Group): string {
+  const parts: string[] = []
+  let total = 0
+  group.traverse((obj) => {
+    const mesh = obj as THREE.InstancedMesh
+    if (!mesh.isInstancedMesh) return
+    parts.push(`${mesh.name.replace('hull_greeble_', '')}=${mesh.count}`)
+    total += mesh.count
+  })
+  return total === 0 ? 'greebles none' : `greebles ${total} (${parts.join(' ')})`
+}
+
+/** Triangles and draw calls the hull itself costs, read off `renderer.info` after a render.
+ *
+ *  On the label rather than in a console line because a capture PNG is the artefact that gets
+ *  reviewed, and "the silhouette got denser" is a claim that needs a number next to it in the same
+ *  frame. `renderer.info` counts the whole scene, so the nebula/starfield background is subtracted by
+ *  measuring it once with no hull present — otherwise the two dominate and the hull's own cost is
+ *  invisible in the total. */
+let backgroundTris = 0
+let backgroundCalls = 0
+
+function geometryReport(): string {
+  const r = renderer.info.render
+  return `${Math.max(0, r.triangles - backgroundTris)} tris  ${Math.max(0, r.calls - backgroundCalls)} draws`
+}
+
 /** Count what the detail pass actually reached. A PNG cannot distinguish "the map is attached and
  *  too subtle to see" from "the map was never attached", and those need opposite fixes. */
 function detailReport(group: THREE.Group): string {
@@ -205,16 +274,32 @@ function detailReport(group: THREE.Group): string {
 }
 
 async function boot(): Promise<void> {
+  // Background-only baseline for the geometry report, taken before any hull is in the scene. The
+  // placeholder is removed rather than hidden: an invisible mesh is skipped by the renderer, but
+  // leaving it visible would fold its cost into the "background" figure and understate every hull.
+  scene.remove(ship)
+  render()
+  backgroundTris = renderer.info.render.triangles
+  backgroundCalls = renderer.info.render.calls
+  scene.add(ship)
+
   // buildCraft() is the procedural placeholder; the real hull players fly is the GLB. Judge the GLB.
   const model = await loadCraftModelForType(params.ship, params.tier, params.visual)
   if (model) {
     scene.remove(ship)
     addCraftEngineGlowRig(model, params.ship)
+    applyGreebleOverrides(model) // before the detail overrides, mirroring the loader's own order
     applyDetailOverrides(model)
     ship = model
     scene.add(ship)
     placeShip(ship)
-    updateLabel(`  ·  ${detailReport(ship)}`)
+    if (params.metalCeiling !== null) applyHullMetalnessCeiling(ship, params.metalCeiling)
+    // One synchronous sweep. In flight the probe spreads its six faces over six frames, but this page
+    // renders one frame and exits, so a scheduled probe would never produce anything to look at. The
+    // hull is hidden by the sweep itself, so it does not appear in its own reflection here either.
+    if (params.env) sweepHullEnvProbeNow(new THREE.Vector3(0, 0, 0), [ship])
+    render()
+    updateLabel(`  ·  ${geometryReport()}  ·  ${greebleReport(ship)}  ·  ${detailReport(ship)}  ·  ${hullEnvProbeReport()}`)
   } else {
     updateLabel('  ·  GLB MISSING (procedural fallback)')
   }
