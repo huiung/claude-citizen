@@ -11,7 +11,9 @@ import type { LandingApproach } from '../sim/landing'
  *  the cue should point them at the beam rather than ask for metre-accurate strafing. */
 export const CUE_APPROACH_LATERAL = 400
 
-/** Below this the cue is hidden entirely — a pad on the far side of the planet is not guidance. */
+/** Ground distance past which a pad stops being tracked at all — the far side of a planet is not
+ *  guidance. Comfortably more than the widest gap between two of the 16 megacities, so that anywhere
+ *  a pilot can arrive over Earth has some pad to name. */
 export const CUE_MAX_RANGE = 14000
 
 /** Distances the way a HUD says them: metres up close, one decimal of a km beyond 1km. */
