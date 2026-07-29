@@ -5,22 +5,66 @@ export const LANDING_MAX_ALT = 40
 /** Speed gate — hovering, not strafing past (units/s). */
 export const LANDING_MAX_SPEED = 30
 
-/** Pad tangent-plane test: 0..MAX_ALT above the deck, lateral offset inside the pad
- *  radius, and slow enough. Allocation-free — runs every frame near a city. */
-export function computeLandingEligibility(
+/** How far above the deck face a hovering hull is held when it settles onto the pad under its own
+ *  thrust (see the deck floor in main).
+ *
+ *  Non-zero for the same class of reason as LANDING_DECK_CLEARANCE, but a different one: parked
+ *  EXACTLY on the plane, the `alt < 0` test below decides on float noise. Measured: a hull driven
+ *  into the deck came to rest at alt = -1e-13 and the envelope read `below-deck`, so a pilot who did
+ *  the obvious thing — descend until you stop — was told to climb, forever. */
+export const PAD_FLOOR_CLEARANCE = 0.5
+
+/** Why the LAND prompt is not showing — or `ready` when it is. Ordered the way an approach is
+ *  actually flown: get over the deck, come down onto it, then stop moving. */
+export type LandingBlocker = 'ready' | 'lateral' | 'below-deck' | 'altitude' | 'speed'
+
+/** The pad-relative geometry of an approach, in the units a pilot is shown. */
+export interface LandingApproach {
+  blocker: LandingBlocker
+  /** offset from the pad's axis measured IN the deck plane (m) — not straight-line distance */
+  lateral: number
+  /** height above the deck face (m); negative means sunk below it */
+  alt: number
+  speed: number
+}
+
+/** Pad tangent-plane test: 0..MAX_ALT above the deck, lateral offset inside the pad radius, and
+ *  slow enough. Writes into a caller-owned `out` so it can run every frame near a city without
+ *  allocating — the single place these four numbers are derived, so the LAND prompt and the cue
+ *  that explains its absence can never disagree about why. */
+export function landingApproach(
   shipPos: THREE.Vector3, shipVel: THREE.Vector3,
   padCenter: THREE.Vector3, padNormal: THREE.Vector3, padRadius: number,
-): boolean {
+  out: LandingApproach,
+): LandingApproach {
   const rx = shipPos.x - padCenter.x
   const ry = shipPos.y - padCenter.y
   const rz = shipPos.z - padCenter.z
   const alt = rx * padNormal.x + ry * padNormal.y + rz * padNormal.z
-  if (alt < 0 || alt > LANDING_MAX_ALT) return false
   const lx = rx - padNormal.x * alt
   const ly = ry - padNormal.y * alt
   const lz = rz - padNormal.z * alt
-  if (lx * lx + ly * ly + lz * lz > padRadius * padRadius) return false
-  return shipVel.lengthSq() <= LANDING_MAX_SPEED * LANDING_MAX_SPEED
+  out.alt = alt
+  out.lateral = Math.sqrt(lx * lx + ly * ly + lz * lz)
+  out.speed = shipVel.length()
+  out.blocker = out.lateral > padRadius ? 'lateral'
+    : alt < 0 ? 'below-deck'
+    : alt > LANDING_MAX_ALT ? 'altitude'
+    : out.speed > LANDING_MAX_SPEED ? 'speed'
+    : 'ready'
+  return out
+}
+
+/** Module scratch: computeLandingEligibility is a predicate, so its caller has nowhere to put the
+ *  numbers, but it still must not allocate per frame. */
+const _eligibilityScratch: LandingApproach = { blocker: 'ready', lateral: 0, alt: 0, speed: 0 }
+
+/** Predicate form of `landingApproach` — true exactly when the LAND prompt should show. */
+export function computeLandingEligibility(
+  shipPos: THREE.Vector3, shipVel: THREE.Vector3,
+  padCenter: THREE.Vector3, padNormal: THREE.Vector3, padRadius: number,
+): boolean {
+  return landingApproach(shipPos, shipVel, padCenter, padNormal, padRadius, _eligibilityScratch).blocker === 'ready'
 }
 
 /** Gap left between the hull's lowest point and the deck face when parked. Small and non-zero: at

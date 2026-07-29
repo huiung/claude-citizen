@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { computeCitySites, pickSeparated } from './citySites'
+import { citySkypadDestinations, computeCitySites, EARTH_CITIES, pickSeparated, SKYPAD_APPROACH_ALT } from './citySites'
 import { samplePlanetSurface } from './planetTextures'
 
 const EARTH_SEED = 1274
@@ -119,5 +119,44 @@ describe('real-earth city sites', () => {
   it('procedural sites carry no name — landing collection is real-Earth only', () => {
     const procedural = computeCitySites(EARTH_SEED, EARTH_RADIUS, 8)
     expect(procedural.every((s) => s.name === undefined)).toBe(true)
+  })
+})
+
+describe('citySkypadDestinations', () => {
+  const centre = new THREE.Vector3(1000, -2000, 300)
+  const dests = citySkypadDestinations(centre, EARTH_RADIUS)
+
+  it('offers one jump destination per megacity, in table order', () => {
+    expect(dests.length).toBe(EARTH_CITIES.length)
+    expect(dests[0].id).toBe('skypad.Seoul')
+    expect(dests[0].name).toBe('Seoul Skypad')
+  })
+
+  it('hangs each one SKYPAD_APPROACH_ALT above its city', () => {
+    for (const d of dests) {
+      expect(d.position.distanceTo(centre)).toBeCloseTo(EARTH_RADIUS + SKYPAD_APPROACH_ALT, 3)
+    }
+  })
+
+  it('arrives inside the chunk-build band, so the city is already there on drop-out', () => {
+    // The drive stops QUANTUM_TUNING.safeRadius (250) short, and CITY_CHUNK_BUILD_ALT is 1200.
+    expect(SKYPAD_APPROACH_ALT + 250).toBeLessThan(1200)
+    expect(SKYPAD_APPROACH_ALT).toBeGreaterThan(200) // and clear of the tallest city towers
+  })
+
+  it('points at the same spot the real-Earth site table does', async () => {
+    const { _setEarthRastersForTests, _resetEarthDataForTests } = await import('./earthData')
+    _setEarthRastersForTests(new Uint8ClampedArray(8), new Uint8ClampedArray(8).fill(255), 4, 2)
+    try {
+      const sites = computeCitySites(EARTH_SEED, EARTH_RADIUS, 8)
+      // Index i is the same city in both, which is what lets the destination name and the landed
+      // city name agree.
+      for (let i = 0; i < sites.length; i++) {
+        const dir = dests[i].position.clone().sub(centre).normalize()
+        expect(dir.angleTo(sites[i].direction)).toBeLessThan(1e-6)
+      }
+    } finally {
+      _resetEarthDataForTests()
+    }
   })
 })

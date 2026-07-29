@@ -2,7 +2,7 @@ import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 import {
   computeLandingEligibility, hullDeckOffset, LANDING_DECK_CLEARANCE, LANDING_MAX_ALT, LANDING_MAX_SPEED,
-  landingReward,
+  landingApproach, landingReward, PAD_FLOOR_CLEARANCE, type LandingApproach,
 } from './landing'
 
 const PAD = new THREE.Vector3(0, 100, 0)
@@ -25,6 +25,63 @@ describe('computeLandingEligibility', () => {
   it('lateral distance is measured in the pad plane, not straight-line', () => {
     // 30u out + 30u up: straight-line 42.4 > pad radius 40, but lateral 30 < 40 → eligible
     expect(computeLandingEligibility(new THREE.Vector3(30, 130, 0), still, PAD, UP, 40)).toBe(true)
+  })
+})
+
+describe('PAD_FLOOR_CLEARANCE', () => {
+  it('leaves a hull that has settled onto the deck INSIDE the envelope', () => {
+    // The deck floor parks a descending hull here. On the boundary (0) the alt test decides on float
+    // noise, and the pilot who did the obvious thing gets told to climb; above the ceiling it would
+    // park them out of reach the other way.
+    expect(PAD_FLOOR_CLEARANCE).toBeGreaterThan(0)
+    expect(PAD_FLOOR_CLEARANCE).toBeLessThan(LANDING_MAX_ALT)
+    const settled = new THREE.Vector3(0, 100 + PAD_FLOOR_CLEARANCE, 0)
+    expect(computeLandingEligibility(settled, still, PAD, UP, 45)).toBe(true)
+  })
+})
+
+describe('landingApproach', () => {
+  const out = (): LandingApproach => ({ blocker: 'ready', lateral: 0, alt: 0, speed: 0 })
+
+  it('reports the pad-relative numbers a pilot is shown', () => {
+    const a = landingApproach(new THREE.Vector3(30, 120, 40), new THREE.Vector3(3, 4, 0), PAD, UP, 45, out())
+
+    expect(a.lateral).toBeCloseTo(50) // 30/40 in the deck plane — the 20u of height is not in it
+    expect(a.alt).toBeCloseTo(20)
+    expect(a.speed).toBeCloseTo(5)
+  })
+
+  it('names the one thing to fix, in the order an approach is flown', () => {
+    const fast = new THREE.Vector3(LANDING_MAX_SPEED + 1, 0, 0)
+    // Off to the side and far too fast: lining up comes first, braking is pointless until then.
+    expect(landingApproach(new THREE.Vector3(300, 120, 0), fast, PAD, UP, 45, out()).blocker).toBe('lateral')
+    expect(landingApproach(new THREE.Vector3(0, 400, 0), fast, PAD, UP, 45, out()).blocker).toBe('altitude')
+    expect(landingApproach(new THREE.Vector3(0, 120, 0), fast, PAD, UP, 45, out()).blocker).toBe('speed')
+    expect(landingApproach(new THREE.Vector3(0, 120, 0), still, PAD, UP, 45, out()).blocker).toBe('ready')
+  })
+
+  it('distinguishes sunk-below-the-deck from too-high — they need opposite inputs', () => {
+    expect(landingApproach(new THREE.Vector3(0, 90, 0), still, PAD, UP, 45, out()).blocker).toBe('below-deck')
+    expect(landingApproach(new THREE.Vector3(0, 90, 0), still, PAD, UP, 45, out()).alt).toBeCloseTo(-10)
+  })
+
+  it('agrees with computeLandingEligibility, which is the same test', () => {
+    const cases: [THREE.Vector3, THREE.Vector3][] = [
+      [new THREE.Vector3(10, 120, 5), still],
+      [new THREE.Vector3(60, 120, 0), still],
+      [new THREE.Vector3(0, 90, 0), still],
+      [new THREE.Vector3(0, 400, 0), still],
+      [new THREE.Vector3(0, 120, 0), new THREE.Vector3(0, 0, LANDING_MAX_SPEED + 1)],
+    ]
+    for (const [pos, vel] of cases) {
+      expect(computeLandingEligibility(pos, vel, PAD, UP, 45))
+        .toBe(landingApproach(pos, vel, PAD, UP, 45, out()).blocker === 'ready')
+    }
+  })
+
+  it('writes into the caller\'s object so it can run every frame without allocating', () => {
+    const target = out()
+    expect(landingApproach(new THREE.Vector3(0, 120, 0), still, PAD, UP, 45, target)).toBe(target)
   })
 })
 

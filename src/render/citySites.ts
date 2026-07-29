@@ -48,6 +48,31 @@ export const EARTH_CITIES = [
   { name: 'Singapore', lat: 1.35, lon: 103.82, tier: 0 },
 ] as const
 
+/** How high above the city a quantum jump aimed at its skypad drops the pilot out. Chosen to land
+ *  inside the chunk-build band (CITY_CHUNK_BUILD_ALT = 1200) so the city and its guidance beam are
+ *  already there on arrival — dropping out into empty sky above an un-streamed city is what made
+ *  "jump to Earth" tell a pilot nothing. The drive stops QUANTUM_TUNING.safeRadius (250) short of
+ *  the point, so the real arrival is a little higher than this and still inside the band. */
+export const SKYPAD_APPROACH_ALT = 700
+
+/** The 16 megacity skypads as quantum-destination positions: straight up from the city, at
+ *  SKYPAD_APPROACH_ALT.
+ *
+ *  Derived from the lat/lon table rather than from `computeCitySites` + `computePadWorld` on
+ *  purpose. Those need the NASA rasters, which land asynchronously, and a destination list whose
+ *  length changes under the pilot mid-flight would renumber the B/N cycle. This is constant from
+ *  the first frame and accurate to the city; the pad itself sits within a couple of blocks of the
+ *  centre, and closing that last gap is what the guidance beam and the approach cue are for. */
+export function citySkypadDestinations(
+  planetPos: THREE.Vector3, planetRadius: number,
+): { id: string; name: string; position: THREE.Vector3 }[] {
+  return EARTH_CITIES.map((c) => ({
+    id: `skypad.${c.name}`,
+    name: `${c.name} Skypad`,
+    position: planetPos.clone().addScaledVector(latLonToDir(c.lat, c.lon), planetRadius + SKYPAD_APPROACH_ALT),
+  }))
+}
+
 /** Deterministic city placement: sample candidate directions, keep solid non-polar land
  *  that is locally flat (no mountainsides, no coastlines), then greedily pick the
  *  flattest with a minimum angular separation. Same seed → same cities for every pilot.
