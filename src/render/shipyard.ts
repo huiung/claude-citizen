@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { applyHullDetail, tuneHullMaterialsForNoEnvironment } from './hullDetail'
+import { applyHullDetail, tuneHullMaterials } from './hullDetail'
 import type { ShipType } from '../sim/shipTypes'
 import type { HolderShipVisualId } from '../ui/holderShipVisual'
 
@@ -198,7 +198,7 @@ export function createCraftModelLoader(
         .then((model) => {
           if (!model) return model
           // Material tuning first: detail maps only read on a surface bright enough to show them.
-          try { tuneHullMaterialsForNoEnvironment(model) } catch { /* keep the authored materials */ }
+          try { tuneHullMaterials(model) } catch { /* keep the authored materials */ }
           try { applyHullDetail(model) } catch { /* keep the undetailed hull */ }
           return model
         })

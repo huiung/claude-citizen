@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { attachEnvProbeToMaterial } from './envProbe'
 import { attachGroundFillToMaterial } from './groundFill'
 
 /** Procedural surface detail for generated hulls.
@@ -213,14 +214,41 @@ function isEmissiveSurface(mat: THREE.MeshStandardMaterial): boolean {
  *  for space and `scripts/capture-planetfall.mjs` (?earthview=seoul-foot) for daylight. */
 const MIN_BASE_LUMINANCE = 0.42
 
-/** Metalness ceiling while the scene has no environment map.
+/** Metalness ceiling for hull surfaces.
  *
  *  In PBR a metal's appearance IS its reflection of the surroundings; its diffuse term is scaled
  *  toward zero as metalness rises. High metalness is therefore only meaningful with something to
- *  reflect. Until a proper environment probe exists (the Star Citizen approach: capture the
- *  genuinely bright nearby planet, not a fabricated dark box), capping metalness converts hulls
- *  from black mirrors-of-nothing into surfaces that respond to the lights that do exist. */
-const MAX_METALNESS_WITHOUT_ENV = 0.4
+ *  reflect, and this ceiling was introduced as `MAX_METALNESS_WITHOUT_ENV` when the scene had
+ *  nothing: it converted hulls from black mirrors-of-nothing into surfaces that responded to the
+ *  lights that do exist.
+ *
+ *  `envProbe` now supplies a real environment — the actual scene, captured on a budget — so raising
+ *  this was the expected payoff. It was measured rather than assumed, and the measurement says no.
+ *
+ *  Studio `?metal=` sweep at `?dist=0.85` with the probe running, mean frame luminance at the shipped
+ *  0.4 versus the assets' own values (0.72 on `dark_gunmetal`, which every hull in the fleet shares):
+ *
+ *    fighter      16.77 -> 16.05   (-4.3%, 9.2% of pixels changed)
+ *    interceptor  12.79 -> 12.11   (-5.3%, 6.8%)
+ *    miner        22.56 -> 20.72   (-8.2%, 11.5%)
+ *    hauler       24.01 -> 22.21   (-7.5%, 15.6%)
+ *
+ *  Every hull is DARKER at the authored value, because raising metalness trades a diffuse response to
+ *  the sun — which exists and is bright — for a reflection of a sky that, away from a planet, is a
+ *  nebula and some stars. The probe shrank the penalty (the same sweep before the probe cost the
+ *  hauler 16.82 -> 13.71, i.e. -18.5%) without reversing its sign, and deep space is where a hull
+ *  spends most of a flight.
+ *
+ *  So the ceiling stays, and the probe's payoff is taken as reflection and image-based light ON TOP of
+ *  a diffuse response that still works, rather than as a licence to switch the diffuse response off.
+ *  What the probe actually bought, in the same units: hull mean luminance in space rose 12.11 -> 16.77
+ *  (fighter), 9.92 -> 12.79 (interceptor), 16.28 -> 22.56 (miner), 16.82 -> 24.01 (hauler), and on a
+ *  daylit pad the hull band went 107.9 -> 134.3 with no clipped pixels.
+ *
+ *  Re-measure before moving this, in BOTH conditions — `scripts/capture-ship-studio.mjs` with
+ *  `?metal=` for space, `scripts/capture-planetfall.mjs` with `?hullenv=off` as the control for
+ *  daylight. Judging it in one condition is the mistake that has already had to be undone twice here. */
+const MAX_METALNESS_WITH_PROBE = 0.4
 
 const _lumColor = new THREE.Color()
 
@@ -249,6 +277,33 @@ export function liftToLuminanceFloor(color: THREE.Color, floor = MIN_BASE_LUMINA
 const _box = new THREE.Box3()
 const _size = new THREE.Vector3()
 
+/** Where the authored metalness is kept once the ceiling has overwritten it.
+ *
+ *  Needed because the ceiling is destructive: after a hull loads, `mat.metalness` is the clamped
+ *  value and the GLB's own number is gone. That makes the ceiling untestable — a harness cannot
+ *  RAISE it, only lower it further — which is exactly the wrong way round for answering "can the
+ *  probe carry the authored values now". */
+interface AuthoredMetalness { hullAuthoredMetalness?: number }
+
+/** Re-clamp every hull material under `root` to a different metalness ceiling.
+ *
+ *  Exists for the studio's `?metal=` sweep, which is the only way to judge the ceiling against a real
+ *  frame rather than against an argument. Not used in the game: production gets
+ *  `MAX_METALNESS_WITH_PROBE` inside `tuneHullMaterials`. */
+export function applyHullMetalnessCeiling(root: THREE.Object3D, ceiling: number): void {
+  root.traverse((obj) => {
+    const mesh = obj as THREE.Mesh
+    if (!mesh.isMesh) return
+    for (const raw of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      const mat = raw as THREE.MeshStandardMaterial
+      if (!mat || !('roughness' in mat)) continue
+      if (isEmissiveSurface(mat)) continue
+      const authored = (mat.userData as AuthoredMetalness).hullAuthoredMetalness ?? mat.metalness
+      mat.metalness = Math.min(authored, ceiling)
+    }
+  })
+}
+
 /** Make hull materials respond to the lights the scene actually has.
  *
  *  Applied at load to every generated hull, so it covers all twelve GLBs — the four base classes,
@@ -263,7 +318,7 @@ const _size = new THREE.Vector3()
  *  what the hull reflects, and the fill fixes the fact that nothing in the scene lights it from
  *  underneath. The two are separate problems with the same symptom, and both need this one traverse.
  */
-export function tuneHullMaterialsForNoEnvironment(root: THREE.Object3D): void {
+export function tuneHullMaterials(root: THREE.Object3D): void {
   const seen = new Set<THREE.Material>()
   root.traverse((obj) => {
     const mesh = obj as THREE.Mesh
@@ -274,10 +329,12 @@ export function tuneHullMaterialsForNoEnvironment(root: THREE.Object3D): void {
       seen.add(mat)
       if (isEmissiveSurface(mat)) continue
 
-      if (mat.metalness > MAX_METALNESS_WITHOUT_ENV) mat.metalness = MAX_METALNESS_WITHOUT_ENV
+      ;(mat.userData as AuthoredMetalness).hullAuthoredMetalness = mat.metalness
+      if (mat.metalness > MAX_METALNESS_WITH_PROBE) mat.metalness = MAX_METALNESS_WITH_PROBE
       _lumColor.copy(mat.color)
       if (liftToLuminanceFloor(_lumColor)) mat.color.copy(_lumColor)
       attachGroundFillToMaterial(mat)
+      attachEnvProbeToMaterial(mat)
       mat.needsUpdate = true
     }
   })
