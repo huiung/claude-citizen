@@ -195,9 +195,22 @@ function isEmissiveSurface(mat: THREE.MeshStandardMaterial): boolean {
  *  lighting — an image-based environment, then a brighter hemisphere fill — both measured as no
  *  change, for exactly this reason.
  *
- *  0.085 is roughly dark grey machine paint: still clearly the "dark" material next to a lighter
- *  hull panel, but able to describe a shape. */
-const MIN_BASE_LUMINANCE = 0.085
+ *  The value has to satisfy TWO exposure references, which is the trap the first attempt fell into.
+ *  0.085 was picked while looking only at hulls against black space, where 8.5% reflectance reads
+ *  fine as "dark grey machine paint". On a daylit planet surface it does not: the pad deck and the
+ *  sky around it sit at roughly 40-50%, so an 8.5% hull reads as a black cut-out next to them. Worse,
+ *  the hauler's `hull_cargo_graphite` is authored at 0.116 — already above that floor — so it was
+ *  never lifted at all and showed its authored value in full daylight.
+ *
+ *  0.42 is around light aircraft grey, which is roughly what real airframes and spacecraft are
+ *  painted, and it holds up in both references: against black space the hull is unambiguously lit
+ *  rather than a silhouette, and against a daylit deck it belongs to the same scene. Panels stay
+ *  distinguishable from each other because only the floor moves — hue and the relative ordering of
+ *  the materials above it are preserved.
+ *
+ *  Verify any change to this against BOTH conditions before trusting it: `scripts/capture-ship-studio.mjs`
+ *  for space and `scripts/capture-planetfall.mjs` (?earthview=seoul-foot) for daylight. */
+const MIN_BASE_LUMINANCE = 0.42
 
 /** Metalness ceiling while the scene has no environment map.
  *
