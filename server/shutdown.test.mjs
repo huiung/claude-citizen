@@ -36,7 +36,7 @@ describe('relay graceful shutdown', () => {
     const code = await exited
 
     expect(code).toBe(0)
-    for (const name of ['progress.json', 'sessions.json', 'marketplace.json', 'pvp-kills.json', 'claimed-anon.json']) {
+    for (const name of ['progress.json', 'sessions.json', 'marketplace.json', 'pvp-kills.json', 'claimed-anon.json', 'callsigns.json']) {
       const file = join(dir, name)
       expect(existsSync(file), `${name} should be flushed on shutdown`).toBe(true)
       expect(() => JSON.parse(readFileSync(file, 'utf8'))).not.toThrow()

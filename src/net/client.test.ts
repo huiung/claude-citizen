@@ -228,6 +228,45 @@ describe('NetClient holder ship visual sync', () => {
 
     expect(onCallsign).toHaveBeenCalledWith('ACE')
   })
+
+  it('routes a callsign-taken refusal to onCallsignTaken with the granted fallback', () => {
+    const onCallsignTaken = vi.fn()
+    const net = new NetClient('ACE', 'tok', events({ onCallsignTaken }))
+    net.connect()
+    const ws = FakeWebSocket.instances[0]
+    ws.open()
+
+    ws.emit({ t: 'callsign-taken', requested: 'ACE', name: 'PILOT', message: 'locked to another wallet' })
+
+    expect(onCallsignTaken).toHaveBeenCalledWith('ACE', 'PILOT', 'locked to another wallet')
+  })
+
+  it('adopts the granted fallback so a reconnect does not re-request the taken name', () => {
+    const net = new NetClient('ACE', 'tok', events({}))
+    net.connect()
+    const ws = FakeWebSocket.instances[0]
+    ws.open()
+    net.enterGame('ACE', 'hauler') // active pilot — a reconnect will re-send 'join', not 'hello'
+
+    ws.emit({ t: 'callsign-taken', requested: 'ACE', name: 'PILOT', message: '' })
+    net.connect()
+    const reconnected = FakeWebSocket.instances[1]
+    reconnected.open()
+
+    expect(reconnected.sent[0]).toMatchObject({ t: 'join', name: 'PILOT' })
+  })
+
+  it('defaults a malformed callsign-taken frame to PILOT rather than throwing', () => {
+    const onCallsignTaken = vi.fn()
+    const net = new NetClient('ACE', 'tok', events({ onCallsignTaken }))
+    net.connect()
+    const ws = FakeWebSocket.instances[0]
+    ws.open()
+
+    ws.emit({ t: 'callsign-taken', requested: 'ACE' })
+
+    expect(onCallsignTaken).toHaveBeenCalledWith('ACE', 'PILOT', '')
+  })
 })
 
 describe('cosmetics protocol', () => {

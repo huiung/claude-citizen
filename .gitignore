@@ -5,6 +5,7 @@ dist/
 *.log
 .vercel
 progress.json
+callsigns.json
 docs/superpowers/
 .env*
 

@@ -296,6 +296,13 @@ const net = new NetClient(nicknameEl.value || 'PILOT', activeIdentity(playerToke
   onCallsign(name) {
     applyLockedCallsign(name)
   },
+  onCallsignTaken(requested, _granted, message) {
+    // Another wallet holds this name. The flight is not blocked — only the lock was refused — so
+    // leave the field editable and put the reason where the wallet feedback already goes.
+    setWalletStatus(message || `Callsign "${requested}" is locked to another wallet - pick another.`)
+    nicknameEl.readOnly = false
+    nicknameEl.title = ''
+  },
   onAuthError() {
     pendingPubkey = null
     setWalletStatus('Wallet not linked - already has a pilot, or signing failed.')

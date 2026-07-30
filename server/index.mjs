@@ -15,7 +15,11 @@ import { raceLeaderboardPage, mergeRaceStats, recordRankedRaceFinish } from './r
 import { blackHoleLeaderboardPage, mergeBlackHoleStats, recordBlackHoleRun } from './blackHoleLeaderboard.mjs'
 import { pilotLevelLeaderboardPage, mergePilotStats, mergeCampaignStats } from './pilotLevelLeaderboard.mjs'
 import { applyPvpHit, applyPvpRespawn, isInPvpZone, normalizeShip, pvpZoneAt, resetPvpHull } from './pvp.mjs'
-import { resolveCallsign, identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
+import { identityKey, kickDuplicateActiveClients } from './sessionPeers.mjs'
+import {
+  callsignSeedFromStore, callsignTakenMessage, createCallsignRegistry, normalizeCallsign,
+  resolveUniqueCallsign,
+} from './callsigns.mjs'
 import { guardEconomyGrowth, guardPilotGrowth, sanitizeProgress, scrubCareerOutliers } from './progress.mjs'
 import {
   buyListing,
@@ -60,6 +64,10 @@ const STORE_FILE = process.env.STORE_FILE ?? './progress.json'
 const PVP_KILL_LOG_FILE = process.env.PVP_KILL_LOG_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'pvp-kills.json')
 const CLAIMED_ANON_FILE = process.env.CLAIMED_ANON_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'claimed-anon.json')
 const MARKETPLACE_FILE = process.env.MARKETPLACE_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'marketplace.json')
+// Callsign → owning wallet index. Persisted beside the progress store because it is a permanent
+// promise (#wallet-hint says "permanently locks your callsign to that wallet") — losing it on a
+// restart would hand a locked name to the next wallet that asked for it.
+const CALLSIGN_FILE = process.env.CALLSIGN_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'callsigns.json')
 // Verified sessions persist beside the progress store (same volume) so a relay restart
 // doesn't drop wallet logins — otherwise reconnects fall back to anonymous + lose holder flair.
 const SESSION_FILE = process.env.SESSION_FILE ?? STORE_FILE.replace(/[^/\\]+$/, 'sessions.json')
@@ -312,6 +320,44 @@ function flush() {
   }, 2000)
 }
 
+// --- Callsign uniqueness (wallet identities only — see server/callsigns.mjs)
+// Seeded from the persisted snapshot, then backfilled from the progress store so wallets that
+// locked a name before this index existed keep it. The file wins on conflict: it is the record of
+// deliberate reservations, whereas the backfill is inference from row keys.
+let callsignSeed = {}
+try { callsignSeed = JSON.parse(readFileSync(CALLSIGN_FILE, 'utf8')) } catch { callsignSeed = {} }
+const callsigns = createCallsignRegistry({ ...callsignSeedFromStore(store), ...callsignSeed })
+function flushCallsigns() {
+  persistToDisk(CALLSIGN_FILE, JSON.stringify(callsigns.snapshot()), 'callsigns')
+}
+if (callsigns.size && !Object.keys(callsignSeed).length) {
+  // First boot after this feature: persist the backfill so the reservations are durable even if
+  // no wallet connects before the next restart.
+  console.log(`[callsigns] backfilled ${callsigns.size} wallet-locked callsign(s) from the progress store`)
+  flushCallsigns()
+}
+
+/**
+ * Resolve the callsign for a connection and act on the outcome: persist a new reservation, and
+ * tell the player when a different wallet already holds what they asked for. Returns the name to
+ * fly under — never throws and never refuses the connection, only the name.
+ *
+ * `storedNameOverride` exists for the post-claim re-grant in the auth handler, where the row now
+ * sitting under the pubkey arrived by migration and must NOT be read as a pre-existing lock.
+ */
+function grantCallsign(ws, client, requestedName, storedNameOverride) {
+  const { name, reserved, conflict } = resolveUniqueCallsign({
+    registry: callsigns,
+    authed: client.authed,
+    pubkey: client.pubkey,
+    storedName: storedNameOverride === undefined ? store[identityKey(client)]?.name : storedNameOverride,
+    requestedName,
+  })
+  if (reserved) flushCallsigns()
+  if (conflict) send(ws, { t: 'callsign-taken', requested: conflict.requested, name, message: callsignTakenMessage(conflict.requested) })
+  return name
+}
+
 function broadcast(from, msg) {
   const data = JSON.stringify(msg)
   for (const ws of clients.keys()) {
@@ -401,7 +447,9 @@ wss.on('connection', (ws) => {
       if (key && client.authed && anonymousProgressAllowed(client) && !(key in store)) { store[key] = null; flush() } // seen → counts as registered
       void refreshHolder(ws, client) // resolve holder flair if this viewer carried a verified session
       if (client.authed && client.pubkey) {
-        const locked = resolveCallsign({ authed: true, storedName: store[client.pubkey]?.name, requestedName: client.name })
+        // A viewer carries no requested name (it arrives with 'join'), so this only ever echoes an
+        // already-locked callsign back to the landing page — no reservation is made here.
+        const locked = grantCallsign(ws, client, client.name)
         if (locked && locked.toLowerCase() !== 'pilot') { client.name = locked; send(ws, { t: 'callsign', name: locked }) }
       }
       console.log(`[hello] viewer — ${clients.size} online`)
@@ -443,7 +491,9 @@ wss.on('connection', (ws) => {
       client.cosmetics = normalizeCosmetics(msg.cosmetics)
       client.invisible = msg.invisible === true
       resetPvpHull(client, normalizeShip(msg.ship))
-      client.name = resolveCallsign({ authed: client.authed, storedName: store[identityKey(client)]?.name, requestedName: client.name })
+      // Wallet identities get uniqueness here; anonymous pilots pass through untouched and may
+      // launch under any name, including one a wallet has locked.
+      client.name = grantCallsign(ws, client, client.name)
       if (client.authed && client.name && client.name.toLowerCase() !== 'pilot') send(ws, { t: 'callsign', name: client.name })
       const key = identityKey(client)
       // Single live session per identity — kick any other live pilot on the same key.
@@ -490,9 +540,32 @@ wss.on('connection', (ws) => {
       // Verified. Bind this connection to the pubkey and run the claim.
       client.authed = true
       client.pubkey = pubkey
-      client.name = resolveCallsign({ authed: true, storedName: store[pubkey]?.name, requestedName: client.name })
+      // This wallet's OWN prior lock, captured before resolveClaim can drop a migrated row on top
+      // of the same key. Everything below distinguishes "already mine" from "just arrived".
+      const walletStoredName = store[pubkey]?.name
+      // The wallet just linked with whatever name this connection is flying under — the moment the
+      // permanent lock is granted, or refused because another wallet holds it. It runs BEFORE
+      // resolveClaim on purpose: the anon row about to be migrated carries a name picked on the
+      // unrestricted anonymous path and never checked, so letting it land first would make it look
+      // like a pre-existing wallet lock and launder it past the registry.
+      client.name = grantCallsign(ws, client, client.name)
       kickDuplicatePeers(ws, client)
       resolveClaim(store, pubkey, anonToken)
+      if (store[pubkey]) {
+        // A wallet linked from the landing page has not pressed LAUNCH yet, so this connection may
+        // carry no callsign at all. Then the claimed row's own name is the request — a returning
+        // anonymous pilot should keep the name they built that progress under. It still goes
+        // through the registry (storedName forced to the wallet's own prior lock, i.e. none) rather
+        // than being trusted just because it rode in attached to migrated progress.
+        // `?? ''` matters: undefined is grantCallsign's "no override" sentinel, so passing a
+        // genuinely absent prior name through as undefined would fall back to reading the row we
+        // are trying not to trust — and the migrated name would wave itself through as sticky.
+        if (!normalizeCallsign(client.name) && !normalizeCallsign(walletStoredName)) {
+          client.name = grantCallsign(ws, client, store[pubkey].name, walletStoredName ?? '')
+        }
+        // Progress migrates; a callsign only does so once it has cleared the registry.
+        store[pubkey].name = client.name
+      }
       if (anonToken && anonToken !== pubkey && claimedAnonTokens.claim(anonToken)) flushClaimedAnonTokens()
       flush()
       const sessionId = sessions.create(pubkey)
@@ -837,6 +910,7 @@ function shutdown(signal) {
   persistToDisk(MARKETPLACE_FILE, JSON.stringify(marketplaceSnapshot(marketplace)), 'marketplace')
   persistToDisk(PVP_KILL_LOG_FILE, JSON.stringify(pvpKillAuditLog.snapshot()), 'pvp-kills')
   persistToDisk(CLAIMED_ANON_FILE, JSON.stringify(claimedAnonTokens.snapshot()), 'claimed-anon')
+  persistToDisk(CALLSIGN_FILE, JSON.stringify(callsigns.snapshot()), 'callsigns')
   console.log('[shutdown] stores flushed — exiting')
   process.exit(0)
 }

@@ -4151,6 +4151,16 @@ const net = new NetClient(nicknameEl.value || 'PILOT', identity, {
       nicknameEl.readOnly = true
     }
   },
+  onCallsignTaken(requested, granted, message) {
+    // Wallet-only collision: the name is locked to a different wallet. Nothing about the flight is
+    // blocked (we fly as `granted`), so this only reports and reopens the field for a new choice.
+    // The toast rather than only #wallet-status: this arrives on LAUNCH, by which point the
+    // pre-launch overlay holding that status line is hidden and nobody would ever read it.
+    showLandingToast(`⚠ Callsign ${requested} is locked to another wallet — flying as ${granted}.`)
+    setWalletStatus(message || `Callsign "${requested}" is locked to another wallet — pick another.`)
+    nicknameEl.readOnly = false
+    net.setName(granted)
+  },
 })
 net.setSession(walletSession?.sessionId ?? null) // resume a verified wallet session if we have one
 net.connect() // connect on page load as a viewer (presence) — counts toward "online" on the landing

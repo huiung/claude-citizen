@@ -117,6 +117,10 @@ export interface NetEvents {
   onMarketIntent?(result: MarketIntentResult): void
   /** Server confirmed/synced the wallet-locked callsign for this session. */
   onCallsign?(name: string): void
+  /** A wallet asked for a callsign another wallet has locked. `granted` is what we fly under
+   *  instead (PILOT) — the flight still goes ahead, only the name was refused. Anonymous pilots
+   *  never receive this: their names are unrestricted. */
+  onCallsignTaken?(requested: string, granted: string, message: string): void
 }
 
 const SEND_HZ = 10
@@ -315,6 +319,13 @@ export class NetClient {
         break
       case 'callsign':
         if (typeof msg.name === 'string') this.events.onCallsign?.(msg.name)
+        break
+      case 'callsign-taken':
+        if (typeof msg.requested === 'string') {
+          const granted = typeof msg.name === 'string' ? msg.name : 'PILOT'
+          this.name = granted // keep the name we send on the next join in sync with the refusal
+          this.events.onCallsignTaken?.(msg.requested, granted, typeof msg.message === 'string' ? msg.message : '')
+        }
         break
     }
   }
