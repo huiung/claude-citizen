@@ -19,6 +19,17 @@ const HOLDER_VOID_INTERCEPTOR_MODEL_URL = '/assets/ships/holder-void-interceptor
 const HOLDER_SOVEREIGN_WRAITH_MODEL_URL = '/assets/ships/holder-sovereign-wraith.glb'
 const HOLDER_ECLIPSE_CORVETTE_MODEL_URL = '/assets/ships/holder-eclipse-corvette.glb'
 const HOLDER_ABYSSAL_DRILLER_MODEL_URL = '/assets/ships/holder-abyssal-driller.glb'
+// Hero hulls — licensed art rather than the output of a scripts/create-*.mjs generator like every
+// other GLB here. Baked from Viktor Hahn's Naev ship3d models (CC BY 4.0); see README.md Credits.
+//
+// The bake rotates them 180 deg in the VERTEX DATA, because Naev is +Z forward and this repo is -Z:
+// on Archimedes the weapon mounts sit at z=+7.87 and the engine trails at z=-9.16. It has to be in the
+// vertex data and not a node transform, because `normalizeCraftModel` measures a bounding box off the
+// object and a residual rotation would survive it unnoticed until `addCraftRcsRig` fired the attitude
+// thrusters on the wrong side of the hull.
+const HOLDER_HERO_ARCHIMEDES_MODEL_URL = '/assets/ships/holder-hero-archimedes.glb'
+const HOLDER_HERO_ZEBRA_MODEL_URL = '/assets/ships/holder-hero-zebra.glb'
+const HOLDER_HERO_RAINMAKER_MODEL_URL = '/assets/ships/holder-hero-rainmaker.glb'
 
 const CRAFT_MODEL_TARGET_SIZES: Record<ShipType, number> = {
   hauler: 9.5,
@@ -94,6 +105,9 @@ export function craftModelUrlForHolderVisual(type: ShipType, visual: HolderShipV
   if (visual === 'sovereign-wraith' && holderTier >= 3) return HOLDER_SOVEREIGN_WRAITH_MODEL_URL
   if (visual === 'eclipse-corvette' && holderTier >= 3) return HOLDER_ECLIPSE_CORVETTE_MODEL_URL
   if (visual === 'abyssal-driller' && holderTier >= 3) return HOLDER_ABYSSAL_DRILLER_MODEL_URL
+  if (visual === 'hero-archimedes' && holderTier >= 3) return HOLDER_HERO_ARCHIMEDES_MODEL_URL
+  if (visual === 'hero-zebra' && holderTier >= 3) return HOLDER_HERO_ZEBRA_MODEL_URL
+  if (visual === 'hero-rainmaker' && holderTier >= 3) return HOLDER_HERO_RAINMAKER_MODEL_URL
   return CRAFT_MODEL_URLS[type]
 }
 
@@ -103,6 +117,14 @@ export function craftModelTargetSizeForHolderVisual(type: ShipType, visual: Hold
   if (visual === 'sovereign-wraith' && holderTier >= 3) return 12.2
   if (visual === 'eclipse-corvette' && holderTier >= 3) return 15
   if (visual === 'abyssal-driller' && holderTier >= 3) return 14.8
+  // Hero hulls, sized by silhouette rather than uniformly: `normalizeCraftModel` scales the LONGEST
+  // axis to this number, and these three are far longer than they are wide (Rainmaker's baked box is
+  // 32.3 x 11.0 x 5.9), so a shared value would have made the transporter tower over the other two in
+  // bulk while reading as the same length. Rainmaker stays a touch under the corvette's 15 for that
+  // reason — it is the longest hull in the fleet, and does not also need to be the widest.
+  if (visual === 'hero-archimedes' && holderTier >= 3) return 13.5
+  if (visual === 'hero-zebra' && holderTier >= 3) return 14
+  if (visual === 'hero-rainmaker' && holderTier >= 3) return 15.5
   return CRAFT_MODEL_TARGET_SIZES[type]
 }
 

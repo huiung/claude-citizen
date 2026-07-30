@@ -25,7 +25,19 @@ function firstMesh(root: THREE.Object3D): THREE.Mesh {
   return found
 }
 
-function glbJson(path: string): { nodes?: Array<{ name?: string }> } {
+interface GlbAccessor {
+  count: number
+  min?: number[]
+  max?: number[]
+}
+
+interface GlbJson {
+  nodes?: Array<{ name?: string }>
+  meshes?: Array<{ name?: string, primitives: Array<{ attributes: { POSITION: number }, indices: number }> }>
+  accessors?: GlbAccessor[]
+}
+
+function glbJson(path: string): GlbJson {
   const buffer = readFileSync(resolve(path))
   expect(buffer.toString('utf8', 0, 4)).toBe('glTF')
   const jsonChunkLength = buffer.readUInt32LE(12)
@@ -53,6 +65,12 @@ describe('pirate model asset', () => {
     expect(craftModelUrlForHolderVisual('hauler', 'eclipse-corvette', 3)).toBe('/assets/ships/holder-eclipse-corvette.glb')
     expect(craftModelUrlForHolderVisual('miner', 'abyssal-driller', 2)).toBe('/assets/ships/miner.glb')
     expect(craftModelUrlForHolderVisual('miner', 'abyssal-driller', 3)).toBe('/assets/ships/holder-abyssal-driller.glb')
+    expect(craftModelUrlForHolderVisual('fighter', 'hero-archimedes', 2)).toBe('/assets/ships/fighter.glb')
+    expect(craftModelUrlForHolderVisual('fighter', 'hero-archimedes', 3)).toBe('/assets/ships/holder-hero-archimedes.glb')
+    expect(craftModelUrlForHolderVisual('interceptor', 'hero-zebra', 2)).toBe('/assets/ships/interceptor.glb')
+    expect(craftModelUrlForHolderVisual('interceptor', 'hero-zebra', 3)).toBe('/assets/ships/holder-hero-zebra.glb')
+    expect(craftModelUrlForHolderVisual('hauler', 'hero-rainmaker', 2)).toBe('/assets/ships/hauler.glb')
+    expect(craftModelUrlForHolderVisual('hauler', 'hero-rainmaker', 3)).toBe('/assets/ships/holder-hero-rainmaker.glb')
   })
 
   it('scales the doge runner large enough to read as a prestige racing hull', () => {
@@ -63,6 +81,63 @@ describe('pirate model asset', () => {
     expect(craftModelTargetSizeForHolderVisual('miner', 'sovereign-wraith', 3)).toBe(12.2)
     expect(craftModelTargetSizeForHolderVisual('hauler', 'eclipse-corvette', 3)).toBe(15)
     expect(craftModelTargetSizeForHolderVisual('miner', 'abyssal-driller', 3)).toBe(14.8)
+  })
+
+  it('sizes each hero hull separately, longest-axis first', () => {
+    expect(craftModelTargetSizeForHolderVisual('fighter', 'hero-archimedes', 2)).toBe(8.2)
+    expect(craftModelTargetSizeForHolderVisual('fighter', 'hero-archimedes', 3)).toBe(13.5)
+    expect(craftModelTargetSizeForHolderVisual('interceptor', 'hero-zebra', 3)).toBe(14)
+    // The longest hull in the fleet, but deliberately still inside the corvette's 15 — see the
+    // comment on the sizing table for why one shared number would not have worked here.
+    expect(craftModelTargetSizeForHolderVisual('hauler', 'hero-rainmaker', 3)).toBe(15.5)
+  })
+
+  // The hero hulls are the only GLBs here with no scripts/create-*.mjs to read back, so these two
+  // properties are asserted against the committed asset instead. Both fail silently in flight:
+  // a re-bake that reintroduces either looks fine in a still and is only wrong once it moves.
+  describe.each([
+    ['holder-hero-archimedes.glb', 9676],
+    ['holder-hero-zebra.glb', 14480],
+    ['holder-hero-rainmaker.glb', 13308],
+  ])('%s', (file, expectedTriangles) => {
+    const gltf = glbJson(`public/assets/ships/${file}`)
+
+    it('carries no coincident duplicate of the hull', () => {
+      // Naev ships ship two complete variants of themselves, in a 'base' scene and an 'engine' scene,
+      // and on Archimedes and Rainmaker the 'engine' copy reuses the very same POSITION and index
+      // accessors as 'base' — so merging the two scenes draws the whole hull twice at the same
+      // coordinates. That is coincident-surface z-fighting over the entire ship, and it also doubles
+      // the triangle count, which is how it hid: the number just looked like a denser model.
+      const seen = new Set<string>()
+      for (const mesh of gltf.meshes ?? []) {
+        for (const primitive of mesh.primitives) {
+          const bounds = gltf.accessors?.[primitive.attributes.POSITION]
+          const key = `${bounds?.count}:${bounds?.min?.join()}:${bounds?.max?.join()}`
+          expect(seen.has(key), `${mesh.name} duplicates another primitive exactly`).toBe(false)
+          seen.add(key)
+        }
+      }
+      const triangles = (gltf.meshes ?? []).reduce((sum, mesh) => sum + mesh.primitives
+        .reduce((n, primitive) => n + (gltf.accessors?.[primitive.indices].count ?? 0) / 3, 0), 0)
+      expect(triangles).toBe(expectedTriangles)
+    })
+
+    it('keeps its textures lossily encoded', () => {
+      // Naev's source maps are 1024x1024 LOSSLESS WebP, 0.6-1.2 MB each, which bakes to a 3.9-5.2 MB
+      // hull against a repo whose largest asset before these was the 2.3 MB season hub. Re-encoding
+      // the same pixels lossily is a ~3x saving, and the ceiling is here because dropping it is
+      // invisible on a fast connection and very visible on a slow one.
+      expect(readFileSync(resolve(`public/assets/ships/${file}`)).byteLength).toBeLessThan(1_500_000)
+    })
+
+    it('drops the Naev-only mount and trail empties', () => {
+      // The 'meta' scene's mount_*/trail_* nodes are Naev hardpoint anchors. Nothing here reads them,
+      // and `addCraftRcsRig` derives its port layout from the hull's bounding box — which these would
+      // enlarge, since Box3.setFromObject does not skip empties.
+      for (const node of gltf.nodes ?? []) {
+        expect(node.name).not.toMatch(/^(mount|trail)_/)
+      }
+    })
   })
 
   it('gives the deep core mining ring a larger original Mining Ring silhouette', () => {

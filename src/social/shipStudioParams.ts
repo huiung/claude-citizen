@@ -8,6 +8,7 @@ import type { HolderShipVisualId } from '../ui/holderShipVisual'
 const SHIP_TYPES: readonly ShipType[] = ['hauler', 'fighter', 'miner', 'interceptor']
 const VISUALS: readonly HolderShipVisualId[] = [
   'standard', 'doge-runner', 'void-interceptor', 'sovereign-wraith', 'eclipse-corvette', 'abyssal-driller',
+  'hero-archimedes', 'hero-zebra', 'hero-rainmaker',
 ]
 
 /** Placeholder tints for buildCraft() before the GLB swaps in. Only visible for a few frames. */

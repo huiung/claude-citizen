@@ -31,6 +31,9 @@ describe('holder ship visuals', () => {
       'sovereign-wraith',
       'eclipse-corvette',
       'abyssal-driller',
+      'hero-archimedes',
+      'hero-zebra',
+      'hero-rainmaker',
     ])
   })
 
@@ -46,6 +49,12 @@ describe('holder ship visuals', () => {
     expect(resolveHolderShipVisual('eclipse-corvette', 3).id).toBe('eclipse-corvette')
     expect(resolveHolderShipVisual('abyssal-driller', 2).id).toBe('standard')
     expect(resolveHolderShipVisual('abyssal-driller', 3).id).toBe('abyssal-driller')
+    expect(resolveHolderShipVisual('hero-archimedes', 2).id).toBe('standard')
+    expect(resolveHolderShipVisual('hero-archimedes', 3).id).toBe('hero-archimedes')
+    expect(resolveHolderShipVisual('hero-zebra', 2).id).toBe('standard')
+    expect(resolveHolderShipVisual('hero-zebra', 3).id).toBe('hero-zebra')
+    expect(resolveHolderShipVisual('hero-rainmaker', 2).id).toBe('standard')
+    expect(resolveHolderShipVisual('hero-rainmaker', 3).id).toBe('hero-rainmaker')
     expect(resolveHolderShipVisual('missing', 3).id).toBe('standard')
   })
 
