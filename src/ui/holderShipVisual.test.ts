@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  HOLDER_SHIP_VISUALS,
   holderShipVisualById,
   holderShipVisualsForTier,
   loadHolderShipVisual,
@@ -35,6 +36,19 @@ describe('holder ship visuals', () => {
       'hero-zebra',
       'hero-rainmaker',
     ])
+  })
+
+  // The hero hulls are licensed CC BY 4.0, which obliges us to name the author and the licence
+  // wherever the work appears. `description` is what the station HANGAR row renders, so it is the
+  // in-game half of that obligation — and it is a plain string with no type protecting it, which is
+  // exactly the kind of thing a later pass shortens to match the house style of its neighbours.
+  it('keeps the licence attribution on every hero hull description', () => {
+    const heroes = HOLDER_SHIP_VISUALS.filter((visual) => visual.id.startsWith('hero-'))
+    expect(heroes.map((visual) => visual.id)).toEqual(['hero-archimedes', 'hero-zebra', 'hero-rainmaker'])
+    for (const hero of heroes) {
+      expect(hero.description).toContain('Viktor Hahn')
+      expect(hero.description).toContain('CC BY 4.0')
+    }
   })
 
   it('falls back to the standard hull when a saved visual is locked', () => {
