@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { HULL_FX_MESH_KEYS } from '../render/rcs'
 
 /** `cockpit` sits at the hull's canopy looking forward — the view that makes flying read as being
  *  inside a ship rather than steering a small object from behind. `rear` is still the mode the game
@@ -152,6 +153,18 @@ function isInstancedGeometryProxy(mesh: THREE.Mesh): boolean {
   return (mesh as THREE.InstancedMesh).isInstancedMesh === true
 }
 
+/** True for an additive effect billboard bolted to the hull — a thruster puff, an engine glow disc.
+ *
+ *  Same reasoning as the instancing guard above, for a different cause. These sit AT hull extremities
+ *  by design, including one puff above the nose and one below it, which is exactly the region
+ *  `liftClearOfStructure` probes. Folding them in would let a feedback layer relocate the pilot's eye,
+ *  and unlike a greeble they are not on the skin — they stick out of it on purpose.
+ */
+function isHullEffectBillboard(mesh: THREE.Mesh): boolean {
+  for (const key of HULL_FX_MESH_KEYS) if (mesh.userData[key] !== undefined) return true
+  return false
+}
+
 /** Bounding box of `root`'s meshes expressed in the space `toLocal` maps world space into.
  *
  *  `Box3.setFromObject` would give a world-space box, which is useless here: the hull is parented to
@@ -166,7 +179,7 @@ function localMeshBox(root: THREE.Object3D, toLocal: THREE.Matrix4, target: THRE
   root.traverse((child) => {
     const mesh = child as THREE.Mesh
     if (!mesh.isMesh || !mesh.geometry) return
-    if (isInstancedGeometryProxy(mesh)) return
+    if (isInstancedGeometryProxy(mesh) || isHullEffectBillboard(mesh)) return
     if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox()
     if (!mesh.geometry.boundingBox) return
     box.copy(mesh.geometry.boundingBox).applyMatrix4(matrix.multiplyMatrices(toLocal, mesh.matrixWorld))
@@ -215,7 +228,7 @@ function liftClearOfStructure(
   hull.traverse((child) => {
     const mesh = child as THREE.Mesh
     if (!mesh.isMesh || !mesh.geometry) return
-    if (isInstancedGeometryProxy(mesh)) return
+    if (isInstancedGeometryProxy(mesh) || isHullEffectBillboard(mesh)) return
     if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox()
     if (!mesh.geometry.boundingBox) return
     box.copy(mesh.geometry.boundingBox).applyMatrix4(matrix.multiplyMatrices(toLocal, mesh.matrixWorld))
@@ -303,6 +316,56 @@ export function showHullInteriorFaces(hull: THREE.Object3D): HullInteriorFaces {
 
 export function rearCameraOffset(boostKick: number, distance = REAR_RADIUS): THREE.Vector3 {
   return new THREE.Vector3(0, 3.6, distance + boostKick * 4)
+}
+
+// --- Angular feedback
+//
+// The chase boom already leans against LINEAR acceleration (`gSway` in main.ts), which is what gives
+// boosting and braking their shove. Rotation had no equivalent, so a hull that now takes half a second
+// to come about did so with the camera welded rigidly to it — the pilot saw the world turn and nothing
+// else, which is the difference between a heavy ship and a slow one.
+//
+// These are a lag, not a shake: the mount is treated as if it were on a soft arm the hull swings out
+// from under, so the offset is proportional to the RATE and vanishes the moment rotation stops. That
+// makes it a readout of the manoeuvre rather than noise on top of it.
+
+/** Metres of boom offset per rad/s of rotation. */
+const ANGULAR_SWAY_K = 0.62
+/** Clamp per axis. At 2 m on a 14 m boom the hull is a comfortable few degrees off centre; much more
+ *  and the crosshair — which sits at screen centre while the guns fire along the hull's nose — stops
+ *  being a usable approximation of where the shots are going. */
+const ANGULAR_SWAY_MAX = 1.6
+
+/** Where the chase boom trails to, in the hull's own frame, for a given angular velocity.
+ *
+ *  Signs follow the rotation conventions in sim/physics with forward = -Z. +pitch lifts the nose, so a
+ *  lagging camera ends up BELOW the boom's nominal position in the hull's new frame; +yaw swings the
+ *  nose to port, so the camera ends up to starboard. Roll is deliberately absent: a camera that lags in
+ *  roll rotates the horizon independently of the hull, which reads as the mount being broken rather
+ *  than as the hull being heavy.
+ */
+export function angularSwayOffset(pitchRate: number, yawRate: number, target: THREE.Vector3): THREE.Vector3 {
+  const clamp = (v: number): number => THREE.MathUtils.clamp(v * ANGULAR_SWAY_K, -ANGULAR_SWAY_MAX, ANGULAR_SWAY_MAX)
+  return target.set(clamp(yawRate), clamp(-pitchRate), 0)
+}
+
+/** Radians of head lag per rad/s of rotation, and its clamp. */
+const COCKPIT_HEAD_LAG_K = 0.035
+const COCKPIT_HEAD_LAG_MAX = 0.045 // ~2.6°
+
+/** Pilot's head lagging the hull in the cockpit view, as a small local-space euler offset.
+ *
+ *  The cockpit mount is rigid on purpose — the position lerp, the linear sway and a full orientation
+ *  slerp all put the eye through the hull or make the interior swim — but that leaves the one view with
+ *  the least sense of the ship's mass. A HARD-CLAMPED rotation offset is a different thing from a
+ *  slerp: it is bounded at under three degrees, it is a function of the current rate rather than of
+ *  accumulated error, and it returns to zero the instant rotation stops, so the interior cannot drift.
+ *  Small enough to stay inside the slop the crosshair already has, since the guns fire along the hull.
+ */
+export function cockpitHeadLag(pitchRate: number, yawRate: number, target: THREE.Euler): THREE.Euler {
+  const clamp = (v: number): number =>
+    THREE.MathUtils.clamp(v * COCKPIT_HEAD_LAG_K, -COCKPIT_HEAD_LAG_MAX, COCKPIT_HEAD_LAG_MAX)
+  return target.set(clamp(-pitchRate), clamp(-yawRate), 0, 'YXZ')
 }
 
 export function defaultRearDistance(): number {

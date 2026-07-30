@@ -32,6 +32,14 @@
  *    ?metal=<number>                          metalness ceiling override (default the module's own)
  *    ?greeble=<number>                        greeble triangle target,
  *                                             0 for none                 (default the module's own)
+ *    ?rcs=pitch|yaw|roll|-pitch|...           freeze the attitude
+ *    ?rcs=<pitch>,<yaw>,<roll>                thrusters at this demand   (default idle, nothing lit)
+ *
+ *  A note on ?rcs: handling feel cannot be captured at all — a still frame says nothing about how a
+ *  ship turns, and presenting one as if it did would be worse than admitting the gap. What CAN be
+ *  captured is the feedback layer that makes the feel legible, because "the thrusters that stop a turn
+ *  are a different pair from the ones that started it" is a claim about one frame. `?rcs=yaw` against
+ *  `?rcs=-yaw` is that claim's before and after.
  *
  *  A note on ?detail: it is the control half of an A/B, and the only way to answer "are the detail
  *  maps visible at all". They were committed while the hulls were still too dark to show anything,
@@ -41,7 +49,10 @@ import * as THREE from 'three'
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
-import { addCraftEngineGlowRig, buildCraft, loadCraftModelForType } from '../render/shipyard'
+import {
+  addCraftEngineGlowRig, addCraftRcsRig, buildCraft, collectCraftRcsThrusters, loadCraftModelForType,
+} from '../render/shipyard'
+import { rcsPortDrive, rcsPortStyle, RCS_PORT_COLOR } from '../render/rcs'
 import { applyHullDetail, applyHullMetalnessCeiling, stripHullDetail, tuneHullMaterials } from '../render/hullDetail'
 import { applyHullGreebles, stripHullGreebles } from '../render/hullGreebles'
 import { hullEnvProbeReport, initHullEnvProbe, setHullEnvIntensity, sweepHullEnvProbeNow } from '../render/envProbe'
@@ -224,6 +235,30 @@ function applyGreebleOverrides(group: THREE.Group): void {
   tuneHullMaterials(group)
 }
 
+/** Freeze the attitude thrusters at a demand and report which ones lit.
+ *
+ *  Fully risen rather than smoothed: this page renders one frame, so anything mid-rise would capture the
+ *  smoothing curve rather than the manoeuvre. The report exists for the same reason the geometry and
+ *  detail reports do — "no puff is visible" and "the wrong puff is visible" are the same picture at a
+ *  glance and need opposite fixes, so the frame states which ports it believes it lit.
+ */
+function applyStudioRcs(group: THREE.Group): string {
+  if (!params.rcs) return 'rcs idle'
+  const { pitch, yaw, roll } = params.rcs
+  const lit: string[] = []
+  for (const thruster of collectCraftRcsThrusters(group)) {
+    const drive = rcsPortDrive(thruster.port, pitch, yaw, roll)
+    const style = rcsPortStyle(drive)
+    thruster.mesh.visible = style.visible
+    if (!style.visible) continue
+    thruster.mesh.material.color.setHex(RCS_PORT_COLOR).multiplyScalar(style.intensity)
+    thruster.mesh.material.opacity = style.opacity
+    thruster.mesh.scale.setScalar(thruster.port.radius * style.scale)
+    lit.push(`${thruster.port.name}@${drive.toFixed(2)}`)
+  }
+  return `rcs p${pitch} y${yaw} r${roll} -> ${lit.length ? lit.join(' ') : 'NOTHING LIT'}`
+}
+
 /** Greebles the pass actually placed, per shape. The same reasoning as `detailReport`: a frame cannot
  *  tell "placed and too small to see" from "placed nothing", and the two need opposite fixes. */
 function greebleReport(group: THREE.Group): string {
@@ -287,6 +322,9 @@ async function boot(): Promise<void> {
   const model = await loadCraftModelForType(params.ship, params.tier, params.visual)
   if (model) {
     scene.remove(ship)
+    // RCS rig before the engine glows, as main.ts does: the port layout comes from the hull's bounding
+    // box, and the glow discs would otherwise be folded into it.
+    addCraftRcsRig(model)
     addCraftEngineGlowRig(model, params.ship)
     applyGreebleOverrides(model) // before the detail overrides, mirroring the loader's own order
     applyDetailOverrides(model)
@@ -298,8 +336,11 @@ async function boot(): Promise<void> {
     // renders one frame and exits, so a scheduled probe would never produce anything to look at. The
     // hull is hidden by the sweep itself, so it does not appear in its own reflection here either.
     if (params.env) sweepHullEnvProbeNow(new THREE.Vector3(0, 0, 0), [ship])
+    // After the probe sweep: the sweep hides the hull, and a lit puff inside that hide would end up in
+    // the hull's own reflection.
+    const rcs = applyStudioRcs(ship)
     render()
-    updateLabel(`  ·  ${geometryReport()}  ·  ${greebleReport(ship)}  ·  ${detailReport(ship)}  ·  ${hullEnvProbeReport()}`)
+    updateLabel(`  ·  ${geometryReport()}  ·  ${greebleReport(ship)}  ·  ${detailReport(ship)}  ·  ${hullEnvProbeReport()}  ·  ${rcs}`)
   } else {
     updateLabel('  ·  GLB MISSING (procedural fallback)')
   }

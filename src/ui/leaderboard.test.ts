@@ -10,6 +10,8 @@ import {
   normalizeLeaderboardPage,
   pvpSeasonCopy,
   pvpSeasonParts,
+  raceHandlingNoteParts,
+  HANDLING_REWORK_LABEL,
   defaultLandingLeaderboardMode,
 } from './leaderboard'
 
@@ -89,6 +91,17 @@ describe('leaderboard UI paging', () => {
   it('opens every visitor on the career board, mobile included', () => {
     expect(defaultLandingLeaderboardMode(true)).toBe('career')
     expect(defaultLandingLeaderboardMode(false)).toBe('career')
+  })
+
+  it('warns on the Race board that its times predate the handling rework', () => {
+    // Rotation became torque-limited and per-hull, which changes gate-to-gate times. Every standing
+    // Race time was set under the old model, so the board silently mixes two rulesets unless it says
+    // so. Same shape as pvpSeasonParts because both render through one panel.
+    const note = raceHandlingNoteParts()
+    expect(note.title).toBe('HANDLING REWORKED')
+    expect(note.details.length).toBeGreaterThan(0)
+    expect(note.details.join(' ')).toContain(HANDLING_REWORK_LABEL)
+    expect(note.details.every((d) => d.length > 0)).toBe(true)
   })
 })
 

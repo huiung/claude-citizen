@@ -8,19 +8,26 @@ import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
-import { createShipState, resolveSphereCollision, stepShip, TUNING, type ControlInput } from './sim/physics'
+import {
+  createShipState, resolveSphereCollision, stepShip, TUNING,
+  type ControlInput, type ShipTuningOverride,
+} from './sim/physics'
 import {
   addCraftEngineGlowRig,
+  addCraftRcsRig,
   buildCraft,
   collectCraftEngineGlows,
+  collectCraftRcsThrusters,
   loadCapitalCarrierModel,
   loadCapitalModel,
   loadSeasonHubModel,
   loadCraftModelForType,
   loadPirateModel,
   type CraftEngineGlow,
+  type CraftRcsThruster,
 } from './render/shipyard'
-import { SHIP_STATS, type ShipType } from './sim/shipTypes'
+import { approachRcsDrive, rcsManeuverLoad, rcsPortDrive, rcsPortStyle, RCS_PORT_COLOR } from './render/rcs'
+import { SHIP_STATS, shipHandling, type ShipType } from './sim/shipTypes'
 import { nextRank, rankForCredits, rankProgress } from './sim/ranks'
 import { shouldRenderWorldFrame, shouldRunBackgroundWorldWork } from './sim/renderCadence'
 import {
@@ -152,6 +159,7 @@ import {
   nextLeaderboardOffset,
   normalizeLeaderboardPage,
   pvpSeasonParts,
+  raceHandlingNoteParts,
   type LeaderboardMode,
   type LeaderboardPage,
   type LeaderboardRow,
@@ -169,6 +177,8 @@ import {
   COCKPIT_NEAR_PLANE,
   FLIGHT_BASE_FOV,
   FOOT_PIVOT_HEIGHT,
+  angularSwayOffset,
+  cockpitHeadLag,
   defaultFootDistance,
   defaultOrbitDistance,
   defaultRearDistance,
@@ -571,11 +581,14 @@ function renderLeaderboardRowsForMode(listEl: HTMLElement, rows: LeaderboardRow[
       + `<span class="cr">${escapeHtml(leaderboardMetric(r, mode))}</span></li>`
   }).join('')
 }
-function renderPvpSeasonPanel(el: HTMLElement, mode: LeaderboardMode): void {
-  el.hidden = mode !== 'pvp'
-  if (mode !== 'pvp') return
-  const season = pvpSeasonParts()
-  el.innerHTML = `<b>${escapeHtml(season.title)}</b>` + season.details.map((d) => `<span>${escapeHtml(d)}</span>`).join('')
+/** The note strip above a board. PvP gets its season block; Race gets the handling-rework caveat,
+ *  because a leaderboard whose physics changed under it is misleading without one. One element and one
+ *  renderer for both — a second slot would only be a second thing to keep in sync. */
+function renderLeaderboardNotePanel(el: HTMLElement, mode: LeaderboardMode): void {
+  const note = mode === 'pvp' ? pvpSeasonParts() : mode === 'race' ? raceHandlingNoteParts() : null
+  el.hidden = note === null
+  if (!note) return
+  el.innerHTML = `<b>${escapeHtml(note.title)}</b>` + note.details.map((d) => `<span>${escapeHtml(d)}</span>`).join('')
 }
 function syncLeaderboardModeButtons(slot: 'landing' | 'hud'): void {
   const mode = slot === 'landing' ? landingLeaderboardMode : hudLeaderboardMode
@@ -585,7 +598,7 @@ function syncLeaderboardModeButtons(slot: 'landing' | 'hud'): void {
   const raceBtn = slot === 'landing' ? lbModeRaceLandingEl : lbModeRaceHudEl
   const blackholeBtn = slot === 'landing' ? lbModeBlackholeLandingEl : lbModeBlackholeHudEl
   const pilotlevelBtn = slot === 'landing' ? lbModePilotlevelLandingEl : lbModePilotlevelHudEl
-  const seasonEl = slot === 'landing' ? lbSeasonLandingEl : lbSeasonHudEl
+  const noteEl = slot === 'landing' ? lbSeasonLandingEl : lbSeasonHudEl
   title.textContent = mode === 'pvp'
     ? (slot === 'landing' ? 'RANKED PVP' : 'RANKED PVP - kills')
     : mode === 'race'
@@ -595,7 +608,7 @@ function syncLeaderboardModeButtons(slot: 'landing' | 'hud'): void {
         : mode === 'pilotlevel'
           ? (slot === 'landing' ? 'TOP PILOTS' : 'TOP PILOTS - level')
           : (slot === 'landing' ? 'TOP PILOTS' : 'TOP PILOTS - credits')
-  renderPvpSeasonPanel(seasonEl, mode)
+  renderLeaderboardNotePanel(noteEl, mode)
   careerBtn.classList.toggle('active', mode === 'career')
   pvpBtn.classList.toggle('active', mode === 'pvp')
   raceBtn.classList.toggle('active', mode === 'race')
@@ -1649,6 +1662,27 @@ function applyEngineGlowStyle(glows: CraftEngineGlow[], style: EngineGlowStyle):
   }
 }
 
+/** Drive the attitude thrusters from the demand `stepShip` reported, and return the smoothed manoeuvre
+ *  load so the drive's audio and bloom can lean on it too.
+ *
+ *  The smoothing lives per thruster rather than on the demand vector so that a manoeuvre reversal —
+ *  slam, release, counter-burn — crossfades between two different pairs of ports instead of one pair
+ *  dimming and brightening. That crossfade IS the readout: the pilot sees the ship stop being pushed and
+ *  start being caught.
+ */
+function applyRcsThrusters(thrusters: CraftRcsThruster[], demand: THREE.Vector3, dt: number): void {
+  for (const thruster of thrusters) {
+    const target = rcsPortDrive(thruster.port, demand.x, demand.y, demand.z)
+    thruster.drive = approachRcsDrive(thruster.drive, target, dt)
+    const style = rcsPortStyle(thruster.drive)
+    thruster.mesh.visible = style.visible
+    if (!style.visible) continue
+    thruster.mesh.material.color.setHex(RCS_PORT_COLOR).multiplyScalar(style.intensity)
+    thruster.mesh.material.opacity = style.opacity
+    thruster.mesh.scale.setScalar(thruster.port.radius * style.scale)
+  }
+}
+
 function streamCelestials(now: number): void {
   if (now - lastStream < 800) return
   lastStream = now
@@ -1772,6 +1806,7 @@ function faceRefinery(): void {
 }
 faceRefinery()
 let shipMesh = buildCraft(selectedShipType, PLAYER_TINT)
+addCraftRcsRig(shipMesh)
 scene.add(shipMesh)
 
 // --- Cockpit camera rig
@@ -1848,6 +1883,10 @@ function applyCampaignAdvance(adv: CampaignAdvance, now: number): void {
 }
 
 let playerEngineGlows: CraftEngineGlow[] = collectCraftEngineGlows(shipMesh)
+// Player hull only. Peers and pirates are moved by interpolation and by AI steering rather than by
+// stepShip, so there is no rate error to read for them, and inventing one would be twelve extra
+// additive draw calls per remote ship in exchange for a fiction.
+let playerRcsThrusters: CraftRcsThruster[] = collectCraftRcsThrusters(shipMesh)
 let playerCosmetics: ShipCosmetics = createShipCosmetics(shipMesh, scene)
 function applyPlayerCosmetics(): void {
   if (BOT) {
@@ -2716,10 +2755,12 @@ function setPlayerCraft(type: ShipType): void {
   scene.remove(shipMesh)
   disposeObject(shipMesh)
   shipMesh = buildCraft(type, PLAYER_TINT) // procedural hull shows immediately
+  addCraftRcsRig(shipMesh)
   shipMesh.position.copy(ship.position)
   shipMesh.quaternion.copy(ship.quaternion)
   scene.add(shipMesh)
   playerEngineGlows = collectCraftEngineGlows(shipMesh)
+  playerRcsThrusters = collectCraftRcsThrusters(shipMesh)
   playerCosmetics = createShipCosmetics(shipMesh, scene)
   applyPlayerCosmetics()
   refreshCockpitRig() // the eye point belongs to this hull; the procedural one uses the fallback anchor
@@ -2736,12 +2777,16 @@ function setPlayerCraft(type: ShipType): void {
     playerCosmetics.dispose()
     scene.remove(shipMesh)
     disposeObject(shipMesh)
+    // RCS rig before the engine glows: it derives its port layout from the hull's bounding box, and
+    // the glow discs would otherwise be folded into it.
+    addCraftRcsRig(model)
     addCraftEngineGlowRig(model, type)
     shipMesh = model
     shipMesh.position.copy(ship.position)
     shipMesh.quaternion.copy(ship.quaternion)
     scene.add(shipMesh)
     playerEngineGlows = collectCraftEngineGlows(shipMesh)
+    playerRcsThrusters = collectCraftRcsThrusters(shipMesh)
     playerCosmetics = createShipCosmetics(shipMesh, scene)
     applyPlayerCosmetics()
     refreshCockpitRig() // re-derive from the GLB's canopy node, replacing the procedural fallback anchor
@@ -4740,6 +4785,7 @@ const camOffset = new THREE.Vector3()
 const camTarget = new THREE.Vector3()
 let camBoost = false // last-known boost input, read by the camera for FOV punch
 let camThrust = 0 // last-known commanded thrust 0..1, drives the engine flare (#2)
+let camManeuver = 0 // last-known RCS load 0..1, loads the drive note and flare while the hull is heaved
 let prevBoost = false // edge-detect boost engage for the ignition kick
 let boostKick = 0 // 1 on ignition, decays — drives camera pull-back, FOV punch, flare stretch
 // G-force sway: the camera lags opposite to acceleration, so thrust/braking has weight.
@@ -4752,6 +4798,16 @@ const _cameraLookAtOffset = new THREE.Vector3()
 const G_SWAY_K = 0.03   // accel (m/s²) → offset (m)
 const G_SWAY_MAX = 2.6  // clamp so it never gets nauseating
 const G_SWAY_RESP = 6   // spring stiffness
+// Angular sway: the same idea one derivative down. gSway leans the boom against LINEAR acceleration,
+// which is what gives boosting its shove; this leans it against ROTATION, which is what a hull that
+// takes half a second to come about needs in order to read as heavy rather than merely slow. Softer
+// spring than gSway on purpose — a rotation lasts most of a second, so a stiff follow would arrive and
+// settle before the manoeuvre was over and the cue would be gone by the time the pilot noticed it.
+const aSway = new THREE.Vector3()
+const _aTarget = new THREE.Vector3()
+const _cockpitLag = new THREE.Euler()
+const _cockpitLagQuat = new THREE.Quaternion()
+const A_SWAY_RESP = 4.5
 function updateCamera(dt: number): void {
   // On foot, before anything else: every line below this reads `ship.velocity`, `ship.quaternion`
   // or `cockpitEye`, all of which describe a vehicle the player is currently standing beside.
@@ -4766,6 +4822,10 @@ function updateCamera(dt: number): void {
   _gTarget.copy(_accel).multiplyScalar(-G_SWAY_K)
   if (_gTarget.lengthSq() > G_SWAY_MAX * G_SWAY_MAX) _gTarget.setLength(G_SWAY_MAX)
   gSway.lerp(_gTarget, 1 - Math.exp(-G_SWAY_RESP * dt))
+  // Angular rate → a damped offset in the hull's own frame, applied to the boom below and used, much
+  // more weakly, for the cockpit head lag.
+  angularSwayOffset(ship.angularVelocity.x, ship.angularVelocity.y, _aTarget)
+  aSway.lerp(_aTarget, 1 - Math.exp(-A_SWAY_RESP * dt))
 
   // The canopy is a few tenths of a unit from the eye, so the flight near plane would clip it and
   // the surrounding frame straight out of the view. Cheap to swap: updateProjectionMatrix() runs
@@ -4779,10 +4839,15 @@ function updateCamera(dt: number): void {
   //   * gSway, which reaches 2.6 units and would push the eye clean through the hull;
   //   * the quaternion slerp, which would make the whole interior swim relative to the frame.
   // Speed still reads through the shared FOV punch below, and through the world going past.
+  //
+  // The one concession is the head lag: a hard-clamped sub-three-degree rotation offset, not a slerp, so
+  // it cannot accumulate and cannot drift. Without it the cockpit is the view with the least sense of
+  // the ship's mass, which is backwards — it should have the most.
   if (cameraMode === 'cockpit') {
     camOffset.copy(cockpitEye).applyQuaternion(ship.quaternion)
     camera.position.copy(ship.position).add(camOffset)
-    camera.quaternion.copy(ship.quaternion)
+    cockpitHeadLag(ship.angularVelocity.x, ship.angularVelocity.y, _cockpitLag)
+    camera.quaternion.copy(ship.quaternion).multiply(_cockpitLagQuat.setFromEuler(_cockpitLag))
     applyCameraFov(dt)
     return
   }
@@ -4802,6 +4867,7 @@ function updateCamera(dt: number): void {
     }
     camOffset.copy(rearCameraOffset(boostKick, cameraRearDistance))
   }
+  camOffset.add(aSway) // hull-frame, so it rotates with the boom below
   camOffset.applyQuaternion(ship.quaternion)
   camTarget.copy(ship.position).add(camOffset).add(gSway)
   camera.position.lerp(camTarget, 1 - Math.exp(-8 * dt))
@@ -5500,6 +5566,14 @@ function frame(now: number): void {
   last = now
   pfBegin(now)
 
+  // Attitude-thruster demand is cleared here and re-filled by stepShip below, so the several paths
+  // that move the hull on rails instead of flying it — a scripted landing, a quantum jump, the bot
+  // autopilot — leave the thrusters dark rather than frozen on whatever the pilot last commanded.
+  // `camManeuver` goes with it: it is only recomputed on the free-flight path, so docking mid-turn would
+  // otherwise leave the drive note and the engine bells loaded up for as long as the station menu is open.
+  ship.rcsDemand.set(0, 0, 0)
+  camManeuver = 0
+
   // Full-screen overlays own the screen. Pause the game's sim/render so UI clicks do not
   // compete with WebGL, LOD swaps, or texture work on the same main thread.
   if (!shouldRenderWorldFrame({ running, docked, solarMapOpen: solarMap.isOpen })) return
@@ -5551,9 +5625,16 @@ function frame(now: number): void {
     navHintEl.textContent = MOBILE_COMPANION
       ? `[NAV] ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km | [JUMP]`
       : `[B/N] pick destination | ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km   |   [J] jump`
-    const flightTuning = hubTimeTrial.active
-      ? { maxSpeed: baseSpeed, boostMultiplier: baseBoost }
-      : { maxSpeed: effSpeed(), boostMultiplier: effBoost() }
+    // Handling comes from the hull and speed from the hull + upgrades, EXCEPT in a Race, which
+    // normalises both to the stock hauler so a time trial compares pilots rather than hangars. That
+    // rule already held for top speed; extending it to handling is what keeps a leaderboard time
+    // from becoming a statement about which ship you happened to own.
+    // `Required` rather than the bare override type: the audio and HUD lines below read
+    // `flightTuning.maxSpeed` directly, and it also makes forgetting one of the five fields a compile
+    // error instead of a silent fall back to the stock hauler's.
+    const flightTuning: Required<ShipTuningOverride> = hubTimeTrial.active
+      ? { maxSpeed: baseSpeed, boostMultiplier: baseBoost, ...shipHandling('hauler') }
+      : { maxSpeed: effSpeed(), boostMultiplier: effBoost(), ...shipHandling(selectedShipType) }
     let input: ControlInput
     if (BOT) {
       input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
@@ -5827,7 +5908,17 @@ function frame(now: number): void {
     // Engine audio tracks commanded thrust; wind layer tracks actual speed. The bot flies on-rails with
     // no thrust input, so for it the engine note tracks actual speed instead — else content play is silent.
     camThrust = BOT ? Math.min(1, ship.velocity.length() / BOT_ENGINE_REF_SPEED) : Math.min(1, input.thrust.length())
-    audio.setThrust(camThrust, input.boost || (BOT && ship.velocity.length() > 1500), ship.velocity.length() / flightTuning.maxSpeed)
+    // Manoeuvring loads the drive note as well as lighting the thrusters. Strictly the RCS is a separate
+    // system from the main engines, so this is a deliberate conflation: heaving a hull with mass around
+    // has to be AUDIBLE or the weight only exists for a pilot who happens to be looking at the right
+    // corner of their own ship. Scaled well under a real burn so it colours the note without pretending
+    // the throttle moved.
+    camManeuver = rcsManeuverLoad(ship.rcsDemand.x, ship.rcsDemand.y, ship.rcsDemand.z)
+    audio.setThrust(
+      Math.max(camThrust, camManeuver * 0.55),
+      input.boost || (BOT && ship.velocity.length() > 1500),
+      ship.velocity.length() / flightTuning.maxSpeed,
+    )
 
     // Market prices drift back toward base over time.
     marketStep(market, dt)
@@ -6202,12 +6293,20 @@ function frame(now: number): void {
   boostKick = Math.max(0, boostKick - dt * 3.5)
   const speedFrac = ship.velocity.length() / Math.max(1, hubTimeTrial.active ? baseSpeed : effSpeed())
   applyEngineGlowStyle(playerEngineGlows, engineGlowStyle({
-    thrust: camThrust,
+    // Same conflation as the audio line: the drive bells brighten a little while the hull is being
+    // heaved, at well under the weight a real throttle input gets, so a hard turn has a bloom signature
+    // even in the views where the attitude puffs are off screen.
+    thrust: Math.max(camThrust, camManeuver * 0.4),
     boost: camBoost,
     speedFrac,
     cosmeticTier: 0,
     time: now * 0.001,
   }))
+  // Attitude thrusters last, from the demand this frame's stepShip left on the ship state. Cheap when
+  // idle: every puff is `visible = false` until it is asked for, so a straight-and-level hull pays
+  // nothing for the rig at all. Under dev.freeze() dt is 0, which holds each puff at the drive it had
+  // rather than snapping it — the property that makes a manoeuvre transient capturable as a still.
+  applyRcsThrusters(playerRcsThrusters, ship.rcsDemand, dt)
   playerCosmetics.update(dt, ship.position)
 
   // Onboarding objective — new pilots get a "next step" until they hunt their first pirate.

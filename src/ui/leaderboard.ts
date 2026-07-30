@@ -118,6 +118,29 @@ export function pvpSeasonParts(now = Date.now()): { title: string; details: stri
   return { title, details: [ends, prizes, rules].filter((s) => s.length > 0) }
 }
 
+/** The date flight handling was reworked, in the same UTC-noon style as the season constant.
+ *  Every Race time on the board was set under the old rotation model, so the board is not a single
+ *  ranking any more — it is two, and only the pilot can tell which is which without being told. */
+export const HANDLING_REWORK_LABEL = 'JUL 2026'
+
+/** Note panel for the Race board.
+ *
+ *  Shaped like `pvpSeasonParts` so both share one renderer and one DOM slot. It exists because
+ *  rotation is now torque-limited and per-hull: a hull turns and — more to the point — STOPS turning
+ *  differently than it did, so gate-to-gate times set before the change cannot be compared with times
+ *  set after it. Wiping the board would have been the other honest option; keeping the times with the
+ *  caveat visible is the cheaper one, and Season 1 has ended with no Season 2 riding on it.
+ */
+export function raceHandlingNoteParts(): { title: string; details: string[] } {
+  return {
+    title: 'HANDLING REWORKED',
+    details: [
+      `TIMES BEFORE ${HANDLING_REWORK_LABEL} FLEW THE OLD ROTATION MODEL`,
+      'RACE STILL NORMALISES EVERY HULL TO THE STOCK HAULER',
+    ],
+  }
+}
+
 export function normalizeLeaderboardPage(payload: unknown, fallbackOffset = 0): LeaderboardPage {
   if (Array.isArray(payload)) {
     return {

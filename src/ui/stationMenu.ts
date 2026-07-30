@@ -8,7 +8,7 @@ import {
   type UpgradeTrack,
 } from '../sim/upgrades'
 import { abandon, accept, completeContract, type Contract } from '../sim/contracts'
-import { SHIP_RANK_REQ, SHIP_STATS, SHIP_TYPES, type ShipType } from '../sim/shipTypes'
+import { SHIP_RANK_REQ, SHIP_STATS, SHIP_TYPES, turnRateDegPerSec, type ShipType } from '../sim/shipTypes'
 import { rankForCredits, RANKS } from '../sim/ranks'
 import {
   CRAFT_CORE_CREDIT_COST,
@@ -820,7 +820,9 @@ export class StationMenu {
       const isCurrent = type === current
       const reqIdx = SHIP_RANK_REQ[type]
       const locked = !owned && rankIdx < reqIdx
-      const stats = `cargo ${s.cargo} · spd ${s.topSpeed} · hull ${s.hull}`
+      // Turn rate is on the row because handling now differs per hull. Without it the shipyard would
+      // sell four ships that fly noticeably differently while describing only the ways they don't.
+      const stats = `cargo ${s.cargo} · spd ${s.topSpeed} · turn ${turnRateDegPerSec(type)}°/s · hull ${s.hull}`
       const right = isCurrent ? 'IN USE' : owned ? 'OWNED' : locked ? `🔒 ${RANKS[reqIdx].name}` : `${this.ctx.shipPrices[type]} cr`
       const row = this.rowEl(s.role, stats, right)
       const actions = row.querySelector('.s-actions')!

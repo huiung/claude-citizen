@@ -3,6 +3,8 @@ import * as THREE from 'three'
 import {
   COCKPIT_NEAR_PLANE,
   FOOT_PIVOT_HEIGHT,
+  angularSwayOffset,
+  cockpitHeadLag,
   cockpitEyeOffset,
   defaultFootDistance,
   defaultRearDistance,
@@ -86,7 +88,82 @@ function hullFixture(
   return group
 }
 
+describe('angular camera feedback', () => {
+  it('trails the boom to starboard when the nose swings to port, and below it on a pull-up', () => {
+    // Signs are the whole content of this function, and they follow sim/physics: +yaw takes the nose to
+    // -X and +pitch takes it up, so a lagging mount ends up on the opposite side of each in the hull's
+    // new frame. Getting one backwards produces a camera that leads the turn, which reads as the ship
+    // being yanked around — the exact opposite of the intended cue.
+    const yaw = angularSwayOffset(0, 1.5, new THREE.Vector3())
+    expect(yaw.x).toBeGreaterThan(0)
+    expect(yaw.y).toBeCloseTo(0, 9)
+    const pitchUp = angularSwayOffset(1.5, 0, new THREE.Vector3())
+    expect(pitchUp.y).toBeLessThan(0)
+    expect(pitchUp.x).toBeCloseTo(0, 9)
+  })
+
+  it('scales with rate and returns to nothing when rotation stops', () => {
+    const slow = angularSwayOffset(0, 0.4, new THREE.Vector3()).length()
+    const fast = angularSwayOffset(0, 1.6, new THREE.Vector3()).length()
+    expect(fast).toBeGreaterThan(slow)
+    expect(angularSwayOffset(0, 0, new THREE.Vector3()).length()).toBe(0)
+  })
+
+  it('clamps the boom sway so the crosshair stays a usable approximation', () => {
+    // Guns fire along the hull's nose while the reticle sits at screen centre, so boom offset is aim
+    // error. A runaway rate — a collision spin, a physics glitch — must not swing the camera off the ship.
+    const wild = angularSwayOffset(50, -50, new THREE.Vector3())
+    expect(Math.abs(wild.x)).toBeLessThanOrEqual(1.6)
+    expect(Math.abs(wild.y)).toBeLessThanOrEqual(1.6)
+  })
+
+  it('leaves roll out of the boom sway entirely', () => {
+    expect(angularSwayOffset(0, 0, new THREE.Vector3()).z).toBe(0)
+  })
+
+  it('keeps the cockpit head lag under three degrees at any rate', () => {
+    // The cockpit mount is rigid because a soft one puts the eye through the hull. This is the one
+    // concession, and it is only defensible while it is small enough to stay inside the aim slop.
+    const wild = cockpitHeadLag(80, -80, new THREE.Euler())
+    expect(Math.abs(wild.x)).toBeLessThan(0.05)
+    expect(Math.abs(wild.y)).toBeLessThan(0.05)
+    expect(wild.z).toBe(0)
+    expect(wild.order).toBe('YXZ') // yaw before pitch, as the studio's cockpit aim does
+  })
+
+  it('lags the head against the rotation, and holds still when the hull does', () => {
+    expect(cockpitHeadLag(0.9, 0, new THREE.Euler()).x).toBeLessThan(0)
+    expect(cockpitHeadLag(0, 0.9, new THREE.Euler()).y).toBeLessThan(0)
+    const still = cockpitHeadLag(0, 0, new THREE.Euler())
+    expect(still.x).toBeCloseTo(0, 12)
+    expect(still.y).toBeCloseTo(0, 12)
+  })
+})
+
 describe('cockpit camera', () => {
+  it('ignores thruster puffs and engine glows when placing the eye', () => {
+    // The RCS rig bolts a puff above the nose and one below it — exactly where liftClearOfStructure
+    // probes — so without the effect guard, adding a feedback layer would silently move the pilot's
+    // eye on every hull. The puff here is placed deliberately high so the failure would be obvious.
+    const bare = hullFixture([{ name: 'forward_canopy', z: -5 }])
+    const before = resolveCockpitEyeAnchor(bare)
+
+    const withFx = hullFixture([{ name: 'forward_canopy', z: -5 }])
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial())
+    puff.position.set(0, 6, -5)
+    puff.userData.craftRcsPort = { name: 'nose_top' }
+    withFx.add(puff)
+    const glow = new THREE.Mesh(new THREE.CircleGeometry(1, 8), new THREE.MeshBasicMaterial())
+    glow.position.set(0, 6, 5)
+    glow.userData.craftEngineGlow = { role: 'disc' }
+    withFx.add(glow)
+
+    const after = resolveCockpitEyeAnchor(withFx)
+    expect(after.x).toBeCloseTo(before.x, 9)
+    expect(after.y).toBeCloseTo(before.y, 9)
+    expect(after.z).toBeCloseTo(before.z, 9)
+  })
+
   it('recognises the canopy node each hull actually ships', () => {
     for (const name of [
       'narrow_cyan_predator_canopy', 'raised_cockpit_pod', 'large_cyan_bubble_canopy',
