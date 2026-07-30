@@ -4,8 +4,16 @@ dist/
 .DS_Store
 *.log
 .vercel
+# Relay runtime state, written next to server/ when it runs. Never commit these: sessions.json
+# in particular holds live player and wallet data, and this repo is public. progress.json and
+# callsigns.json were already listed; the rest were not, so a local relay run left four
+# untracked state files sitting one `git add .` away from being published.
 progress.json
 callsigns.json
+claimed-anon.json
+sessions.json
+marketplace.json
+pvp-kills.json
 docs/superpowers/
 .env*
 
