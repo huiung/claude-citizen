@@ -8,7 +8,10 @@ import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
-import { createShipState, resolveSphereCollision, stepShip, TUNING, type ControlInput } from './sim/physics'
+import {
+  createShipState, resolveSphereCollision, stepShip, TUNING,
+  type ControlInput, type ShipTuningOverride,
+} from './sim/physics'
 import {
   addCraftEngineGlowRig,
   buildCraft,
@@ -20,7 +23,7 @@ import {
   loadPirateModel,
   type CraftEngineGlow,
 } from './render/shipyard'
-import { SHIP_STATS, type ShipType } from './sim/shipTypes'
+import { SHIP_STATS, shipHandling, type ShipType } from './sim/shipTypes'
 import { nextRank, rankForCredits, rankProgress } from './sim/ranks'
 import { shouldRenderWorldFrame, shouldRunBackgroundWorldWork } from './sim/renderCadence'
 import {
@@ -152,6 +155,7 @@ import {
   nextLeaderboardOffset,
   normalizeLeaderboardPage,
   pvpSeasonParts,
+  raceHandlingNoteParts,
   type LeaderboardMode,
   type LeaderboardPage,
   type LeaderboardRow,
@@ -571,11 +575,14 @@ function renderLeaderboardRowsForMode(listEl: HTMLElement, rows: LeaderboardRow[
       + `<span class="cr">${escapeHtml(leaderboardMetric(r, mode))}</span></li>`
   }).join('')
 }
-function renderPvpSeasonPanel(el: HTMLElement, mode: LeaderboardMode): void {
-  el.hidden = mode !== 'pvp'
-  if (mode !== 'pvp') return
-  const season = pvpSeasonParts()
-  el.innerHTML = `<b>${escapeHtml(season.title)}</b>` + season.details.map((d) => `<span>${escapeHtml(d)}</span>`).join('')
+/** The note strip above a board. PvP gets its season block; Race gets the handling-rework caveat,
+ *  because a leaderboard whose physics changed under it is misleading without one. One element and one
+ *  renderer for both — a second slot would only be a second thing to keep in sync. */
+function renderLeaderboardNotePanel(el: HTMLElement, mode: LeaderboardMode): void {
+  const note = mode === 'pvp' ? pvpSeasonParts() : mode === 'race' ? raceHandlingNoteParts() : null
+  el.hidden = note === null
+  if (!note) return
+  el.innerHTML = `<b>${escapeHtml(note.title)}</b>` + note.details.map((d) => `<span>${escapeHtml(d)}</span>`).join('')
 }
 function syncLeaderboardModeButtons(slot: 'landing' | 'hud'): void {
   const mode = slot === 'landing' ? landingLeaderboardMode : hudLeaderboardMode
@@ -585,7 +592,7 @@ function syncLeaderboardModeButtons(slot: 'landing' | 'hud'): void {
   const raceBtn = slot === 'landing' ? lbModeRaceLandingEl : lbModeRaceHudEl
   const blackholeBtn = slot === 'landing' ? lbModeBlackholeLandingEl : lbModeBlackholeHudEl
   const pilotlevelBtn = slot === 'landing' ? lbModePilotlevelLandingEl : lbModePilotlevelHudEl
-  const seasonEl = slot === 'landing' ? lbSeasonLandingEl : lbSeasonHudEl
+  const noteEl = slot === 'landing' ? lbSeasonLandingEl : lbSeasonHudEl
   title.textContent = mode === 'pvp'
     ? (slot === 'landing' ? 'RANKED PVP' : 'RANKED PVP - kills')
     : mode === 'race'
@@ -595,7 +602,7 @@ function syncLeaderboardModeButtons(slot: 'landing' | 'hud'): void {
         : mode === 'pilotlevel'
           ? (slot === 'landing' ? 'TOP PILOTS' : 'TOP PILOTS - level')
           : (slot === 'landing' ? 'TOP PILOTS' : 'TOP PILOTS - credits')
-  renderPvpSeasonPanel(seasonEl, mode)
+  renderLeaderboardNotePanel(noteEl, mode)
   careerBtn.classList.toggle('active', mode === 'career')
   pvpBtn.classList.toggle('active', mode === 'pvp')
   raceBtn.classList.toggle('active', mode === 'race')
@@ -5490,6 +5497,11 @@ function frame(now: number): void {
   last = now
   pfBegin(now)
 
+  // Attitude-thruster demand is cleared here and re-filled by stepShip below, so the several paths
+  // that move the hull on rails instead of flying it — a scripted landing, a quantum jump, the bot
+  // autopilot — leave the thrusters dark rather than frozen on whatever the pilot last commanded.
+  ship.rcsDemand.set(0, 0, 0)
+
   // Full-screen overlays own the screen. Pause the game's sim/render so UI clicks do not
   // compete with WebGL, LOD swaps, or texture work on the same main thread.
   if (!shouldRenderWorldFrame({ running, docked, solarMapOpen: solarMap.isOpen })) return
@@ -5541,9 +5553,16 @@ function frame(now: number): void {
     navHintEl.textContent = MOBILE_COMPANION
       ? `[NAV] ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km | [JUMP]`
       : `[B/N] pick destination | ${dest.name} | ${(dest.dist / 1000).toFixed(1)} km   |   [J] jump`
-    const flightTuning = hubTimeTrial.active
-      ? { maxSpeed: baseSpeed, boostMultiplier: baseBoost }
-      : { maxSpeed: effSpeed(), boostMultiplier: effBoost() }
+    // Handling comes from the hull and speed from the hull + upgrades, EXCEPT in a Race, which
+    // normalises both to the stock hauler so a time trial compares pilots rather than hangars. That
+    // rule already held for top speed; extending it to handling is what keeps a leaderboard time
+    // from becoming a statement about which ship you happened to own.
+    // `Required` rather than the bare override type: the audio and HUD lines below read
+    // `flightTuning.maxSpeed` directly, and it also makes forgetting one of the five fields a compile
+    // error instead of a silent fall back to the stock hauler's.
+    const flightTuning: Required<ShipTuningOverride> = hubTimeTrial.active
+      ? { maxSpeed: baseSpeed, boostMultiplier: baseBoost, ...shipHandling('hauler') }
+      : { maxSpeed: effSpeed(), boostMultiplier: effBoost(), ...shipHandling(selectedShipType) }
     let input: ControlInput
     if (BOT) {
       input = { thrust: new THREE.Vector3(), pitch: 0, yaw: 0, roll: 0, boost: false, brake: false, assist: true }
