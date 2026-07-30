@@ -54,6 +54,20 @@ export interface StudioParams {
   /** Total triangle target for the greeble pass, or null for the module's own. 0 disables it, which is
    *  the control half of the density A/B — "the hull looks busier" needs a before to mean anything. */
   greebleTarget: number | null
+  /** Frozen attitude-thruster demand to render, or null for an idle hull.
+   *
+   *  Handling FEEL cannot be captured — a still frame says nothing about how a ship turns. The feedback
+   *  layer built to make that feel legible CAN be, because "the thrusters that stop a turn are a
+   *  different, visible pair from the ones that started it" is a claim about a single frame. In flight
+   *  that frame lasts a third of a second; here it is a URL. */
+  rcs: RcsDemandParam | null
+}
+
+/** Signed per-axis demand, matching `ShipState.rcsDemand` and `stepShip`'s local axes. */
+export interface RcsDemandParam {
+  pitch: number
+  yaw: number
+  roll: number
 }
 
 /** Default 3/4 view — shows a lit face, a shadowed face and the silhouette in one frame, which is
@@ -78,6 +92,34 @@ function optNum(raw: string | null, min: number): number | null {
   if (raw === null) return null
   const v = Number(raw)
   return Number.isFinite(v) && v >= min ? v : null
+}
+
+/** `?rcs=pitch,yaw,roll`, each in [-1, 1]. Also accepts the axis names — `?rcs=yaw` and `?rcs=-yaw` —
+ *  because a capture shot list reads far better as `rcs=yaw` / `rcs=-yaw` than as `0,1,0` / `0,-1,0`,
+ *  and those two shots are the whole before/after of the counter-burn claim. */
+export function parseRcsDemand(raw: string | null): RcsDemandParam | null {
+  if (raw === null) return null
+  const text = raw.trim().toLowerCase()
+  if (text.length === 0) return null
+  const named = /^(-)?(pitch|yaw|roll)$/.exec(text)
+  if (named) {
+    const sign = named[1] ? -1 : 1
+    return {
+      pitch: named[2] === 'pitch' ? sign : 0,
+      yaw: named[2] === 'yaw' ? sign : 0,
+      roll: named[2] === 'roll' ? sign : 0,
+    }
+  }
+  const parts = text.split(',')
+  if (parts.length !== 3) return null
+  const axis = (s: string): number => {
+    const v = Number(s)
+    return Number.isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0
+  }
+  const demand = { pitch: axis(parts[0]), yaw: axis(parts[1]), roll: axis(parts[2]) }
+  // All-zero is the same picture as absent but costs a rig build and an extra label; reject it so a
+  // typo'd shot is obviously off rather than quietly indistinguishable from a hull at rest.
+  return demand.pitch === 0 && demand.yaw === 0 && demand.roll === 0 ? null : demand
 }
 
 export function parseStudioParams(search: URLSearchParams): StudioParams {
@@ -108,6 +150,7 @@ export function parseStudioParams(search: URLSearchParams): StudioParams {
     envIntensity: optNum(search.get('envi'), 0),
     metalCeiling: optNum(search.get('metal'), 0),
     greebleTarget: optNum(search.get('greeble'), 0),
+    rcs: parseRcsDemand(search.get('rcs')),
   }
 }
 

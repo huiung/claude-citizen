@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { applyHullDetail, tuneHullMaterials } from './hullDetail'
 import { applyHullGreebles } from './hullGreebles'
+import { rcsPortLayout, RCS_PORT_COLOR, type RcsPort } from './rcs'
 import type { ShipType } from '../sim/shipTypes'
 import type { HolderShipVisualId } from '../ui/holderShipVisual'
 
@@ -135,6 +136,71 @@ export function collectCraftEngineGlows(root: THREE.Object3D): CraftEngineGlow[]
     glows.push({ mesh: child as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>, role: meta.role })
   })
   return glows
+}
+
+/** Flag on the mesh's userData rather than a name match: `collectCraftRcsThrusters` runs on whatever
+ *  hull happens to be installed, procedural or GLB or holder skin, and a GLB node is free to be named
+ *  anything the generator liked. */
+export const RCS_MESH_FLAG = 'craftRcsPort'
+
+interface RcsUserData {
+  craftRcsPort?: RcsPort
+}
+
+export interface CraftRcsThruster {
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>
+  port: RcsPort
+  /** Smoothed drive, owned by whoever updates the rig each frame. Lives here so the caller does not
+   *  need a parallel array keyed by index. */
+  drive: number
+}
+
+/** Bolt twelve attitude-thruster puffs onto a hull, derived from its own bounding box.
+ *
+ *  Derived rather than hand-authored per ship, unlike `CRAFT_ENGINE_GLOW_MOUNTS`. There are thirteen
+ *  GLBs across four base hulls and five holder skins plus the procedural placeholders, and only the
+ *  base four have mount tables — the holder skins already borrow their base type's engine mounts, which
+ *  is visible on the corvette. A bounding box is the one thing every one of them has, and the ports are
+ *  at hull extremities where a box is a good approximation of the skin.
+ *
+ *  Call this BEFORE `addCraftEngineGlowRig`: the box has to be the hull's, and the engine glow discs
+ *  would otherwise be folded into it.
+ */
+export function addCraftRcsRig(group: THREE.Group): void {
+  const box = new THREE.Box3().setFromObject(group)
+  if (box.isEmpty()) return
+  // One geometry for the whole rig, scaled per port. Unit radius so `rcsPortStyle().scale` and the
+  // port's own radius multiply cleanly into `mesh.scale`.
+  const geometry = new THREE.SphereGeometry(1, 8, 6)
+  for (const port of rcsPortLayout({
+    minX: box.min.x, maxX: box.max.x,
+    minY: box.min.y, maxY: box.max.y,
+    minZ: box.min.z, maxZ: box.max.z,
+  })) {
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+      color: RCS_PORT_COLOR,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }))
+    mesh.position.set(port.x, port.y, port.z)
+    mesh.scale.setScalar(port.radius)
+    mesh.visible = false // idle hull: no draw call at all until a thruster is asked for
+    mesh.name = `rcs_${port.name}`
+    ;(mesh.userData as RcsUserData).craftRcsPort = port
+    group.add(mesh)
+  }
+}
+
+export function collectCraftRcsThrusters(root: THREE.Object3D): CraftRcsThruster[] {
+  const thrusters: CraftRcsThruster[] = []
+  root.traverse((child) => {
+    const port = (child.userData as RcsUserData).craftRcsPort
+    if (!port || !(child instanceof THREE.Mesh) || !(child.material instanceof THREE.MeshBasicMaterial)) return
+    thrusters.push({ mesh: child as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>, port, drive: 0 })
+  })
+  return thrusters
 }
 
 function craftModelCacheKey(url: string, targetSize: number): string {
