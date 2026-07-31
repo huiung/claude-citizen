@@ -84,6 +84,7 @@ import {
 } from './sim/onFoot'
 import { earthHighColorLoaded, isEarthDataReady, latLonToDir, loadEarthData, sampleCloudCover } from './render/earthData'
 import { computeAtmoFog, computeCelestialHide, computeCloudFogBoost } from './render/atmoImmersion'
+import { createContextLossNotice, watchContextLoss } from './render/contextLoss'
 import { initHullEnvProbe, updateHullEnvProbe } from './render/envProbe'
 import { groundFillStrength, updateGroundFill } from './render/groundFill'
 import { setHullGreeblesEnabled } from './render/hullGreebles'
@@ -703,6 +704,10 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.toneMapping = THREE.ACESFilmicToneMapping // filmic highlights — plays well with bloom
 renderer.toneMappingExposure = 1.15
 appEl.appendChild(renderer.domElement)
+// A lost context stops every draw call while the page stays alive, so the game simply freezes with
+// no error anywhere a player or a bug report can reach. Say it out loud instead — see contextLoss.ts
+// for why the distinction this draws is the whole point.
+watchContextLoss(renderer.domElement, createContextLossNotice(appEl))
 
 function requestFlightPointerLock(): void {
   if (MOBILE_COMPANION) return
